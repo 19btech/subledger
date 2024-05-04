@@ -1,0 +1,28 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::               (v3.1.10)
+
+2024-04-02T12:39:20.463+05:00  INFO 2779011 --- [           main] c.r.dataloader.DataloaderApplication     : Starting DataloaderApplication v0.0.1-SNAPSHOT using Java 17.0.9 with PID 2779011 (/home/uabbas/Workspace/test/dataloader/build/libs/dataloader-0.0.1-SNAPSHOT.jar started by uabbas in /home/uabbas/Workspace/test/dataloader)
+2024-04-02T12:39:20.465+05:00  INFO 2779011 --- [           main] c.r.dataloader.DataloaderApplication     : No active profile set, falling back to 1 default profile: "default"
+2024-04-02T12:39:20.694+05:00  INFO 2779011 --- [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2024-04-02T12:39:20.704+05:00  INFO 2779011 --- [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 6 ms. Found 0 JPA repository interfaces.
+2024-04-02T12:39:20.835+05:00  INFO 2779011 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2024-04-02T12:39:20.938+05:00  INFO 2779011 --- [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection conn0: url=jdbc:h2:mem:testdb user=SA
+2024-04-02T12:39:20.939+05:00  INFO 2779011 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2024-04-02T12:39:21.017+05:00  INFO 2779011 --- [           main] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2024-04-02T12:39:21.043+05:00  INFO 2779011 --- [           main] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.2.22.Final
+2024-04-02T12:39:21.044+05:00  INFO 2779011 --- [           main] org.hibernate.cfg.Environment            : HHH000406: Using bytecode reflection optimizer
+2024-04-02T12:39:21.186+05:00  INFO 2779011 --- [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2024-04-02T12:39:21.206+05:00  WARN 2779011 --- [           main] org.hibernate.orm.deprecation            : HHH90000025: H2Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2024-04-02T12:39:21.352+05:00  INFO 2779011 --- [           main] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2024-04-02T12:39:21.354+05:00  INFO 2779011 --- [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2024-04-02T12:39:21.460+05:00  INFO 2779011 --- [           main] c.r.dataloader.DataloaderApplication     : Started DataloaderApplication in 1.196 seconds (process running for 1.44)
+2024-04-02T12:39:21.462+05:00  INFO 2779011 --- [           main] o.s.b.a.b.JobLauncherApplicationRunner   : Running default command line with: []
+2024-04-02T12:39:21.466+05:00  INFO 2779011 --- [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2024-04-02T12:39:21.469+05:00  INFO 2779011 --- [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2024-04-02T12:39:21.471+05:00  INFO 2779011 --- [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
