@@ -1,7 +1,7 @@
 package com.reserv.dataloader.controller;
 
 import com.reserv.dataloader.entity.Aggregation;
-import com.reserv.dataloader.service.DataService;
+import com.reserv.dataloader.service.aggregation.AggregationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -14,23 +14,23 @@ import java.util.Collection;
 @RequestMapping("/api/dataloader/aggregation")
 @Slf4j
 public class AggregationController {
-    private final DataService dataService;
+    private final AggregationService aggregationService;
 
     @Autowired
-    public AggregationController(DataService dataService) {
-        this.dataService = dataService;
+    public AggregationController(AggregationService aggregationService) {
+        this.aggregationService = aggregationService;
     }
 
 
     @PostMapping("/add")
     public void saveDate(@RequestBody Aggregation t) {
-        dataService.save(t);
+        this.aggregationService.save(t);
     }
 
     @GetMapping("/get/all")
     public ResponseEntity<Collection<Aggregation>> getAllAggregates() {
         try {
-            Collection<Aggregation> transactions = dataService.fetchAllData(Aggregation.class);
+            Collection<Aggregation> transactions = this.aggregationService.fetchAll();
             return new ResponseEntity<>(transactions, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes

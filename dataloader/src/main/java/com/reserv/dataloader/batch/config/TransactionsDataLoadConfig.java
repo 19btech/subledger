@@ -3,7 +3,7 @@ package com.reserv.dataloader.batch.config;
 import com.reserv.dataloader.batch.listener.JobCompletionNotificationListener;
 import com.reserv.dataloader.batch.processor.TransactionsItemProcessor;
 import com.reserv.dataloader.batch.writer.TransactionItemWriter;
-import com.reserv.dataloader.component.TenantContextHolder;
+import com.reserv.dataloader.config.TenantContextHolder;
 import com.reserv.dataloader.component.TenantDataSourceProvider;
 import com.reserv.dataloader.entity.Transactions;
 import lombok.extern.slf4j.Slf4j;

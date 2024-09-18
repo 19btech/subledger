@@ -3,7 +3,7 @@ package com.reserv.dataloader.batch.config;
 import com.reserv.dataloader.batch.listener.JobCompletionNotificationListener;
 import com.reserv.dataloader.batch.processor.AttributesItemProcessor;
 import com.reserv.dataloader.batch.writer.AttributeItemWriter;
-import com.reserv.dataloader.component.TenantContextHolder;
+import com.reserv.dataloader.config.TenantContextHolder;
 import com.reserv.dataloader.component.TenantDataSourceProvider;
 import com.reserv.dataloader.datasource.accounting.rule.DataType;
 import com.reserv.dataloader.entity.Attributes;

@@ -1526,5 +1526,21 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
         // Create LocalDate from Instant
         return instant.atZone(ZoneId.systemDefault()).toLocalDate();
     }
+
+    public static Date convertDateToIST(Date date) throws ParseException {
+        int month = DateUtil.getMonthForDate(date) + 1;
+        int year = DateUtil.getYearForDate(date);
+        int day = DateUtil.getDay(date);
+
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+        sdf.setTimeZone(TimeZone.getTimeZone("IST"));
+        return sdf.parse(year + "-" + month + "-" + day + "T20:20:25.927Z");
+    }
+
+    public static String getAccountingPeriod(Date date) {
+        int year = getYearForDate(date);
+        int month = getMonthForDate(date);
+        return year + "-" + (month+1);
+    }
 }
 

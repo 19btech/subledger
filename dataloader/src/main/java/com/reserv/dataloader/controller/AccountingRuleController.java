@@ -1,6 +1,6 @@
 package com.reserv.dataloader.controller;
 
-import com.reserv.dataloader.service.FileUploadService;
+import com.reserv.dataloader.service.upload.FileUploadService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;

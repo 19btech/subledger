@@ -10,7 +10,7 @@ public class TransactionActivityItemProcessor implements ItemProcessor<Transacti
         transactionActivity.setTransactionName(item.getTransactionName());
         transactionActivity.setInstrumentId(item.getInstrumentId());
         transactionActivity.setTransactionDate(item.getTransactionDate());
-        transactionActivity.setAmount(item.getAmount());
+        transactionActivity.setValue(item.getValue());
         transactionActivity.setAttributeId(item.getAttributeId());
         return transactionActivity;
     }

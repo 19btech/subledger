@@ -8,7 +8,6 @@ public class AggregateItemProcessor implements ItemProcessor<Aggregation,Aggrega
     @Override
     public Aggregation process(Aggregation item) throws Exception {
         final Aggregation agregation = new Aggregation();
-        agregation.setLevel(item.getLevel());
         agregation.setTransactionName(item.getTransactionName());
         agregation.setMetricName(item.getMetricName());
 

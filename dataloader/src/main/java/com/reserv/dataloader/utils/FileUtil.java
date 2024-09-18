@@ -126,8 +126,9 @@ public class FileUtil {
             for (Sheet sheet : wb) {
 
                 if(!AccountingRules.isValid(sheet.getSheetName().toLowerCase() + ".csv")) {
-                    throw new InvalidExcelSheetNameException("Invalid SheetName["
-                            + sheet.getSheetName() + "] of file[" + "]");
+//                    throw new InvalidExcelSheetNameException("Invalid SheetName["
+//                            + sheet.getSheetName() + "] of file[" + "]");
+                    continue;
                 }
 
                 String sheetName = sheet.getSheetName().toLowerCase();

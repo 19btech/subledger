@@ -31,7 +31,7 @@ public class ActivityLogService {
 
     public Collection<ActivityLog> getRecentLoad() {
         Sort sort = Sort.by(Sort.Direction.DESC, "endingTime");
-        Query query = new Query(Criteria.where("activityType").is(FileUploadActivityType.TRANSACTION)).with(sort).limit(1);
+        Query query = new Query(Criteria.where("activityType").is(FileUploadActivityType.TRANSACTION_ACTIVITY)).with(sort).limit(1);
         return dataService.fetchData(query, ActivityLog.class);
     }
 

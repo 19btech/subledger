@@ -4,7 +4,7 @@ import com.reserv.dataloader.batch.listener.JobCompletionNotificationListener;
 import com.reserv.dataloader.batch.mapper.HeaderColumnNameMapper;
 import com.reserv.dataloader.batch.processor.ChartOfAccountItemProcessor;
 import com.reserv.dataloader.batch.writer.GenericItemWriterAdapter;
-import com.reserv.dataloader.component.TenantContextHolder;
+import com.reserv.dataloader.config.TenantContextHolder;
 import com.reserv.dataloader.component.TenantDataSourceProvider;
 import com.reserv.dataloader.entity.ChartOfAccount;
 import lombok.extern.slf4j.Slf4j;

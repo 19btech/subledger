@@ -1,6 +1,6 @@
 package com.reserv.dataloader.batch.writer;
 
-import com.reserv.dataloader.component.TenantContextHolder;
+import com.reserv.dataloader.config.TenantContextHolder;
 import com.reserv.dataloader.component.TenantDataSourceProvider;
 import com.reserv.dataloader.entity.Attributes;
 import org.springframework.batch.item.Chunk;

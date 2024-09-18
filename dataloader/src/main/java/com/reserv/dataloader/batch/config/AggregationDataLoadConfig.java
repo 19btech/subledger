@@ -2,11 +2,11 @@ package com.reserv.dataloader.batch.config;
 
 import com.reserv.dataloader.batch.listener.JobCompletionNotificationListener;
 import com.reserv.dataloader.batch.processor.AggregateItemProcessor;
-import com.reserv.dataloader.batch.writer.GenericItemWriterAdapter;
-import com.reserv.dataloader.component.TenantContextHolder;
+import com.reserv.dataloader.batch.writer.AggregationItemWriter;
+import com.reserv.dataloader.config.TenantContextHolder;
 import com.reserv.dataloader.component.TenantDataSourceProvider;
-import com.reserv.dataloader.datasource.accounting.rule.AggregationLevel;
 import com.reserv.dataloader.entity.Aggregation;
+import com.reserv.dataloader.repository.AggregationMemcachedRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
@@ -44,14 +44,16 @@ public class AggregationDataLoadConfig {
     private final TenantContextHolder tenantContextHolder;
     private final TenantDataSourceProvider dataSourceProvider;
     private final MongoTemplate mongoTemplate;
-
+    private final AggregationMemcachedRepository memcachedRepository;
     public AggregationDataLoadConfig(JobRepository jobRepository, MongoTemplate mongoTemplate,
                                     TenantDataSourceProvider dataSourceProvider,
-                                    TenantContextHolder tenantContextHolder) {
+                                    TenantContextHolder tenantContextHolder,
+                                     AggregationMemcachedRepository memcachedRepository) {
         this.jobRepository = jobRepository;
         this.tenantContextHolder = tenantContextHolder;
         this.dataSourceProvider = dataSourceProvider;
         this.mongoTemplate = mongoTemplate;
+        this.memcachedRepository = memcachedRepository;
     }
 
     @Bean("aggregationUploadJob")
@@ -71,7 +73,7 @@ public class AggregationDataLoadConfig {
                 .reader(aggregateFileReader(""))
                 .processor(aggregateItemProcessor())
                 .writer(aggregationItemWriter(dataSourceProvider,
-                        tenantContextHolder))
+                        tenantContextHolder, this.memcachedRepository))
                 .build();
     }
 
@@ -86,21 +88,14 @@ public class AggregationDataLoadConfig {
 
         DefaultLineMapper<Aggregation> defaultLineMapper = new DefaultLineMapper<>();
         DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
-        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID", "TRANSACTIONNAME",	"METRICNAME", "LEVEL"});
+        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID", "TRANSACTIONNAME",	"METRICNAME"});
         defaultLineMapper.setLineTokenizer(lineTokenizer);
         defaultLineMapper.setFieldSetMapper(new FieldSetMapper<Aggregation>() {
             @Override
             public Aggregation mapFieldSet(FieldSet fieldSet) throws BindException {
                 Aggregation aggregation = new Aggregation();
-                aggregation.setTransactionName(fieldSet.readString("TRANSACTIONNAME"));
-                aggregation.setMetricName(fieldSet.readString("METRICNAME"));
-
-                String level = fieldSet.readString("LEVEL");
-                if(AggregationLevel.isValid(level)) {
-                    aggregation.setLevel(AggregationLevel.valueOf(level));
-                }else {
-                    aggregation.setLevel(AggregationLevel.ATTRIBUTE);
-                }
+                aggregation.setTransactionName(fieldSet.readString("TRANSACTIONNAME").toUpperCase());
+                aggregation.setMetricName(fieldSet.readString("METRICNAME").toUpperCase());
 
                 return aggregation;
             }
@@ -111,7 +106,7 @@ public class AggregationDataLoadConfig {
                 .resource(new FileSystemResource(fileName))
                 .delimited()
                 .names(new String[]{
-                        "ACTIVITYUPLOADID", "TRANSACTIONNAME",	"METRICNAME", "LEVEL"
+                        "ACTIVITYUPLOADID", "TRANSACTIONNAME",	"METRICNAME"
                 })
                 .linesToSkip(1)
                 .lineMapper(defaultLineMapper)
@@ -129,12 +124,13 @@ public class AggregationDataLoadConfig {
 
     @Bean
     public ItemWriter<Aggregation> aggregationItemWriter(TenantDataSourceProvider dataSourceProvider,
-                                                       TenantContextHolder tenantContextHolder) {
+                                                       TenantContextHolder tenantContextHolder,
+                                                         AggregationMemcachedRepository memcachedRepository) {
         MongoItemWriter<Aggregation> delegate = new MongoItemWriterBuilder<Aggregation>()
                 .template(mongoTemplate)
                 .collection("Aggregation")
                 .build();
-        return new GenericItemWriterAdapter<>(delegate, dataSourceProvider, tenantContextHolder);
+        return new AggregationItemWriter(delegate, dataSourceProvider, tenantContextHolder, memcachedRepository);
     }
 
 }

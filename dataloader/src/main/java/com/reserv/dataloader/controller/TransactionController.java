@@ -2,6 +2,7 @@ package com.reserv.dataloader.controller;
 
 import com.reserv.dataloader.entity.Transactions;
 import com.reserv.dataloader.service.DataService;
+import com.reserv.dataloader.service.TransactionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -15,22 +16,22 @@ import java.util.Collection;
 @Slf4j
 public class TransactionController {
 
-    private final DataService dataService;
+    private final TransactionService transactionService;
 
     @Autowired
-    public TransactionController(DataService dataService) {
-        this.dataService = dataService;
+    public TransactionController(TransactionService transactionService) {
+        this.transactionService = transactionService;
     }
 
     @PostMapping("/add")
     public void saveData(@RequestBody Transactions t) {
-        dataService.save(t);
+        transactionService.save(t);
     }
 
     @GetMapping("/get/all")
     public ResponseEntity<Collection<Transactions>> getAllTransactions() {
         try {
-            Collection<Transactions> transactions = dataService.fetchAllData(Transactions.class);
+            Collection<Transactions> transactions = transactionService.getAll();
             return new ResponseEntity<>(transactions, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes
@@ -42,7 +43,7 @@ public class TransactionController {
     @GetMapping("/get/transactions")
     public ResponseEntity<String[]> getAllTransactionNames() {
         try {
-            Collection<Transactions> collection = dataService.findByColumns(Transactions.class, "name");
+            Collection<Transactions> collection = transactionService.getTransactionNames();
             String[] transactions = collection.stream()
                     .map(Transactions::getName) // Replace getFieldName with the actual getter method for your field
                     .toArray(String[]::new);

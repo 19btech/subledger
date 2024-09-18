@@ -4,7 +4,7 @@ import com.reserv.dataloader.batch.listener.JobCompletionNotificationListener;
 import com.reserv.dataloader.batch.mapper.HeaderColumnNameMapper;
 import com.reserv.dataloader.batch.processor.InstrumentAttributeItemProcessor;
 import com.reserv.dataloader.batch.writer.InstrumentAttributeWriter;
-import com.reserv.dataloader.component.TenantContextHolder;
+import com.reserv.dataloader.config.TenantContextHolder;
 import com.reserv.dataloader.component.TenantDataSourceProvider;
 import com.reserv.dataloader.entity.InstrumentAttribute;
 import lombok.extern.slf4j.Slf4j;

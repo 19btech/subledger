@@ -1,15 +1,5 @@
 package com.reserv.dataloader.datasource.accounting.rule;
 
-import com.reserv.dataloader.service.AggregateUploadService;
-import com.reserv.dataloader.service.AttributesUploadService;
-import com.reserv.dataloader.service.TransactionsUploadService;
-import com.reserv.dataloader.service.UploadService;
-import org.springframework.beans.factory.annotation.Autowired;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Arrays;
-
 public enum AccountingRules {
     TRANSACIONS("transactions.csv"),
     ATTRIBUTES("attributes.csv"),

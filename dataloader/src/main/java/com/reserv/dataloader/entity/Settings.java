@@ -13,7 +13,7 @@ import java.util.Date;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Document(collection = "Settrings")
+@Document(collection = "Settings")
 public class Settings {
     @Id
     private String id;
@@ -21,6 +21,6 @@ public class Settings {
     private String glamFields;
     private Date fiscalPeriodStartDate;
     private Date reportingPeriod;
-    private boolean isRestatementMode;
-
+    private int restatementMode;
+    private int lastTransactionActivityUploadReportingPeriod;
 }
