@@ -35,6 +35,6 @@ public class CacheService {
         // this.instrumentAttributeService.loadIntoCache();
         this.attributeLevelAggregationService.loadIntoCache();
         this.instrumentLevelAggregationService.loadIntoCache();
-        this.metricLevelAggregationService.loadIntoCache();
+        // this.metricLevelAggregationService.loadIntoCache();
     }
 }

@@ -91,11 +91,7 @@ public class AttributeLevelAggregationService extends CacheBasedService<Attribut
                         if(attributeLevelLtd.getAccountingPeriodId() == accountingPeriod) {
                             memcachedRepository.putInCache(key.getKey(), attributeLevelLtd, 3456000);
                         }else {
-                            AttributeLevelLtd mlLtd1 = AttributeLevelLtd.builder()
-                                    .accountingPeriodId(accountingPeriod)
-                                    .metricName(attributeLevelLtd.getMetricName())
-                                    .balance(attributeLevelLtd.getBalance()).build();
-                            memcachedRepository.putInCache(key.getKey(), mlLtd1, 3456000);
+                            memcachedRepository.putInCache(key.getKey(), attributeLevelLtd, 3456000);
                         }
                     }
                     instrumentList.add(key.getKey());
@@ -104,7 +100,7 @@ public class AttributeLevelAggregationService extends CacheBasedService<Attribut
             }
         }
         if(this.memcachedRepository.ifExists(Key.allAttributeLevelLtdKeyList(tenantId))) {
-            Future<Boolean> future = this.memcachedRepository.replaceInCache(Key.allAttributeLevelLtdKeyList(tenantId), instrumentList);
+            Future<Boolean> future = this.memcachedRepository.putInCache(Key.allAttributeLevelLtdKeyList(tenantId), instrumentList);
         }else {
             Future<Boolean> future = this.memcachedRepository.putInCache(Key.allAttributeLevelLtdKeyList(tenantId), instrumentList);
         }

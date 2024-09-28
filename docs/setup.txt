@@ -1,0 +1,22 @@
+#mongodb container
+docker pull mongo
+docker run -d --name mongodb -p 27017:27017 -e MONGO_INITDB_ROOT_USERNAME=root -e MONGO_INITDB_ROOT_PASSWORD=R3s3rv#313 mongo
+#Create database using MongoDB compass
+master
+#Create a document name as
+Tenant
+#Insert following testing data
+{
+  "_id": ObjectId(),
+  "name": "TOne",
+}
+
+{
+  "_id": ObjectId(),
+  "name": "TTwo",
+}
+
+#memcached container
+docker pull memcached
+docker run -d --name memcached -p 11211:11211 memcached
+

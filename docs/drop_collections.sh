@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # MongoDB container name or ID
-CONTAINER_NAME="reserv-mongo-container"
+CONTAINER_NAME="mongodb"
 
 # MongoDB database name
 DB_NAME="TOne"

@@ -39,6 +39,9 @@ public class AttributeLevelAggregator extends BaseAggregator {
 
         try {
             allAttributeLevelInstruments = this.memcachedRepository.getFromCache(Key.allAttributeLevelLtdKeyList(tenantId), Set.class);
+            if(allAttributeLevelInstruments == null) {
+                allAttributeLevelInstruments = new HashSet<>(0);
+            }
         } catch (Exception e) {
             log.error("Failed to load allAttributeLevelInstruments from cache", e);
             throw new RuntimeException("Initialization failed", e);
@@ -89,6 +92,7 @@ public class AttributeLevelAggregator extends BaseAggregator {
         log.info("Generating carry over aggregate entries");
         //For remaining instruments that have no activity so we will create
         //a carry over entry for those instruments
+
         Iterator<String> instrumentIteratror = allAttributeLevelInstruments.iterator();
         Set<AttributeLevelLtd> carryOvers = new HashSet<>(0);
         while(instrumentIteratror.hasNext()) {
@@ -186,7 +190,7 @@ public class AttributeLevelAggregator extends BaseAggregator {
                 double beginningBalance = 0.0d;
                 boolean ifPreviousLtdExists = Boolean.FALSE;
                 if (previousLtd != null) {
-                    beginningBalance = previousLtd.getBalance().getBeginningBalance() + previousLtd.getBalance().getActivity();
+                    beginningBalance = previousLtd.getBalance().getEndingBalance();
                     ifPreviousLtdExists = Boolean.TRUE;
                 }
 
@@ -195,9 +199,11 @@ public class AttributeLevelAggregator extends BaseAggregator {
                         beginningBalance = +currentLtd.getBalance().getBeginningBalance() + currentLtd.getBalance().getActivity();
                         currentLtd.getBalance().setBeginningBalance(0);
                         currentLtd.getBalance().setActivity(beginningBalance + activity.getValue());
+                        currentLtd.getBalance().setEndingBalance(beginningBalance + activity.getValue());
                     } else {
                         currentLtd.getBalance().setBeginningBalance(beginningBalance);
                         currentLtd.getBalance().setActivity(currentLtd.getBalance().getActivity() + activity.getValue());
+                        currentLtd.getBalance().setEndingBalance(beginningBalance + currentLtd.getBalance().getActivity());
                     }
                     balances.add(currentLtd);
                 } else {

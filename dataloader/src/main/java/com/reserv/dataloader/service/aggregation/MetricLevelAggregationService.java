@@ -1,6 +1,5 @@
 package com.reserv.dataloader.service.aggregation;
 
-import com.reserv.dataloader.config.ReferenceData;
 import com.reserv.dataloader.entity.MetricLevelLtd;
 import com.reserv.dataloader.entity.Settings;
 import com.reserv.dataloader.key.MetricLevelLtdKey;
@@ -20,6 +19,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Metric Level aggregation service
+ */
 @Service
 public class MetricLevelAggregationService extends CacheBasedService<MetricLevelLtd> {
     private final SettingsService settingsService;
@@ -32,7 +34,10 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
     }
 
 
-    
+    /**
+     * persists object
+     * @param metricLevelLtd
+     */
     @Override
     public void save(MetricLevelLtd metricLevelLtd) {
         this.dataService.save(metricLevelLtd);
@@ -41,11 +46,18 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
 
     }
 
+    /**
+     * get all data
+     * @return
+     */
     @Override
     public List<MetricLevelLtd> fetchAll() {
         return dataService.fetchAllData(MetricLevelLtd.class);
     }
 
+    /**
+     * Load data into cache
+     */
     @Override
     public void loadIntoCache() {
         Settings s = this.settingsService.fetch();
@@ -53,6 +65,11 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
         this.loadIntoCache(lastActivityUploadAccountingPeriod, this.dataService.getTenantId());
     }
 
+    /**
+     * Load data into cache
+     * @param accountingPeriod
+     * @param tenantId
+     */
     public void loadIntoCache(int accountingPeriod, String tenantId) {
         int chunkSize = 10000;
         int pageNumber = 0;

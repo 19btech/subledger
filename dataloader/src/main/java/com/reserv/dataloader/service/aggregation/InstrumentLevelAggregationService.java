@@ -1,6 +1,5 @@
 package com.reserv.dataloader.service.aggregation;
 
-import com.reserv.dataloader.config.ReferenceData;
 import com.reserv.dataloader.entity.InstrumentLevelLtd;
 import com.reserv.dataloader.entity.Settings;
 import com.reserv.dataloader.key.InstrumentLevelLtdKey;
@@ -18,6 +17,7 @@ import org.springframework.stereotype.Service;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Future;
 
 @Service
 public class InstrumentLevelAggregationService extends CacheBasedService<InstrumentLevelLtd> {
@@ -74,8 +74,8 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
         Set<String> instrumentList = new HashSet<>();
         while (hasMore) {
             Query query = new Query().limit(chunkSize).skip(pageNumber * chunkSize);
-            query.addCriteria(Criteria.where("periodId").gte(accountingPeriod));
-            query.with(Sort.by(Sort.Direction.DESC, "periodId"));
+            query.addCriteria(Criteria.where("accountingPeriodId").gte(accountingPeriod));
+            query.with(Sort.by(Sort.Direction.DESC, "accountingPeriodId"));
             List<InstrumentLevelLtd> chunk = dataService.fetchData(query, InstrumentLevelLtd.class);
             if (chunk.isEmpty()) {
                 hasMore = false;
@@ -91,19 +91,19 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
                         if(instrumentLevelLtd.getAccountingPeriodId() == accountingPeriod) {
                             memcachedRepository.putInCache(key.getKey(), instrumentLevelLtd, 3456000);
                         }else {
-                            InstrumentLevelLtd mlLtd1 = InstrumentLevelLtd.builder()
-                                    .accountingPeriodId(accountingPeriod)
-                                    .metricName(instrumentLevelLtd.getMetricName())
-                                    .balance(instrumentLevelLtd.getBalance()).build();
-                            memcachedRepository.putInCache(key.getKey(), mlLtd1, 3456000);
+                            memcachedRepository.putInCache(key.getKey(), instrumentLevelLtd, 3456000);
                         }
                     }
+                    instrumentList.add(key.getKey());
                 }
                 pageNumber++;
             }
         }
-
-        this.memcachedRepository.putInCache(Key.allInstrumentLevelLtdKeyList(tenantId), instrumentList);
+        if(this.memcachedRepository.ifExists(Key.allInstrumentLevelLtdKeyList(tenantId))) {
+            Future<Boolean> future = this.memcachedRepository.putInCache(Key.allInstrumentLevelLtdKeyList(tenantId), instrumentList);
+        }else {
+            Future<Boolean> future = this.memcachedRepository.putInCache(Key.allInstrumentLevelLtdKeyList(tenantId), instrumentList);
+        }
     }
 
 }

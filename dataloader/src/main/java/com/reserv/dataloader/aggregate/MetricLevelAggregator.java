@@ -40,6 +40,9 @@ public class MetricLevelAggregator  extends BaseAggregator {
 
         try {
             allMetricLevelInstruments = this.memcachedRepository.getFromCache(Key.allMetricLevelLtdKeyList(tenantId), Set.class);
+            if(allMetricLevelInstruments == null) {
+                allMetricLevelInstruments = new HashSet<>(0);
+            }
         } catch (Exception e) {
             log.error("Failed to load allMetricLevelInstruments from cache", e);
             throw new RuntimeException("Initialization failed", e);
@@ -90,6 +93,7 @@ public class MetricLevelAggregator  extends BaseAggregator {
         log.info("Generating carry over aggregate entries");
         //For remaining instruments that have no activity so we will create
         //a carry over entry for those instruments
+
         Iterator<String> instrumentIteratror = allMetricLevelInstruments.iterator();
         Set<MetricLevelLtd> carryOvers = new HashSet<>(0);
         while(instrumentIteratror.hasNext()) {
@@ -193,9 +197,11 @@ public class MetricLevelAggregator  extends BaseAggregator {
                         beginningBalance = +currentLtd.getBalance().getBeginningBalance() + currentLtd.getBalance().getActivity();
                         currentLtd.getBalance().setBeginningBalance(0);
                         currentLtd.getBalance().setActivity(beginningBalance + activity.getValue());
+                        currentLtd.getBalance().setEndingBalance(beginningBalance + activity.getValue());
                     }else {
                         currentLtd.getBalance().setBeginningBalance(beginningBalance);
                         currentLtd.getBalance().setActivity(currentLtd.getBalance().getActivity() + activity.getValue());
+                        currentLtd.getBalance().setEndingBalance(beginningBalance + currentLtd.getBalance().getActivity());
                     }
 
                     balances.add(currentLtd);
