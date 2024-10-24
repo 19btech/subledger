@@ -9,7 +9,7 @@ group = 'com.fyntrac'
 version = '0.0.1-SNAPSHOT'
 
 def gituser = '19btech'  // Your GitHub username
-def gittoken = "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" // Ensure you set this in your environment variables for security
+def gittoken = "" // Ensure you set this in your environment variables for security
 
 java {
 	toolchain {

@@ -11,7 +11,7 @@ version = '0.0.1-SNAPSHOT'
 def projectname = 'dataloader'
 
 def gituser = '19btech'  // Your GitHub username
-def gittoken = "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"  // Set your GitHub token here
+def gittoken = ""  // Set your GitHub token here
 
 java {
 	toolchain {
