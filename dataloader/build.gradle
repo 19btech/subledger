@@ -10,8 +10,8 @@ group = 'com.reserv'
 version = '0.0.1-SNAPSHOT'
 def projectname = 'dataloader'
 
-def gituser = '19btech'  // Your GitHub username
-def gittoken = ""  // Set your GitHub token here
+def gituser = System.getenv("GIT_USER")  // Your GitHub username
+def gittoken = System.getenv("GIT_KEY") // Ensure you set this in your environment variables for security
 
 java {
 	toolchain {
