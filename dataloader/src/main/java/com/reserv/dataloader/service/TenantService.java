@@ -1,6 +1,6 @@
 package com.reserv.dataloader.service;
 
-import com.reserv.dataloader.entity.Tenant;
+import com.fyntrac.common.entity.Tenant;
 import com.reserv.dataloader.repository.TenantRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

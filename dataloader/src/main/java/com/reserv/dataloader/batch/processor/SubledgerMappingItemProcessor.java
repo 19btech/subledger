@@ -1,6 +1,6 @@
 package com.reserv.dataloader.batch.processor;
 
-import com.reserv.dataloader.entity.SubledgerMapping;
+import com.fyntrac.common.entity.SubledgerMapping;
 import org.springframework.batch.item.ItemProcessor;
 
 public class SubledgerMappingItemProcessor implements ItemProcessor<SubledgerMapping,SubledgerMapping> {

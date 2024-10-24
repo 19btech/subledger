@@ -1,6 +1,6 @@
 package com.reserv.dataloader.controller;
 
-import com.reserv.dataloader.entity.ChartOfAccount;
+import com.fyntrac.common.entity.ChartOfAccount;
 import com.reserv.dataloader.service.DataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

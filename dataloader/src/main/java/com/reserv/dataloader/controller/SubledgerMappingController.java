@@ -1,6 +1,6 @@
 package com.reserv.dataloader.controller;
 
-import com.reserv.dataloader.entity.SubledgerMapping;
+import com.fyntrac.common.entity.SubledgerMapping;
 import com.reserv.dataloader.service.DataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

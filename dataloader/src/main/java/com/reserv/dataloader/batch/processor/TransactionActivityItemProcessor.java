@@ -1,6 +1,6 @@
 package com.reserv.dataloader.batch.processor;
 
-import com.reserv.dataloader.entity.TransactionActivity;
+import com.fyntrac.common.entity.TransactionActivity;
 import org.springframework.batch.item.ItemProcessor;
 
 public class TransactionActivityItemProcessor implements ItemProcessor<TransactionActivity,TransactionActivity> {

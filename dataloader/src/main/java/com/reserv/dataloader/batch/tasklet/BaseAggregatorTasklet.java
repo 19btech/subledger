@@ -1,6 +1,6 @@
 package com.reserv.dataloader.batch.tasklet;
 
-import com.reserv.dataloader.entity.AggregationRequest;
+import com.fyntrac.common.entity.AggregationRequest;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import com.reserv.dataloader.service.DataService;
 import com.reserv.dataloader.service.AggregationRequestService;

@@ -1,7 +1,7 @@
 package com.reserv.dataloader.service.aggregation;
 
-import com.reserv.dataloader.entity.InstrumentLevelLtd;
-import com.reserv.dataloader.entity.Settings;
+import com.fyntrac.common.entity.InstrumentLevelLtd;
+import com.fyntrac.common.entity.Settings;
 import com.reserv.dataloader.key.InstrumentLevelLtdKey;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import com.reserv.dataloader.service.CacheBasedService;

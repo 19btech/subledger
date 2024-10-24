@@ -1,6 +1,6 @@
 package com.reserv.dataloader.batch.mapper;
 
-import com.reserv.dataloader.entity.InstrumentAttribute;
+import com.fyntrac.common.entity.InstrumentAttribute;
 import org.springframework.batch.item.file.mapping.FieldSetMapper;
 import org.springframework.batch.item.file.transform.FieldSet;
 import org.springframework.validation.BindException;

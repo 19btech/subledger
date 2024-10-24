@@ -1,6 +1,6 @@
 package com.reserv.dataloader.service;
 
-import com.reserv.dataloader.entity.Attributes;
+import com.fyntrac.common.entity.Attributes;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.query.Criteria;

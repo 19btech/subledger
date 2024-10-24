@@ -1,7 +1,7 @@
 package com.reserv.dataloader.service.upload;
 
 import com.reserv.dataloader.config.TenantContextHolder;
-import com.reserv.dataloader.datasource.accounting.rule.AccountingRules;
+import com.fyntrac.common.enums.AccountingRules;
 import com.reserv.subledger.utils.FileUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;

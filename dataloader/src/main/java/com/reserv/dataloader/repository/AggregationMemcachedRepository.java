@@ -1,6 +1,6 @@
 package com.reserv.dataloader.repository;
 
-import com.reserv.dataloader.entity.Aggregation;
+import com.fyntrac.common.entity.Aggregation;
 import net.spy.memcached.MemcachedClient;
 import org.springframework.batch.item.Chunk;
 import org.springframework.stereotype.Repository;

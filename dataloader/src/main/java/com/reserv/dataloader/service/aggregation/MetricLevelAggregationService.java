@@ -1,7 +1,7 @@
 package com.reserv.dataloader.service.aggregation;
 
-import com.reserv.dataloader.entity.MetricLevelLtd;
-import com.reserv.dataloader.entity.Settings;
+import com.fyntrac.common.entity.MetricLevelLtd;
+import com.fyntrac.common.entity.Settings;
 import com.reserv.dataloader.key.MetricLevelLtdKey;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import com.reserv.dataloader.service.CacheBasedService;

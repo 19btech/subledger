@@ -1,9 +1,9 @@
 package com.reserv.dataloader.service;
 
 import com.reserv.dataloader.config.TenantContextHolder;
-import com.reserv.dataloader.datasource.accounting.rule.AggregationRequestType;
-import com.reserv.dataloader.entity.AggregationQueue;
-import com.reserv.dataloader.entity.AggregationRequest;
+import com.fyntrac.common.enums.AggregationRequestType;
+import com.fyntrac.common.entity.AggregationQueue;
+import com.fyntrac.common.entity.AggregationRequest;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

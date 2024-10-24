@@ -1,6 +1,6 @@
 package com.reserv.dataloader.aggregate;
 
-import com.reserv.dataloader.entity.TransactionActivity;
+import com.fyntrac.common.entity.TransactionActivity;
 
 import java.util.List;
 

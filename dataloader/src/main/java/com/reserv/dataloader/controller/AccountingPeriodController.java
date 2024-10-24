@@ -1,7 +1,6 @@
 package com.reserv.dataloader.controller;
 
-import com.reserv.dataloader.entity.AccountingPeriod;
-import com.reserv.dataloader.entity.Settings;
+import com.fyntrac.common.entity.AccountingPeriod;
 import com.reserv.dataloader.records.RecordFactory;
 import com.reserv.dataloader.records.Records;
 import com.reserv.dataloader.service.AccountingPeriodService;

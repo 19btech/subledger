@@ -1,6 +1,6 @@
 package com.reserv.dataloader.records;
 
-import com.reserv.dataloader.entity.AccountingPeriod;
+import com.fyntrac.common.entity.AccountingPeriod;
 import org.springframework.stereotype.Component;
 import com.reserv.dataloader.records.Records.AccountingPeriodRecord;
 import java.util.function.Supplier;

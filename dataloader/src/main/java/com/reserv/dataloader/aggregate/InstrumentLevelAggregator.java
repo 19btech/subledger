@@ -1,15 +1,15 @@
 package com.reserv.dataloader.aggregate;
 
-import com.reserv.dataloader.entity.InstrumentLevelLtd;
-import com.reserv.dataloader.entity.TransactionActivity;
-import com.reserv.dataloader.entity.BaseLtd;
-import com.reserv.dataloader.entity.Settings;
-import com.reserv.dataloader.entity.AccountingPeriod;
+import com.fyntrac.common.entity.InstrumentLevelLtd;
+import com.fyntrac.common.entity.TransactionActivity;
+import com.fyntrac.common.entity.BaseLtd;
+import com.fyntrac.common.entity.Settings;
+import com.fyntrac.common.entity.AccountingPeriod;
 import com.reserv.dataloader.key.InstrumentLevelLtdKey;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import com.reserv.dataloader.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
-import com.reserv.dataloader.utils.DateUtil;
+import com.fyntrac.common.utils.DateUtil;
 import com.reserv.dataloader.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 

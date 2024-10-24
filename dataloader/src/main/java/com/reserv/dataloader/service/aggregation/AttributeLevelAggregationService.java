@@ -1,8 +1,7 @@
 package com.reserv.dataloader.service.aggregation;
 
-import com.reserv.dataloader.config.ReferenceData;
-import com.reserv.dataloader.entity.AttributeLevelLtd;
-import com.reserv.dataloader.entity.Settings;
+import com.fyntrac.common.entity.AttributeLevelLtd;
+import com.fyntrac.common.entity.Settings;
 import com.reserv.dataloader.key.AttributeLevelLtdKey;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import com.reserv.dataloader.service.CacheBasedService;

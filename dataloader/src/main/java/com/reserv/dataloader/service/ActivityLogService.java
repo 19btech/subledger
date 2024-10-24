@@ -1,22 +1,16 @@
 package com.reserv.dataloader.service;
 
-import com.reserv.dataloader.datasource.accounting.rule.AccountingRules;
-import com.reserv.dataloader.datasource.accounting.rule.FileUploadActivityType;
-import com.reserv.dataloader.entity.ActivityLog;
-import com.reserv.dataloader.entity.Attributes;
+import com.fyntrac.common.enums.FileUploadActivityType;
+import com.fyntrac.common.entity.ActivityLog;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.aggregation.SortOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
-import java.util.List;
 
-import static org.springframework.data.mongodb.core.aggregation.SortOperation.*;
 
 @Service
 @Slf4j

@@ -1,6 +1,5 @@
 package com.reserv.dataloader.batch.listener;
 
-import com.reserv.dataloader.entity.ActivityLog;
 import com.reserv.dataloader.repository.ActivityLogRepo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

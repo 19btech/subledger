@@ -1,7 +1,7 @@
 package com.reserv.dataloader.batch.listener;
 
-import com.reserv.dataloader.datasource.accounting.rule.AggregationRequestType;
-import com.reserv.dataloader.entity.AggregationRequest;
+import com.fyntrac.common.enums.AggregationRequestType;
+import com.fyntrac.common.entity.AggregationRequest;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import com.reserv.dataloader.service.AggregationRequestService;
 import lombok.extern.slf4j.Slf4j;

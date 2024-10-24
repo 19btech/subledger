@@ -2,10 +2,8 @@ package com.reserv.dataloader.batch.writer;
 
 import com.reserv.dataloader.component.TenantDataSourceProvider;
 import com.reserv.dataloader.config.TenantContextHolder;
-import com.reserv.dataloader.entity.Aggregation;
-import com.reserv.dataloader.entity.Transactions;
+import com.fyntrac.common.entity.Aggregation;
 import com.reserv.dataloader.repository.AggregationMemcachedRepository;
-import com.reserv.dataloader.repository.MemcachedRepository;
 import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;

@@ -1,7 +1,7 @@
 package com.reserv.dataloader.config;
 
 import com.reserv.dataloader.component.TenantDataSourceProvider;
-import com.reserv.dataloader.entity.Tenant;
+import com.fyntrac.common.entity.Tenant;
 import com.reserv.dataloader.service.TenantService;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -5,7 +5,7 @@ import com.reserv.dataloader.batch.processor.AggregateItemProcessor;
 import com.reserv.dataloader.batch.writer.AggregationItemWriter;
 import com.reserv.dataloader.config.TenantContextHolder;
 import com.reserv.dataloader.component.TenantDataSourceProvider;
-import com.reserv.dataloader.entity.Aggregation;
+import com.fyntrac.common.entity.Aggregation;
 import com.reserv.dataloader.repository.AggregationMemcachedRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;

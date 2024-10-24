@@ -1,7 +1,6 @@
 package com.reserv.dataloader.batch.processor;
 
-import com.reserv.dataloader.entity.Aggregation;
-import com.reserv.dataloader.entity.Attributes;
+import com.fyntrac.common.entity.Aggregation;
 import org.springframework.batch.item.ItemProcessor;
 
 public class AggregateItemProcessor implements ItemProcessor<Aggregation,Aggregation> {

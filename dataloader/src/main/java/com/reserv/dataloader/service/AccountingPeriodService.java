@@ -2,8 +2,8 @@ package com.reserv.dataloader.service;
 
 import com.reserv.dataloader.accounting.AccountingPeriodGenerator;
 import com.reserv.dataloader.config.ReferenceData;
-import com.reserv.dataloader.entity.AccountingPeriod;
-import com.reserv.dataloader.entity.Settings;
+import com.fyntrac.common.entity.AccountingPeriod;
+import com.fyntrac.common.entity.Settings;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import com.reserv.dataloader.utils.Key;
 import lombok.extern.slf4j.Slf4j;

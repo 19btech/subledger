@@ -1,8 +1,8 @@
 plugins {
 	id 'java'
 	id 'maven-publish'
-	id 'org.springframework.boot' version '3.2.4'
-	id 'io.spring.dependency-management' version '1.1.4'
+	id 'org.springframework.boot' version '3.3.4'
+	id 'io.spring.dependency-management' version '1.1.6'
 	id 'com.bmuschko.docker-java-application' version '8.1.0'
 }
 
@@ -55,6 +55,13 @@ docker {
 
 repositories {
 	mavenCentral()  // Central Maven repository
+	maven {
+		url = uri("https://maven.pkg.github.com/${gituser}/subledger")  // Use an environment variable for username
+		credentials {
+			username = gituser  // Use the variable for username
+			password = gittoken  // Use the variable for token
+		}
+	}
 }
 
 dependencies {
@@ -62,6 +69,8 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-pulsar'
+	implementation 'com.fyntrac:commons:0.0.1-SNAPSHOT'
 	implementation 'org.apache.poi:poi:5.2.3'
 	implementation 'org.apache.poi:poi-ooxml:5.2.3'
 	implementation 'org.apache.commons:commons-lang3:3.12.0'

@@ -1,6 +1,5 @@
 package com.reserv.dataloader.service;
 
-import com.reserv.dataloader.entity.Aggregation;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import lombok.Getter;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -1,11 +1,9 @@
 package com.reserv.dataloader.batch.processor;
 
 
-import com.reserv.dataloader.entity.ChartOfAccount;
-import com.reserv.dataloader.utils.DateUtil;
+import com.fyntrac.common.entity.ChartOfAccount;
 import org.springframework.batch.item.ItemProcessor;
 
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 

@@ -1,9 +1,6 @@
 package com.reserv.dataloader.controller;
 
-import com.reserv.dataloader.accounting.AccountingPeriodGenerator;
-import com.reserv.dataloader.entity.Settings;
-import com.reserv.dataloader.entity.Transactions;
-import com.reserv.dataloader.service.DataService;
+import com.fyntrac.common.entity.Settings;
 import com.reserv.dataloader.service.SettingsService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -2,9 +2,9 @@ package com.reserv.dataloader.batch.writer;
 
 import com.reserv.dataloader.component.TenantDataSourceProvider;
 import com.reserv.dataloader.config.TenantContextHolder;
-import com.reserv.dataloader.datasource.accounting.rule.EntryType;
-import com.reserv.dataloader.datasource.accounting.rule.Sign;
-import com.reserv.dataloader.entity.SubledgerMapping;
+import com.fyntrac.common.enums.EntryType;
+import com.fyntrac.common.enums.Sign;
+import com.fyntrac.common.entity.SubledgerMapping;
 import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;

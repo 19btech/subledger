@@ -6,7 +6,7 @@ import com.reserv.dataloader.batch.processor.InstrumentAttributeItemProcessor;
 import com.reserv.dataloader.batch.writer.InstrumentAttributeWriter;
 import com.reserv.dataloader.config.TenantContextHolder;
 import com.reserv.dataloader.component.TenantDataSourceProvider;
-import com.reserv.dataloader.entity.InstrumentAttribute;
+import com.fyntrac.common.entity.InstrumentAttribute;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;

@@ -5,9 +5,9 @@ import com.reserv.dataloader.batch.processor.AttributesItemProcessor;
 import com.reserv.dataloader.batch.writer.AttributeItemWriter;
 import com.reserv.dataloader.config.TenantContextHolder;
 import com.reserv.dataloader.component.TenantDataSourceProvider;
-import com.reserv.dataloader.datasource.accounting.rule.DataType;
-import com.reserv.dataloader.entity.Attributes;
-import com.reserv.dataloader.utils.StringUtil;
+import com.fyntrac.common.enums.DataType;
+import com.fyntrac.common.entity.Attributes;
+import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
@@ -77,6 +77,7 @@ public class AttributesDataLoadConfig {
     }
 
     @Bean
+
     public ItemProcessor<Attributes, Attributes> attributeItemProcessor() {
         return new AttributesItemProcessor();
     }

@@ -1,7 +1,6 @@
 package com.reserv.dataloader.controller;
 
-import com.reserv.dataloader.entity.AccountTypes;
-import com.reserv.dataloader.entity.ActivityLog;
+import com.fyntrac.common.entity.ActivityLog;
 import com.reserv.dataloader.service.ActivityLogService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

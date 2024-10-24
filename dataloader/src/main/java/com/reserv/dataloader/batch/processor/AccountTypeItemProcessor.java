@@ -1,7 +1,6 @@
 package com.reserv.dataloader.batch.processor;
 
-import com.reserv.dataloader.entity.AccountTypes;
-import com.reserv.dataloader.entity.Aggregation;
+import com.fyntrac.common.entity.AccountTypes;
 import org.springframework.batch.item.ItemProcessor;
 
 public class AccountTypeItemProcessor implements ItemProcessor<AccountTypes,AccountTypes> {

@@ -1,7 +1,6 @@
 package com.reserv.dataloader.batch.processor;
 
-import com.reserv.dataloader.entity.Attributes;
-import com.reserv.dataloader.entity.Transactions;
+import com.fyntrac.common.entity.Attributes;
 import org.springframework.batch.item.ItemProcessor;
 
 public class AttributesItemProcessor implements ItemProcessor<Attributes,Attributes> {
