@@ -42,7 +42,7 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
     @Override
     public void loadIntoCache() {
 
-            AccountingPeriod previoudAccountingPeriod = getPreviousAccountingPeriod();
+            AccountingPeriod previoudAccountingPeriod = getLastClosedAccountingPeriod();
             AccountingPeriod currentAccountingPeriod = getCurrentAccountingPeriod();
             int currentAccountingPeriodId = currentAccountingPeriod == null ? 0 : currentAccountingPeriod.getPeriodId();
             int previousAccountingPeriodId = previoudAccountingPeriod == null ? 0 : previoudAccountingPeriod.getPeriodId();
@@ -73,7 +73,7 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
 
         this.memcachedRepository.putInCache(Key.accountingPeriodKey(this.dataService.getTenantId()), this.getAccountingPeriodsMap());
     }
-    private AccountingPeriod getCurrentAccountingPeriod() {
+    public AccountingPeriod getCurrentAccountingPeriod() {
         Query query = new Query();
         query.addCriteria(Criteria.where("status").is(0));
         query.with(Sort.by(Sort.Direction.ASC, "periodId"));
@@ -86,7 +86,7 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
     }
 
     private Map<String, AccountingPeriod> getAccountingPeriodsMap() {
-        List<AccountingPeriod> accountingPeriods = getAccountingPeriods();
+        Collection<AccountingPeriod> accountingPeriods = getAccountingPeriods();
         Map<String, AccountingPeriod> accountingPeriodMap = new HashMap<>();
         for(AccountingPeriod ap : accountingPeriods) {
             accountingPeriodMap.put(ap.getPeriod(), ap);
@@ -94,10 +94,19 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
         return accountingPeriodMap;
     }
 
-    private List<AccountingPeriod> getAccountingPeriods() {
+    public Collection<AccountingPeriod> getAccountingPeriods() {
+        List<AccountingPeriod> accountingPeriods =  this.getAccountingPeriods(Sort.Direction.ASC, 0);
+        if(accountingPeriods == null || accountingPeriods.isEmpty()) {
+            return null;
+        }
+        return accountingPeriods;
+    }
+
+
+    private List<AccountingPeriod> getAccountingPeriods(Sort.Direction sortDirection, int status) {
         Query query = new Query();
-        query.addCriteria(Criteria.where("status").is(0));
-        query.with(Sort.by(Sort.Direction.ASC, "periodId"));
+        query.addCriteria(Criteria.where("status").is(status));
+        query.with(Sort.by(sortDirection, "periodId"));
         List<AccountingPeriod> accountingPeriods =  dataService.fetchData(query, AccountingPeriod.class);
         if(accountingPeriods == null || accountingPeriods.isEmpty()) {
             return null;
@@ -105,7 +114,7 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
         return accountingPeriods;
     }
 
-    private AccountingPeriod getPreviousAccountingPeriod() {
+    public AccountingPeriod getLastClosedAccountingPeriod() {
         Query query = new Query();
         query.addCriteria(Criteria.where("status").is(1));
         query.with(Sort.by(Sort.Direction.DESC, "periodId"));
@@ -119,6 +128,7 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
 
     public Collection<AccountingPeriod> generateAccountingPeriod(Settings s) throws ParseException {
         AccountingPeriodGenerator accountingPeriodGenerator = new AccountingPeriodGenerator();
+        this.dataService.truncateCollection(AccountingPeriod.class);
         Set<AccountingPeriod> accountingPeriods = accountingPeriodGenerator.generate(s.getFiscalPeriodStartDate());
 
         return dataService.saveAll(accountingPeriods, AccountingPeriod.class);
@@ -129,6 +139,12 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
         dataService.update(new Query(Criteria.where("status").is(1)), update, AccountingPeriod.class);
     }
 
+    public void closeAccountingPeriod(int accountingPeriodId) {
+        Update update = new Update().set("status", 1);
+        Criteria criteria = Criteria.where("status").is(0);
+        criteria.and("periodId").lte(accountingPeriodId);
+        dataService.update(new Query(criteria), update, AccountingPeriod.class);
+    }
     public void reopenAccountingPeriods(String accountingPeriod) {
         Update update = new Update().set("status", 0);
         String[] ap = accountingPeriod.split("-");
@@ -142,11 +158,23 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
     }
 
     public Collection<String> getClosedAccountingPeriods() {
-        Sort sort = Sort.by(Sort.Direction.ASC, "startDate");
-        Query query = new Query(Criteria.where("status").is(1)).with(sort).limit(1);
-        query.fields().include("period");
-        List<AccountingPeriod> accountingPeriods = dataService.fetchData(query, AccountingPeriod.class);
-        return accountingPeriods.stream().map(AccountingPeriod::getPeriod).collect(Collectors.toList());
-    }
+        // Define sorting criteria based on 'periodId'
+        Sort sort = Sort.by(Sort.Direction.DESC, "periodId");
 
+        // Define the query to fetch accounting periods with status 1 and sorted by periodId
+        Query query = new Query(Criteria.where("status").is(1))
+                .with(sort)
+                .limit(1);
+
+        // Include the fields you need in the query (e.g., "period" and "year" or another field)
+        query.fields().include("fiscalPeriod").include("year");  // Add the second field here (e.g., "year")
+
+        // Fetch the data from the dataService
+        List<AccountingPeriod> accountingPeriods = dataService.fetchData(query, AccountingPeriod.class);
+
+        // Concatenate the 'period' and 'year' fields, or any two fields
+        return accountingPeriods.stream()
+                .map(period -> period.getYear() + " / " + period.getFiscalPeriod())  // Concatenate the two fields
+                .collect(Collectors.toList());
+    }
 }

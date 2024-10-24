@@ -67,15 +67,17 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
             for(TransactionActivity transactionActivity:activity) {
                 String accountingPeriod = DateUtil.getAccountingPeriod(transactionActivity.getTransactionDate());
                 AccountingPeriod effectiveAccountingPeriod =  accountingPeriodMap.get(accountingPeriod);
+
                 if(effectiveAccountingPeriod != null){
                     if(effectiveAccountingPeriod.getStatus() !=0) {
                         transactionActivity.setPeriodId(referenceData.getCurrentAccountingPeriodId());
                     }else{
                         transactionActivity.setPeriodId(effectiveAccountingPeriod.getPeriodId());
                     }
-
+                    transactionActivity.setOriginalPeriodId(effectiveAccountingPeriod.getPeriodId());
                 }else {
                     transactionActivity.setPeriodId(referenceData.getCurrentAccountingPeriodId());
+                    transactionActivity.setOriginalPeriodId(referenceData.getCurrentAccountingPeriodId());
                 }
                 keyList.add(tenantContextHolder.getTenant() + "TA" + transactionActivity.hashCode());
                 this.memcachedRepository.putInCache(tenantContextHolder.getTenant() + "TA" + transactionActivity.hashCode(), transactionActivity);

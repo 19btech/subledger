@@ -1,5 +1,6 @@
 package com.reserv.dataloader.service;
 
+import com.mongodb.client.result.UpdateResult;
 import com.reserv.dataloader.config.TenantContextHolder;
 import com.reserv.dataloader.component.TenantDataSourceProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -101,10 +102,10 @@ public class DataService<T> {
         return mongoTemplate.find(query, documentClass);
     }
 
-    public void update(Query query, Update update, Class<T> documentClass) {
+    public UpdateResult update(Query query, Update update, Class<T> documentClass) {
         String tenant = tenantContextHolder.getTenant();
         MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
-        mongoTemplate.updateMulti(query, update, documentClass);
+        return mongoTemplate.updateMulti(query, update, documentClass);
     }
 
     public void truncateDatabase() {
@@ -114,6 +115,13 @@ public class DataService<T> {
         for (String collectionName : collectionNames) {
             mongoTemplate.getDb().getCollection(collectionName).drop();
         }
+    }
+
+    public void truncateCollection(Class<T> collection) {
+        String tenant = tenantContextHolder.getTenant();
+        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
+        String collectionName = mongoTemplate.getCollectionName(collection);
+        mongoTemplate.getCollection(collectionName).drop();
     }
 
     public String getTenantId() {

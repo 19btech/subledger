@@ -29,6 +29,7 @@ public class TransactionActivity  implements Serializable {
     double value;
     String attributeId;
     int periodId;
+    int originalPeriodId;
 
     @Override
     public String toString() {
@@ -40,6 +41,7 @@ public class TransactionActivity  implements Serializable {
         json.append("\"transactionName\":\"").append(transactionName).append("\",");
         json.append("\"value\":\"").append(value).append("\",");
         json.append("\"attributeId\":\"").append(attributeId).append("\",");
+        json.append("\"originalPeriodId\":\"").append(originalPeriodId).append("\",");
         json.append("}");
         return json.toString();
     }
@@ -68,6 +70,7 @@ public class TransactionActivity  implements Serializable {
                 Objects.equals(transactionDate, that.transactionDate) &&
                 Objects.equals(instrumentId, that.instrumentId) &&
                 Objects.equals(transactionName, that.transactionName) &&
-                Objects.equals(attributeId, that.attributeId);
+                Objects.equals(attributeId, that.attributeId) &&
+                Objects.equals(originalPeriodId,that.originalPeriodId);
     }
 }

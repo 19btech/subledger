@@ -1,0 +1,30 @@
+services:
+  mongodb:
+      image: mongo:latest
+      container_name: mongodb
+      environment:
+        MONGO_INITDB_ROOT_USERNAME: root
+        MONGO_INITDB_ROOT_PASSWORD: R3s3rv#313
+        MONGO_INITDB_DATABASE: master  # Specifies the initial database
+      volumes:
+            - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js
+      ports:
+        - "27017:27017"  # Exposing the MongoDB port
+
+  memcached:
+      image: memcached:latest
+      container_name: memcached
+      ports:
+        - "11211:11211"
+  dataloader:
+    image: 19btech/dataloader:latest
+    container_name: fyntrac-dataloader
+    working_dir: /dataloader  # Set the working directory in the container
+    ports:
+      - "8089:8089"  # Map the port (adjust as needed)
+    entrypoint: ["java", "-cp", "/app/resources:/app/classes:/app/libs/*", "com.reserv.dataloader.DataloaderApplication"]  # Command to run the jar file
+    environment:
+      - SPRING_PROFILES_ACTIVE=test # Command to run the jar file
+    depends_on:
+      - mongodb
+      - memcached

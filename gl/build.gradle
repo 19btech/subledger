@@ -1,0 +1,73 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.3.4'
+	id 'io.spring.dependency-management' version '1.1.6'
+	id 'maven-publish'
+}
+
+group = 'com.fyntrac'
+version = '0.0.1-SNAPSHOT'
+
+def gituser = '19btech'  // Your GitHub username
+def gittoken = "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" // Ensure you set this in your environment variables for security
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+publishing {
+	publications {
+		mavenJava(MavenPublication) {
+			from components.java  // Publish the Java component
+			groupId = 'com.fyntrac'  // Set your group ID
+			artifactId = 'commons'    // Set your artifact ID
+			version = project.version  // Set your version
+
+		}
+	}
+	repositories {
+		maven {
+			url = uri("https://maven.pkg.github.com/${gituser}/subledger")  // Use an environment variable for username
+			credentials {
+				username = gituser  // Use the variable for username
+				password = gittoken  // Use the variable for token
+			}
+		}
+	}
+}
+
+repositories {
+	mavenCentral()
+	maven {
+		url = uri("https://maven.pkg.github.com/${gituser}/subledger")  // Use an environment variable for username
+		credentials {
+			username = gituser  // Use the variable for username
+			password = gittoken  // Use the variable for token
+		}
+	}
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-pulsar'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'com.fyntrac:commons:0.0.1-SNAPSHOT'
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.junit.jupiter:junit-jupiter-api'  // Explicit declaration
+	testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'   // Explicit declaration
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}

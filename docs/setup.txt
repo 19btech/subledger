@@ -1,3 +1,16 @@
+pub   rsa3072 2024-10-18 [SC]
+      53C2083AFE4F545846050BE905E7FA4051C5EE30
+uid                      uabbas (Development) <uabbas@19btech.com>
+sub   rsa3072 2024-10-18 [E]
+
+#gradle commands
+gradle clean build
+gradle publish
+gradle dockerBuildImage
+gradle dockerCreateDockerfile
+gradle dockerPushImage [docker tag com.reserv/dataloader:0.0.1-snapshot 19btech/dataloader:latest, docker push 19btech/dataloader:latest]
+gradle dockerSyncBuildContext
+gradle tasks //if you are unsure about the task name
 #mongodb container
 docker pull mongo
 docker run -d --name mongodb -p 27017:27017 -e MONGO_INITDB_ROOT_USERNAME=root -e MONGO_INITDB_ROOT_PASSWORD=R3s3rv#313 mongo
@@ -20,3 +33,80 @@ Tenant
 docker pull memcached
 docker run -d --name memcached -p 11211:11211 memcached
 
+#pulsar container
+docker pull apachepulsar/pulsar:latest
+docker run -it -p 6650:6650 -p 8082:8082 apachepulsar/pulsar:latest bin/pulsar standalone
+
+
+#container implementation 
+create a file having name of bkvm.conf
+then copy following line into bkvm.conf
+##Start
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Change this to true in order to start BKVM
+bkvm.enabled=false
+
+# BookKeeper Connection
+# Default value zk+null://127.0.0.1:2181/ledgers works for Pulsar Standalone
+metadataServiceUri=zk+null://127.0.0.1:2181/ledgers
+
+# Refresh BK metadata at boot.
+# BK metadata are not scanned automatically in BKVM, you have to request it from the UI
+metdata.refreshAtBoot=true
+
+# HerdDB database connection, not to be changed if you are running embedded HerdDB in Pulsar Manager
+# If you are using PostGRE SQL you will have to change this configuration
+# We want to use the HerdDB database started by PulsarManager itself, by default BKVM wants to start its one database
+jdbc.url=jdbc:herddb:localhost:7000?server.mode=standalone&server.start=false
+jdbc.startDatabase=false
+server.mode=standalone
+server.start=false
+
+##End
+
+docker pull apachepulsar/pulsar:latest
+docker run -d -it \
+    -p 6650:6650 \
+    -p 8080:8080 \
+    -v pulsardata:/pulsar/data \
+    -v pulsarconf:/pulsar/conf \
+	-v pulsarconf:/pulsar/tools \
+    --name pulsar-standalone \
+    apachepulsar/pulsar:latest \
+    bin/pulsar standalone
+	
+docker pull apachepulsar/pulsar-manager:latest
+docker run -it \
+    -p 9527:9527 -p 7750:7750 \
+    -e SPRING_CONFIGURATION_FILE=/pulsar-manager/pulsar-manager/application.properties \
+    -v $PWD/bkvm.conf:/pulsar-manager/pulsar-manager/bkvm.conf \
+    --link pulsar-standalone \
+    apachepulsar/pulsar-manager:latest
+	
+#wait for about 20 seconds then execute following commands
+
+CSRF_TOKEN=$(curl http://localhost:7750/pulsar-manager/csrf-token)
+
+curl -X PUT http://localhost:7750/pulsar-manager/users/superuser \
+  -H "X-XSRF-TOKEN: $CSRF_TOKEN" \
+  -H "Cookie: XSRF-TOKEN=$CSRF_TOKEN;" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "name": "admin",
+        "password": "R3s3rv#313",
+        "description": "Dev",
+        "email": "uabbas@19btech.com"
+      }'	

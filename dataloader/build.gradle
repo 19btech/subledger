@@ -1,14 +1,22 @@
 plugins {
 	id 'java'
+	id 'maven-publish'
 	id 'org.springframework.boot' version '3.2.4'
 	id 'io.spring.dependency-management' version '1.1.4'
+	id 'com.bmuschko.docker-java-application' version '8.1.0'
 }
 
 group = 'com.reserv'
 version = '0.0.1-SNAPSHOT'
+def projectname = 'dataloader'
+
+def gituser = '19btech'  // Your GitHub username
+def gittoken = "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"  // Set your GitHub token here
 
 java {
-	sourceCompatibility = '17'
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
 }
 
 configurations {
@@ -17,8 +25,36 @@ configurations {
 	}
 }
 
+publishing {
+	publications {
+		mavenJava(MavenPublication) {
+			from components.java  // Publish the Java component
+			groupId = 'com.reserv'  // Set your group ID
+			artifactId = 'dataloader'  // Set your artifact ID
+			version = project.version  // Set your version
+		}
+	}
+	repositories {
+		maven {
+			url = uri("https://maven.pkg.github.com/${gituser}/subledger")  // Use the variable for username
+			credentials {
+				username = gituser  // Use the variable for username
+				password = gittoken  // Use the variable for token
+			}
+		}
+	}
+}
+
+docker {
+	javaApplication {
+		baseImage = 'openjdk:17-jdk-alpine'
+		mainClassName = 'com.reserv.dataloader.DataloaderApplication' // Corrected property name
+		ports = [8089] // Specify any ports your application uses
+	}
+}
+
 repositories {
-	mavenCentral()
+	mavenCentral()  // Central Maven repository
 }
 
 dependencies {
@@ -44,4 +80,14 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+tasks.register('pushDockerImage') {
+	dependsOn dockerBuildImage // Ensure the image is built before pushing
+	doLast {
+		def imageName = 'fyntrac/dataloader:0.0.1-snapshot'
+		def processBuilder = new ProcessBuilder('docker', 'push', imageName)
+		processBuilder.redirectErrorStream(true) // Redirect error stream to output stream
+		def process = processBuilder.start()
+	}
 }

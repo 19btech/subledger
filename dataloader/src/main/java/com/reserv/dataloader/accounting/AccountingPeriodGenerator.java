@@ -61,7 +61,7 @@ public class AccountingPeriodGenerator {
         Date pDate =  DateUtil.convertDateToIST(periodDate);
         int month = DateUtil.getMonthForDate(pDate) + 1;
         int year = DateUtil.getYearForDate(pDate);
-
+        String formattedMonth = String.format("%02d", period);
         Date nexMonthDate  = DateUtil.convertDateToIST(DateUtil.incrementMonth(pDate,1));
         return AccountingPeriod.builder()
                 .startDate(pDate)
@@ -70,7 +70,7 @@ public class AccountingPeriodGenerator {
                 .days(DateUtil.compareDays(DateUtil.incrementMonth(pDate,1),pDate))
                 .endDate(nexMonthDate)
                 .fiscalPeriod(period)
-                .periodId(Integer.parseInt(fiscalYear + "" + period))
+                .periodId(Integer.parseInt(fiscalYear + formattedMonth))
                 .period(fiscalYear + "-" + period).build();
     }
 

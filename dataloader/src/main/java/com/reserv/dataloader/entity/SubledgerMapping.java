@@ -15,7 +15,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @AllArgsConstructor
 @NoArgsConstructor
 @Document(collection = "SubledgerMapping")
-public class SubledgerMapping {
+public class SubledgerMapping implements Cloneable {
 
     @Id
     private String id;
@@ -35,5 +35,14 @@ public class SubledgerMapping {
         json.append("\"accountSubType\":\"").append(accountSubType).append("\",");
         json.append("}");
         return json.toString();
+    }
+
+    @Override
+    public SubledgerMapping clone() {
+        try {
+            return (SubledgerMapping) super.clone();
+        } catch (CloneNotSupportedException e) {
+            throw new AssertionError(); // Should never happen since we are Cloneable
+        }
     }
 }
