@@ -1,4 +1,4 @@
-package com.reserv.subledger.utils;
+package com.fyntrac.common.utils;
 
 import  com.fyntrac.common.enums.AccountingRules;
 import com.reserv.dataloader.exception.ExcelFormulaCellException;

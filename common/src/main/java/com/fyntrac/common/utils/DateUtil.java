@@ -1,4 +1,4 @@
-package com.reserv.dataloader.utils;
+package com.fyntrac.common.utils;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;

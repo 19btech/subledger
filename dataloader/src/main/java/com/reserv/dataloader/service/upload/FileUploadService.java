@@ -2,7 +2,7 @@ package com.reserv.dataloader.service.upload;
 
 import  com.fyntrac.common.config.TenantContextHolder;
 import  com.fyntrac.common.enums.AccountingRules;
-import com.reserv.subledger.utils.FileUtil;
+import com.fyntrac.common.utils.FileUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.springframework.beans.factory.annotation.Autowired;

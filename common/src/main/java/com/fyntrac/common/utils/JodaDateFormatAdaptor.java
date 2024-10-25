@@ -1,4 +1,4 @@
-package com.reserv.dataloader.utils;
+package com.fyntrac.common.utils;
 
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
