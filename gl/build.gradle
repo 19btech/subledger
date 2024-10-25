@@ -8,8 +8,8 @@ plugins {
 group = 'com.fyntrac'
 version = '0.0.1-SNAPSHOT'
 
-def gituser = System.getenv("GIT_USER")  // Your GitHub username
-def gittoken = System.getenv("GIT_KEY") // Ensure you set this in your environment variables for security
+def gituser = System.getenv('GIT_USER')  // Your GitHub username
+def gittoken = System.getenv('GIT_KEY') // Ensure you set this in your environment variables for security
 
 java {
 	toolchain {

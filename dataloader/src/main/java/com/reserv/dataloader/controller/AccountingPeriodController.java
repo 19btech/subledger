@@ -1,8 +1,9 @@
 package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.entity.AccountingPeriod;
-import com.reserv.dataloader.records.RecordFactory;
-import com.reserv.dataloader.records.Records;
+import com.fyntrac.common.entity.Settings;
+import com.fyntrac.common.dto.record.RecordFactory;
+import com.fyntrac.common.dto.record.Records;
 import com.reserv.dataloader.service.AccountingPeriodService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,7 +16,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
-import com.reserv.dataloader.records.Records.AccountingPeriodRecord;
+import com.fyntrac.common.dto.record.Records.AccountingPeriodRecord;
 
 @Slf4j
 @RestController

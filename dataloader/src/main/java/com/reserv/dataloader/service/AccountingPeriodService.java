@@ -1,7 +1,7 @@
 package com.reserv.dataloader.service;
 
 import com.reserv.dataloader.accounting.AccountingPeriodGenerator;
-import com.reserv.dataloader.config.ReferenceData;
+import  com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.Settings;
 import com.reserv.dataloader.repository.MemcachedRepository;

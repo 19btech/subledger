@@ -1,6 +1,6 @@
 package com.reserv.dataloader.service.upload;
 
-import com.fyntrac.common.enums.FileUploadActivityType;
+import  com.fyntrac.common.enums.FileUploadActivityType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParametersInvalidException;

@@ -1,14 +1,17 @@
 package com.reserv.dataloader.aggregate;
 
-import com.reserv.dataloader.config.ReferenceData;
-import com.fyntrac.common.entity.TransactionActivity;
-import com.fyntrac.common.entity.Aggregation;
+import  com.fyntrac.common.config.ReferenceData;
+import com.fyntrac.common.entity.*;
+import com.reserv.dataloader.key.AggregationLtdKey;
+import com.reserv.dataloader.key.AttributeLevelLtdKey;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import com.reserv.dataloader.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public abstract class BaseAggregator implements Aggregator {
     protected final MemcachedRepository memcachedRepository;

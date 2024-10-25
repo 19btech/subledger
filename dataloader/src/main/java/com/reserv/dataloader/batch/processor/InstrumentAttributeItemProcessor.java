@@ -1,7 +1,7 @@
 package com.reserv.dataloader.batch.processor;
 
 import com.fyntrac.common.entity.InstrumentAttribute;
-import com.fyntrac.common.utils.DateUtil;
+import com.reserv.dataloader.utils.DateUtil;
 import org.springframework.batch.item.ItemProcessor;
 
 import java.util.Date;

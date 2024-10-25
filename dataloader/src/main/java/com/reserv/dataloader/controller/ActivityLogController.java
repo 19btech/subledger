@@ -1,5 +1,6 @@
 package com.reserv.dataloader.controller;
 
+import com.fyntrac.common.entity.AccountTypes;
 import com.fyntrac.common.entity.ActivityLog;
 import com.reserv.dataloader.service.ActivityLogService;
 import lombok.extern.slf4j.Slf4j;

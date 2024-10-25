@@ -1,7 +1,7 @@
 package com.reserv.dataloader.batch.tasklet;
 
 import com.reserv.dataloader.aggregate.MetricLevelAggregator;
-import com.fyntrac.common.enums.AggregationRequestType;
+import  com.fyntrac.common.enums.AggregationRequestType;
 import com.fyntrac.common.entity.AggregationRequest;
 import com.fyntrac.common.entity.TransactionActivityList;
 import com.reserv.dataloader.repository.MemcachedRepository;

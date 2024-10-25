@@ -1,7 +1,7 @@
 package com.reserv.dataloader.service;
 
-import com.reserv.dataloader.config.TenantContextHolder;
-import com.fyntrac.common.enums.AggregationRequestType;
+import  com.fyntrac.common.config.TenantContextHolder;
+import  com.fyntrac.common.enums.AggregationRequestType;
 import com.fyntrac.common.entity.AggregationQueue;
 import com.fyntrac.common.entity.AggregationRequest;
 import com.reserv.dataloader.repository.MemcachedRepository;

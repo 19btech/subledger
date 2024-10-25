@@ -1,4 +1,4 @@
-package com.reserv.dataloader.config;
+package  com.fyntrac.common.config;
 
 import org.springframework.context.annotation.*;
 import org.springframework.web.cors.*;

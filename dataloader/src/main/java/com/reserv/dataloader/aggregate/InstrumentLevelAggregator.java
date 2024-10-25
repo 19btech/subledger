@@ -9,7 +9,7 @@ import com.reserv.dataloader.key.InstrumentLevelLtdKey;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import com.reserv.dataloader.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
-import com.fyntrac.common.utils.DateUtil;
+import com.reserv.dataloader.utils.DateUtil;
 import com.reserv.dataloader.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 

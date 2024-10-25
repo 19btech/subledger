@@ -1,4 +1,4 @@
-package com.reserv.dataloader.config;
+package  com.fyntrac.common.config;
 
 import com.reserv.dataloader.filter.TenantFilter;
 import com.reserv.dataloader.service.DataService;

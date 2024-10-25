@@ -1,7 +1,7 @@
 package com.reserv.dataloader.batch.writer;
 
-import com.reserv.dataloader.config.TenantContextHolder;
-import com.reserv.dataloader.component.TenantDataSourceProvider;
+import  com.fyntrac.common.config.TenantContextHolder;
+import  com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.Transactions;
 import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;

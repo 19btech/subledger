@@ -1,8 +1,8 @@
 package com.reserv.dataloader.service;
 
 import com.mongodb.client.result.UpdateResult;
-import com.reserv.dataloader.config.TenantContextHolder;
-import com.reserv.dataloader.component.TenantDataSourceProvider;
+import  com.fyntrac.common.config.TenantContextHolder;
+import  com.fyntrac.common.component.TenantDataSourceProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;

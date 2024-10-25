@@ -3,11 +3,12 @@ package com.reserv.dataloader.batch.config;
 
 import com.reserv.dataloader.batch.listener.JobCompletionNotificationListener;
 import com.reserv.dataloader.batch.processor.SubledgerMappingItemProcessor;
+import com.reserv.dataloader.batch.writer.GenericItemWriterAdapter;
 import com.reserv.dataloader.batch.writer.SubledgerMappingWriter;
-import com.reserv.dataloader.config.TenantContextHolder;
-import com.reserv.dataloader.component.TenantDataSourceProvider;
-import com.fyntrac.common.enums.EntryType;
-import com.fyntrac.common.enums.Sign;
+import  com.fyntrac.common.config.TenantContextHolder;
+import  com.fyntrac.common.component.TenantDataSourceProvider;
+import  com.fyntrac.common.enums.EntryType;
+import  com.fyntrac.common.enums.Sign;
 import com.fyntrac.common.entity.SubledgerMapping;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;

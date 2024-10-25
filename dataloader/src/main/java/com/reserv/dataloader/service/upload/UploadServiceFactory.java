@@ -1,6 +1,6 @@
 package com.reserv.dataloader.service.upload;
 
-import com.fyntrac.common.enums.AccountingRules;
+import  com.fyntrac.common.enums.AccountingRules;
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;

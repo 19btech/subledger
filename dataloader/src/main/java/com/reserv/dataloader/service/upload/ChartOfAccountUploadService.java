@@ -1,9 +1,9 @@
 package com.reserv.dataloader.service.upload;
 
-import com.fyntrac.common.enums.FileUploadActivityType;
+import  com.fyntrac.common.enums.FileUploadActivityType;
 import com.fyntrac.common.entity.Attributes;
 import com.reserv.dataloader.service.AttributeService;
-import com.fyntrac.common.utils.DateUtil;
+import com.reserv.dataloader.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParameters;

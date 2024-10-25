@@ -1,6 +1,6 @@
 package com.reserv.dataloader.batch.listener;
 
-import com.fyntrac.common.enums.AggregationRequestType;
+import  com.fyntrac.common.enums.AggregationRequestType;
 import com.fyntrac.common.entity.AggregationRequest;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import com.reserv.dataloader.service.AggregationRequestService;

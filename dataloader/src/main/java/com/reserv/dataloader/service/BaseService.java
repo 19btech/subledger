@@ -1,5 +1,6 @@
 package com.reserv.dataloader.service;
 
+import com.fyntrac.common.entity.Aggregation;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import lombok.Getter;
 import org.springframework.beans.factory.annotation.Autowired;

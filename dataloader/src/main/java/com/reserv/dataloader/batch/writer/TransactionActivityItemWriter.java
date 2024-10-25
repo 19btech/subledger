@@ -1,13 +1,13 @@
 package com.reserv.dataloader.batch.writer;
 
-import com.reserv.dataloader.component.TenantDataSourceProvider;
-import com.reserv.dataloader.config.ReferenceData;
-import com.reserv.dataloader.config.TenantContextHolder;
+import  com.fyntrac.common.component.TenantDataSourceProvider;
+import  com.fyntrac.common.config.ReferenceData;
+import  com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.entity.TransactionActivityList;
 import com.reserv.dataloader.repository.MemcachedRepository;
-import com.fyntrac.common.utils.DateUtil;
+import com.reserv.dataloader.utils.DateUtil;
 import com.reserv.dataloader.utils.Key;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.StepContribution;

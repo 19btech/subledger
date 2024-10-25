@@ -1,14 +1,14 @@
 package com.reserv.dataloader.service.upload;
 
-import com.fyntrac.common.enums.AggregationRequestType;
-import com.fyntrac.common.enums.FileUploadActivityType;
+import  com.fyntrac.common.enums.AggregationRequestType;
+import  com.fyntrac.common.enums.FileUploadActivityType;
 import com.fyntrac.common.entity.AggregationRequest;
 import com.reserv.dataloader.service.AccountingPeriodService;
 import com.reserv.dataloader.service.AggregationRequestService;
 import com.reserv.dataloader.service.CacheService;
 import com.reserv.dataloader.service.TransactionActivityService;
 import com.reserv.dataloader.service.aggregation.AggregationService;
-import com.fyntrac.common.utils.DateUtil;
+import com.reserv.dataloader.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParameters;

@@ -1,5 +1,6 @@
 package com.reserv.dataloader.service;
 
+import com.fyntrac.common.entity.Attributes;
 import com.fyntrac.common.entity.ChartOfAccount;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

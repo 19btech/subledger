@@ -1,6 +1,6 @@
 package com.reserv.dataloader.filter;
 
-import com.reserv.dataloader.config.TenantContextHolder;
+import  com.fyntrac.common.config.TenantContextHolder;
 import com.reserv.dataloader.exception.TenantNotFoundException;
 import com.reserv.dataloader.service.DataService;
 import jakarta.servlet.*;

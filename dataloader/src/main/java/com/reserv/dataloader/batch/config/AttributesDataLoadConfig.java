@@ -3,11 +3,11 @@ package com.reserv.dataloader.batch.config;
 import com.reserv.dataloader.batch.listener.JobCompletionNotificationListener;
 import com.reserv.dataloader.batch.processor.AttributesItemProcessor;
 import com.reserv.dataloader.batch.writer.AttributeItemWriter;
-import com.reserv.dataloader.config.TenantContextHolder;
-import com.reserv.dataloader.component.TenantDataSourceProvider;
-import com.fyntrac.common.enums.DataType;
+import  com.fyntrac.common.config.TenantContextHolder;
+import  com.fyntrac.common.component.TenantDataSourceProvider;
+import  com.fyntrac.common.enums.DataType;
 import com.fyntrac.common.entity.Attributes;
-import com.fyntrac.common.utils.StringUtil;
+import com.reserv.dataloader.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
@@ -77,7 +77,6 @@ public class AttributesDataLoadConfig {
     }
 
     @Bean
-
     public ItemProcessor<Attributes, Attributes> attributeItemProcessor() {
         return new AttributesItemProcessor();
     }
