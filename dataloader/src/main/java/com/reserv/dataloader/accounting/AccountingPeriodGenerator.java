@@ -1,7 +1,7 @@
 package com.reserv.dataloader.accounting;
 
 import com.fyntrac.common.entity.AccountingPeriod;
-import com.reserv.dataloader.utils.DateUtil;
+import com.fyntrac.common.utils.DateUtil;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 

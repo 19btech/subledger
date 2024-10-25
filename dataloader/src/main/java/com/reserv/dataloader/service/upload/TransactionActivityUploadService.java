@@ -8,7 +8,7 @@ import com.reserv.dataloader.service.AggregationRequestService;
 import com.reserv.dataloader.service.CacheService;
 import com.reserv.dataloader.service.TransactionActivityService;
 import com.reserv.dataloader.service.aggregation.AggregationService;
-import com.reserv.dataloader.utils.DateUtil;
+import com.fyntrac.common.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParameters;

@@ -5,7 +5,7 @@ import  com.fyntrac.common.enums.FileUploadActivityType;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.ActivityLog;
 import com.fyntrac.common.entity.Settings;
-import com.reserv.dataloader.utils.DateUtil;
+import com.fyntrac.common.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;

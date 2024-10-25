@@ -7,7 +7,7 @@ import  com.fyntrac.common.config.TenantContextHolder;
 import  com.fyntrac.common.component.TenantDataSourceProvider;
 import  com.fyntrac.common.enums.DataType;
 import com.fyntrac.common.entity.Attributes;
-import com.reserv.dataloader.utils.StringUtil;
+import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;

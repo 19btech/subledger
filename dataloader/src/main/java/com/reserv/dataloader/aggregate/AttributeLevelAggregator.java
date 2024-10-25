@@ -5,8 +5,8 @@ import com.reserv.dataloader.key.AttributeLevelLtdKey;
 import com.reserv.dataloader.repository.MemcachedRepository;
 import com.reserv.dataloader.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
-import com.reserv.dataloader.utils.DateUtil;
-import com.reserv.dataloader.utils.Key;
+import com.fyntrac.common.utils.DateUtil;
+import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;

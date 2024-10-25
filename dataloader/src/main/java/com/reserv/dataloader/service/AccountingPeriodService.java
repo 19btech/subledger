@@ -5,7 +5,7 @@ import  com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.Settings;
 import com.reserv.dataloader.repository.MemcachedRepository;
-import com.reserv.dataloader.utils.Key;
+import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;

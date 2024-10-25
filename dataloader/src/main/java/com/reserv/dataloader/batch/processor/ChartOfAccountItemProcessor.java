@@ -2,7 +2,7 @@ package com.reserv.dataloader.batch.processor;
 
 
 import com.fyntrac.common.entity.ChartOfAccount;
-import com.reserv.dataloader.utils.DateUtil;
+import com.fyntrac.common.utils.DateUtil;
 import org.springframework.batch.item.ItemProcessor;
 
 import java.util.Date;
