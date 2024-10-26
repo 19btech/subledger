@@ -7,6 +7,7 @@ public class Records {
     public record AccountingPeriodRecord(int periodId, String period, int fiscalPeriod, int year, int status) {
     }
 
+    public record GeneralLedgerMessageRecord(String tenantId, String dataKey){}
     public record TransactionActivityRecord(
             String tenantId,
             String id,
