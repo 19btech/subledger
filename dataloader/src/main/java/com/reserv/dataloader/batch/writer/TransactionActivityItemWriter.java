@@ -6,7 +6,7 @@ import  com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.entity.TransactionActivityList;
-import com.reserv.dataloader.repository.MemcachedRepository;
+import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
 import org.springframework.batch.core.JobParameters;

@@ -32,6 +32,10 @@ public class RecordFactory {
         }
     }
 
+    public static Records.GeneralLedgerMessageRecord createGeneralLedgerMessageRecord(String tenantId, String dataKey){
+        return createRecord(()->new Records.GeneralLedgerMessageRecord(tenantId, dataKey));
+    }
+
     public static Records.TransactionActivityRecord createTransactionActivityRecord(TransactionActivity transactionActivity, String tenantId){
         return createRecord(() -> new Records.TransactionActivityRecord(
                 tenantId,

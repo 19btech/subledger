@@ -10,7 +10,7 @@ import  com.fyntrac.common.config.TenantContextHolder;
 import  com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.MetricLevelLtd;
 import com.fyntrac.common.entity.TransactionActivity;
-import com.reserv.dataloader.repository.MemcachedRepository;
+import com.fyntrac.common.repository.MemcachedRepository;
 import com.reserv.dataloader.service.DataService;
 import com.reserv.dataloader.service.AggregationRequestService;
 import com.reserv.dataloader.service.SettingsService;

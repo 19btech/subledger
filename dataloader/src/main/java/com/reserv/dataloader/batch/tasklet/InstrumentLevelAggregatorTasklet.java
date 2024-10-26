@@ -4,7 +4,7 @@ import com.reserv.dataloader.aggregate.InstrumentLevelAggregator;
 import  com.fyntrac.common.enums.AggregationRequestType;
 import com.fyntrac.common.entity.AggregationRequest;
 import com.fyntrac.common.entity.TransactionActivityList;
-import com.reserv.dataloader.repository.MemcachedRepository;
+import com.fyntrac.common.repository.MemcachedRepository;
 import com.reserv.dataloader.service.DataService;
 import com.reserv.dataloader.service.AggregationRequestService;
 import com.reserv.dataloader.service.SettingsService;

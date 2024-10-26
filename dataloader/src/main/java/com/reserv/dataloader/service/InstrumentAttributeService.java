@@ -2,7 +2,7 @@ package com.reserv.dataloader.service;
 
 import  com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.InstrumentAttribute;
-import com.reserv.dataloader.repository.MemcachedRepository;
+import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

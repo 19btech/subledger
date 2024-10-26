@@ -2,7 +2,7 @@ package com.reserv.dataloader.aggregate;
 
 import com.fyntrac.common.entity.*;
 import com.reserv.dataloader.key.AttributeLevelLtdKey;
-import com.reserv.dataloader.repository.MemcachedRepository;
+import com.fyntrac.common.repository.MemcachedRepository;
 import com.reserv.dataloader.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
 import com.fyntrac.common.utils.DateUtil;
@@ -75,14 +75,7 @@ public class AttributeLevelAggregator extends BaseAggregator {
             log.error("Failed to generate carry over aggregate entries", e);
         }
 
-       // Set last accounting period of transaction activity upload
-        try {
-            Settings settings = this.settingsService.fetch(this.tenantId);
-            settings.setLastTransactionActivityUploadReportingPeriod(lastTransactionActitvityAccountingPeriod);
-            this.dataService.saveObject(settings, this.tenantId);
-        } catch (Exception e) {
-            log.error("Failed to update settings with the last transaction activity upload reporting period", e);
-        }
+
     }
 
     /**

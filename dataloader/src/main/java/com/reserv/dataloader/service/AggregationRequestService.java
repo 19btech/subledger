@@ -4,7 +4,7 @@ import  com.fyntrac.common.config.TenantContextHolder;
 import  com.fyntrac.common.enums.AggregationRequestType;
 import com.fyntrac.common.entity.AggregationQueue;
 import com.fyntrac.common.entity.AggregationRequest;
-import com.reserv.dataloader.repository.MemcachedRepository;
+import com.fyntrac.common.repository.MemcachedRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

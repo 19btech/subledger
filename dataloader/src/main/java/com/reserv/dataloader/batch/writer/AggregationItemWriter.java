@@ -5,7 +5,7 @@ import  com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.entity.Aggregation;
 import com.fyntrac.common.entity.Transactions;
 import com.reserv.dataloader.repository.AggregationMemcachedRepository;
-import com.reserv.dataloader.repository.MemcachedRepository;
+import com.fyntrac.common.repository.MemcachedRepository;
 import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;

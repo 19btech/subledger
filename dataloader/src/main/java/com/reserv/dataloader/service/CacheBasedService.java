@@ -1,6 +1,6 @@
 package com.reserv.dataloader.service;
 
-import com.reserv.dataloader.repository.MemcachedRepository;
+import com.fyntrac.common.repository.MemcachedRepository;
 
 public abstract class CacheBasedService<T> extends BaseService<T>{
 

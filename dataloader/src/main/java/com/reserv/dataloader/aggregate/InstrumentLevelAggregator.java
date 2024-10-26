@@ -6,7 +6,7 @@ import com.fyntrac.common.entity.BaseLtd;
 import com.fyntrac.common.entity.Settings;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.reserv.dataloader.key.InstrumentLevelLtdKey;
-import com.reserv.dataloader.repository.MemcachedRepository;
+import com.fyntrac.common.repository.MemcachedRepository;
 import com.reserv.dataloader.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
 import com.fyntrac.common.utils.DateUtil;
@@ -74,15 +74,6 @@ public class InstrumentLevelAggregator extends BaseAggregator {
             this.generateCarryOverAggregateEntries();
         } catch (Exception e) {
             log.error("Failed to generate carry over aggregate entries", e);
-        }
-
-        // Set last accounting period of transaction activity upload
-        try {
-            Settings settings = this.settingsService.fetch(this.tenantId);
-            settings.setLastTransactionActivityUploadReportingPeriod(lastTransactionActitvityAccountingPeriod);
-            this.dataService.saveObject(settings, this.tenantId);
-        } catch (Exception e) {
-            log.error("Failed to update settings with the last transaction activity upload reporting period", e);
         }
     }
 

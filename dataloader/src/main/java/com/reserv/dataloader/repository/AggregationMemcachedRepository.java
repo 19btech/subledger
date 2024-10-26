@@ -4,6 +4,7 @@ import com.fyntrac.common.entity.Aggregation;
 import net.spy.memcached.MemcachedClient;
 import org.springframework.batch.item.Chunk;
 import org.springframework.stereotype.Repository;
+import com.fyntrac.common.repository.MemcachedRepository;
 
 import java.util.ArrayList;
 import java.util.List;

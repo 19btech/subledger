@@ -18,22 +18,6 @@ import java.util.List;
 public class TenantDatabaseConfig  extends TenantDatasourceConfig{
     private final TenantService tenantService;
 
-    @Value("${spring.data.mongodb.uri}")
-    private String defaultMongoUri;
-
-    @Value("${spring.data.mongodb.host}")
-    private String dbHost;
-    @Value("${spring.data.mongodb.port}")
-    private String dbPort;
-    @Value("${spring.data.mongodb.database}")
-    private String defaultDB;
-    @Value("${spring.data.mongodb.username}")
-    private String userName;
-    @Value("${spring.data.mongodb.password}")
-    private String pswd;
-    @Value("${spring.data.mongodb.authentication-database}")
-    private String authDB;
-
     @Autowired
     public TenantDatabaseConfig(TenantService tenantService
                                 , TenantDataSourceProvider tenantDataSourceProvider

@@ -2,10 +2,12 @@ package com.reserv.dataloader.service;
 
 import  com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.TransactionActivity;
-import com.reserv.dataloader.repository.MemcachedRepository;
+import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
@@ -60,4 +62,19 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
         return new HashSet<>(instrumentIds);
     }
 
+    public int getLastAccountingPeriodId(String tenantId) {
+        // Fetch the MongoTemplate for the specified tenant
+        MongoTemplate mongoTemplate = this.dataService.getMongoTemplate(tenantId);
+
+        // Create a query to find the maximum periodId
+        Query query = new Query();
+        query.with(Sort.by(Sort.Direction.DESC, "periodId")); // Sort by periodId in descending order
+        query.limit(1); // Limit the result to only one document
+
+        // Execute the query to get the result
+        TransactionActivity result = mongoTemplate.findOne(query, TransactionActivity.class);
+
+        // Return the periodId or 0 if no result is found
+        return result != null ? result.getPeriodId() : 0;
+    }
 }

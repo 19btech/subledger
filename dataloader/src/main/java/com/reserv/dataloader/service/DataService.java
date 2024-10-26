@@ -26,6 +26,14 @@ public class DataService<T> {
         this.tenantContextHolder = tenantContextHolder;
     }
 
+    public MongoTemplate getMongoTemplate() {
+        return this.dataSourceProvider.getDataSource(this.tenantContextHolder.getTenant());
+    }
+
+    public MongoTemplate getMongoTemplate(String tenantId) {
+        return this.dataSourceProvider.getDataSource(tenantId);
+    }
+
     public T save(T data) {
         String tenant = tenantContextHolder.getTenant();
        return this.save(data, tenant);

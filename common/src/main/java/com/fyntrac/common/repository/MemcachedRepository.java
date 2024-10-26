@@ -1,11 +1,12 @@
-package com.reserv.dataloader.repository;
+package com.fyntrac.common.repository;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.batch.item.Chunk;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 import net.spy.memcached.MemcachedClient;
 import net.spy.memcached.internal.OperationFuture;
+
+import java.util.List;
 
 @Repository
 @Slf4j
@@ -46,7 +47,7 @@ public class MemcachedRepository {
     }
 
     public <T>  OperationFuture<Boolean> replaceInCache(String key, T object) {
-            return this.replaceInCache(key,object, 0);
+        return this.replaceInCache(key,object, 0);
     }
 
     public <T> OperationFuture<Boolean> appendInCache(String key, T object) {
@@ -76,7 +77,7 @@ public class MemcachedRepository {
             throw new RuntimeException(e);
         }
     }
-    public <T> void putInCache(String tenantId, Chunk<? extends T>items) {
+    public <T> void putInCache(String tenantId, List<? extends T> items) {
         for(Object item : items) {
             putInCache(tenantId + item.hashCode(), item);
         }
@@ -95,6 +96,6 @@ public class MemcachedRepository {
     }
 
     public void delete(String key) {
-     memcachedClient.delete(key);
+        memcachedClient.delete(key);
     }
 }
