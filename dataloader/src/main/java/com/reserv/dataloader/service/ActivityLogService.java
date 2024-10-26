@@ -12,6 +12,7 @@ import org.springframework.data.mongodb.core.aggregation.SortOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
+import com.fyntrac.common.service.DataService;
 
 import java.util.Collection;
 import java.util.List;

@@ -1,4 +1,4 @@
-package com.reserv.dataloader.service;
+package com.fyntrac.common.service;
 
 import com.mongodb.client.result.UpdateResult;
 import  com.fyntrac.common.config.TenantContextHolder;
@@ -36,7 +36,7 @@ public class DataService<T> {
 
     public T save(T data) {
         String tenant = tenantContextHolder.getTenant();
-       return this.save(data, tenant);
+        return this.save(data, tenant);
     }
 
     public Object saveObject(Object data) {

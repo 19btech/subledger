@@ -86,7 +86,7 @@ public class AccountTypeDataLoadConfig {
 
         DefaultLineMapper<AccountTypes> defaultLineMapper = new DefaultLineMapper<>();
         DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
-        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID","ACCOUNTTYPE","ACCOUNTSUBTYPE"});
+        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID","ACCOUNTSUBTYPE","ACCOUNTTYPE"});
         defaultLineMapper.setLineTokenizer(lineTokenizer);
         defaultLineMapper.setFieldSetMapper(new FieldSetMapper<AccountTypes>() {
             @Override
@@ -94,9 +94,10 @@ public class AccountTypeDataLoadConfig {
                 AccountTypes accountType = new AccountTypes();
                 accountType.setAccountSubType(fieldSet.readString("ACCOUNTSUBTYPE"));
                 String accType = fieldSet.readString("ACCOUNTTYPE");
+                accType = accType.replaceAll("\\s+", "");
 
                 if(AccountType.isValid(accType)) {
-                    accountType.setAccountType(AccountType.valueOf(accType));
+                    accountType.setAccountType(AccountType.valueOf(accType.toUpperCase()));
                 }else {
                     accountType.setAccountType(AccountType.INCOMESTATEMENT);
                 }
@@ -110,7 +111,7 @@ public class AccountTypeDataLoadConfig {
                 .resource(new FileSystemResource(fileName))
                 .delimited()
                 .names(new String[]{
-                        "ACTIVITYUPLOADID","ACCOUNTTYPE","ACCOUNTSUBTYPE"
+                        "ACTIVITYUPLOADID","ACCOUNTSUBTYPE","ACCOUNTTYPE"
                 })
                 .linesToSkip(1)
                 .lineMapper(defaultLineMapper)

@@ -2,7 +2,7 @@ package com.reserv.dataloader.filter;
 
 import  com.fyntrac.common.config.TenantContextHolder;
 import com.reserv.dataloader.exception.TenantNotFoundException;
-import com.reserv.dataloader.service.DataService;
+import com.fyntrac.common.service.DataService;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;

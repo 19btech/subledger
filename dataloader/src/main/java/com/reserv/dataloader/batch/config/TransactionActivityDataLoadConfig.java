@@ -11,7 +11,7 @@ import  com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.MetricLevelLtd;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.repository.MemcachedRepository;
-import com.reserv.dataloader.service.DataService;
+import com.fyntrac.common.service.DataService;
 import com.reserv.dataloader.service.AggregationRequestService;
 import com.reserv.dataloader.service.SettingsService;
 import lombok.extern.slf4j.Slf4j;

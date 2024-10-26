@@ -5,7 +5,7 @@ import com.fyntrac.common.entity.Settings;
 import com.reserv.dataloader.key.MetricLevelLtdKey;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.reserv.dataloader.service.CacheBasedService;
-import com.reserv.dataloader.service.DataService;
+import com.fyntrac.common.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
 import com.fyntrac.common.utils.Key;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -4,6 +4,7 @@ import com.fyntrac.common.entity.Aggregation;
 import com.fyntrac.common.repository.MemcachedRepository;
 import lombok.Getter;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.fyntrac.common.service.DataService;
 
 import java.util.Collection;
 

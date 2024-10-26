@@ -6,7 +6,7 @@ import com.reserv.dataloader.key.MetricLevelLtdKey;
 import com.fyntrac.common.entity.MetricLevelLtd;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.repository.MemcachedRepository;
-import com.reserv.dataloader.service.DataService;
+import com.fyntrac.common.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;

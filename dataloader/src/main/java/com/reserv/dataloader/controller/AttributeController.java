@@ -2,7 +2,7 @@ package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.entity.Attributes;
 import com.reserv.dataloader.service.AttributeService;
-import com.reserv.dataloader.service.DataService;
+import com.fyntrac.common.service.DataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;

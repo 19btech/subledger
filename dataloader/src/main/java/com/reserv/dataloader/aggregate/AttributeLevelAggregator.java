@@ -3,7 +3,7 @@ package com.reserv.dataloader.aggregate;
 import com.fyntrac.common.entity.*;
 import com.reserv.dataloader.key.AttributeLevelLtdKey;
 import com.fyntrac.common.repository.MemcachedRepository;
-import com.reserv.dataloader.service.DataService;
+import com.fyntrac.common.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;

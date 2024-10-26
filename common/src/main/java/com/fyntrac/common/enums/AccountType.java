@@ -17,8 +17,12 @@ public enum AccountType {
     }
 
     public static boolean isValid(String text) {
+        // Remove all spaces from the input text
+        String noSpaceText = text.replaceAll("\\s+", "");
+
+        // Validate against AccountType enum values
         for (AccountType rule : AccountType.values()) {
-            if (rule.value.equalsIgnoreCase(text)) {
+            if (rule.value.equalsIgnoreCase(noSpaceText)) {
                 return true;
             }
         }

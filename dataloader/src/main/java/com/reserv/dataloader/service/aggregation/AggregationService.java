@@ -3,7 +3,7 @@ package com.reserv.dataloader.service.aggregation;
 import com.fyntrac.common.entity.Aggregation;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.reserv.dataloader.service.CacheBasedService;
-import com.reserv.dataloader.service.DataService;
+import com.fyntrac.common.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

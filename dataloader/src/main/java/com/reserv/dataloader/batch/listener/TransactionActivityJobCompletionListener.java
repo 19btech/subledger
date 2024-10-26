@@ -6,7 +6,7 @@ import com.fyntrac.common.entity.AggregationRequest;
 import com.reserv.dataloader.pulsar.producer.GeneralLedgerMessageProducer;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.reserv.dataloader.service.AggregationRequestService;
-import com.reserv.dataloader.service.DataService;
+import com.fyntrac.common.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
 import com.reserv.dataloader.service.TransactionActivityService;
 import lombok.extern.slf4j.Slf4j;
@@ -97,7 +97,7 @@ public class TransactionActivityJobCompletionListener implements JobExecutionLis
                     Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(aggregationRequest.getTenantId(), aggregationRequest.getKey());
                     generalLedgerMessageProducer.bookTempGL(glRec);
 
-                    memcachedRepository.delete(aggregationRequest.getKey());
+                   // memcachedRepository.delete(aggregationRequest.getKey());
                 }
             }
 
