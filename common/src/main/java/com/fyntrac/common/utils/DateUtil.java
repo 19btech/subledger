@@ -426,15 +426,27 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
     /**
      * Get the DAY_OF_MONTH
      *
-     * @param currDate the date for which the day is required
+     * @param date the date for which the day is required
      * @return the day of the month, the first day is 1
      */
-    public static int getDay(Date currDate) {
-        if (currDate == null) {
-            return -1;
+    public static int getDay(Date date) {
+        if (date == null) {
+            return -1; // Return -1 if the input date is null
         }
 
-        return new DateTime(currDate).getDayOfMonth();
+        // Format the date to "yyyy-MM-dd"
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+        String formattedDate = sdf.format(date);
+
+        // Parse the formatted date back to a Date object
+        try {
+            Date parsedDate = sdf.parse(formattedDate);
+            // Return the day of the month
+            return parsedDate.getDate(); // Alternatively, you can use Calendar to get the day
+        } catch (Exception e) {
+            e.printStackTrace();
+            return -1; // Return -1 if parsing fails
+        }
     }
 
     /**

@@ -43,7 +43,7 @@ public class RecordFactory {
                 transactionActivity.getTransactionDate(),
                 transactionActivity.getInstrumentId(),
                 transactionActivity.getTransactionName(),
-                transactionActivity.getValue(),
+                transactionActivity.getAmount(),
                 transactionActivity.getAttributeId(),
                 transactionActivity.getPeriodId(),
                 transactionActivity.getOriginalPeriodId()));

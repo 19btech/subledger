@@ -12,8 +12,10 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import com.fyntrac.common.service.DataService;
+import com.fyntrac.common.service.CacheBasedService;
 
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 
 @Service
 @Slf4j
@@ -36,7 +38,7 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
     }
 
     @Override
-    public void loadIntoCache() {
+    public void loadIntoCache() throws ExecutionException, InterruptedException {
         ReferenceData referenceData = this.memcachedRepository.getFromCache(this.dataService.getTenantId(), ReferenceData.class);
         int previousAccountingPeriodId = 0;
         if(referenceData != null) {

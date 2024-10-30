@@ -2,15 +2,13 @@ package com.reserv.dataloader.service.aggregation;
 
 import com.fyntrac.common.entity.Aggregation;
 import com.fyntrac.common.repository.MemcachedRepository;
-import com.reserv.dataloader.service.CacheBasedService;
+import com.fyntrac.common.service.CacheBasedService;
 import com.fyntrac.common.service.DataService;
-import com.reserv.dataloader.service.SettingsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import com.fyntrac.common.cache.collection.CacheMap;
+import com.fyntrac.common.utils.Key;
+import java.util.*;
 
 @Service
 public class AggregationService  extends CacheBasedService<Aggregation> {
@@ -43,24 +41,23 @@ public class AggregationService  extends CacheBasedService<Aggregation> {
 
     @Override
     public void loadIntoCache() {
+        CacheMap<Set<String>> metricMap = new CacheMap<>();
         for(Aggregation aggregation : this.fetchAll()) {
             String key = this.dataService.getTenantId() + aggregation.hashCode();
-            this.loadIntoCache(aggregation);
+            this.loadIntoCache(aggregation, metricMap);
         }
+
+        this.memcachedRepository.putInCache(Key.allMetricList(this.dataService.getTenantId()),metricMap);
     }
 
-    private void loadIntoCache(Aggregation aggregation) {
-        String key = this.dataService.getTenantId() + aggregation.hashCode();
-        List<String> metricList = null;
-        if(this.memcachedRepository.ifExists(key)) {
-            metricList = this.memcachedRepository.getFromCache(key, List.class);
-        }else{
-            metricList = new ArrayList<>(0);
-        }
-        if(!metricList.contains(aggregation.getMetricName())) {
-            metricList.add(aggregation.getMetricName());
-        }
+    private void loadIntoCache(Aggregation aggregation, CacheMap<Set<String>> metricMap) {
+        String key = aggregation.getTransactionName().toUpperCase();
+        Set<String> metricList = metricMap.getValue(key);
 
-        this.memcachedRepository.putInCache(key, metricList);
+        if(metricList == null) {
+            metricList = new HashSet<>(0);
+        }
+        metricList.add(aggregation.getMetricName());
+        metricMap.put(key, metricList);
     }
 }

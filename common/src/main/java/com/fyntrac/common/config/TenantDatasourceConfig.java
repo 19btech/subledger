@@ -2,6 +2,7 @@ package com.fyntrac.common.config;
 
 import com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.Tenant;
+import com.fyntrac.common.service.SequenceGenerator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
@@ -14,6 +15,7 @@ import java.util.List;
 public class TenantDatasourceConfig {
     private final TenantDataSourceProvider tenantDataSourceProvider;
     private final MappingMongoConverter mappingMongoConverter;
+    private final SequenceGenerator sequenceGenerator;
 
     @Value("${spring.data.mongodb.uri}")
     private String defaultMongoUri;
@@ -32,9 +34,12 @@ public class TenantDatasourceConfig {
     private String authDB;
 
     @Autowired
-    public TenantDatasourceConfig(MappingMongoConverter mappingMongoConverter, TenantDataSourceProvider tenantDataSourceProvider) {
+    public TenantDatasourceConfig(MappingMongoConverter mappingMongoConverter
+            , TenantDataSourceProvider tenantDataSourceProvider
+            , SequenceGenerator sequenceGenerator) {
         this.mappingMongoConverter = mappingMongoConverter;
         this.tenantDataSourceProvider = tenantDataSourceProvider;
+        this.sequenceGenerator = sequenceGenerator;
     }
 
     public void configureTenantDatabases(List<Tenant> tenants) {
@@ -44,10 +49,17 @@ public class TenantDatasourceConfig {
     }
 
     public void configureTenantDatabases(Tenant tenant) {
-        String connectionURI = getConnectionURI(tenant.getName());
+        this.configureTenantDatabases(tenant.getName());
+    }
+
+    public void configureTenantDatabases(String tenant) {
+        String connectionURI = getConnectionURI(tenant);
         MongoDatabaseFactory factory = new SimpleMongoClientDatabaseFactory(connectionURI);
         MongoTemplate template = new MongoTemplate(factory, mappingMongoConverter);
-        tenantDataSourceProvider.addDataSource(tenant.getName(), template);
+        tenantDataSourceProvider.addDataSource(tenant, template);
+        if(sequenceGenerator != null) {
+            sequenceGenerator.generateAllSequences(template, tenant);
+        }
     }
 
     private String getConnectionURI(String tenantName) {

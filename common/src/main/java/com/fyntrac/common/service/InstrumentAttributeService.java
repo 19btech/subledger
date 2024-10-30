@@ -1,7 +1,8 @@
-package com.reserv.dataloader.service;
+package com.fyntrac.common.service;
 
 import  com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.InstrumentAttribute;
+import com.fyntrac.common.repository.InstrumentAttributeRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
@@ -11,16 +12,23 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import com.fyntrac.common.service.DataService;
+import java.util.concurrent.ExecutionException;
 
 @Service
 @Slf4j
 public class InstrumentAttributeService extends CacheBasedService<InstrumentAttribute> {
 
+    private InstrumentAttributeRepository instrumentAttributeRepository;
+
     @Autowired
     public InstrumentAttributeService(DataService<InstrumentAttribute> dataService
-                                      , MemcachedRepository memcachedRepository) {
+            , MemcachedRepository memcachedRepository, InstrumentAttributeRepository instrumentAttributeRepository) {
         super(dataService, memcachedRepository);
+        this.instrumentAttributeRepository = instrumentAttributeRepository;
+    }
+
+    public List<InstrumentAttribute> getLastOpenInstrumentAttributes(String attributeId, String instrumentId) {
+        return instrumentAttributeRepository.findByAttributeIdAndInstrumentIdAndEndDateIsNull(attributeId, instrumentId);
     }
 
     @Override
@@ -34,7 +42,7 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
     }
 
     @Override
-    public void loadIntoCache() {
+    public void loadIntoCache() throws ExecutionException, InterruptedException {
         ReferenceData referenceData = this.memcachedRepository.getFromCache(this.dataService.getTenantId(), ReferenceData.class);
         if(referenceData != null) {
             int previousAccountingPeriodId = referenceData.getPrevioudAccountingPeriodId();
@@ -44,7 +52,7 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         }
     }
 
-    public void loadIntoCache(int accountingPeriodId) {
+    public void loadIntoCache(int accountingPeriodId) throws ExecutionException, InterruptedException {
         Set<String> instrumentIds = this.getInstrumentIdsByPeriodId(accountingPeriodId);
         String key = Key.previoudPeriodInstrumentsKey(this.dataService.getTenantId());
         boolean ifExists = this.memcachedRepository.ifExists(key);

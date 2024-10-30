@@ -12,6 +12,9 @@ public class TenantDataSourceProvider {
     private final Map<String, MongoTemplate> dataSourceMap = new HashMap<>();
 
     public void addDataSource(String tenantId, MongoTemplate mongoTemplate) {
+        if(dataSourceMap.containsKey(tenantId)){
+            return;
+        }
         dataSourceMap.put(tenantId, mongoTemplate);
     }
 

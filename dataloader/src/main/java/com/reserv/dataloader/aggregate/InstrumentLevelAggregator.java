@@ -188,11 +188,11 @@ public class InstrumentLevelAggregator extends BaseAggregator {
                     if(!ifPreviousLtdExists) {
                         beginningBalance = +currentLtd.getBalance().getBeginningBalance() + currentLtd.getBalance().getActivity();
                         currentLtd.getBalance().setBeginningBalance(0);
-                        currentLtd.getBalance().setActivity(beginningBalance + activity.getValue());
-                        currentLtd.getBalance().setEndingBalance(beginningBalance + activity.getValue());
+                        currentLtd.getBalance().setActivity(beginningBalance + activity.getAmount());
+                        currentLtd.getBalance().setEndingBalance(beginningBalance + activity.getAmount());
                     }else {
                         currentLtd.getBalance().setBeginningBalance(beginningBalance);
-                        currentLtd.getBalance().setActivity(currentLtd.getBalance().getActivity() + activity.getValue());
+                        currentLtd.getBalance().setActivity(currentLtd.getBalance().getActivity() + activity.getAmount());
                         currentLtd.getBalance().setEndingBalance(beginningBalance + currentLtd.getBalance().getActivity());
                     }
 
@@ -200,7 +200,7 @@ public class InstrumentLevelAggregator extends BaseAggregator {
                 } else {
                     BaseLtd balance = BaseLtd.builder()
                             .beginningBalance(beginningBalance)
-                            .activity(activity.getValue()).build();
+                            .activity(activity.getAmount()).build();
                     currentLtd = InstrumentLevelLtd.builder()
                             .accountingPeriodId(activityAccountingPeriodId)
                             .instrumentId(activity.getInstrumentId())

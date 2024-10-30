@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.concurrent.ExecutionException;
 
 @Service
 @Slf4j
@@ -48,12 +49,12 @@ public class TransactionActivityUploadService extends UploadService {
         this.transactionActivityService = transactionActivityService;
         this.cacheService = cacheService;
     }
-    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException {
+    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
         this.uploadData(jobLauncher, transactionActivityUploadJob, filePath, FileUploadActivityType.TRANSACTION_ACTIVITY);
     }
 
     @Override
-    public void uploadData(JobLauncher jobLauncher, Job job, String filePath, FileUploadActivityType activityType) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException{
+    public void uploadData(JobLauncher jobLauncher, Job job, String filePath, FileUploadActivityType activityType) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
         this.accountingPeriodService.loadIntoCache();
         this.aggregationService.loadIntoCache();
         this.cacheService.loadIntoCache();

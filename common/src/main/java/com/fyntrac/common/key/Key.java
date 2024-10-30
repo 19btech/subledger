@@ -1,5 +1,5 @@
 package com.fyntrac.common.key;
 
-public interface AggregationLtdKey {
+public interface Key {
     String getKey();
 }

@@ -1,10 +1,8 @@
-package com.reserv.dataloader.service;
+package com.fyntrac.common.service;
 
-import com.fyntrac.common.entity.Aggregation;
 import com.fyntrac.common.repository.MemcachedRepository;
 import lombok.Getter;
 import org.springframework.beans.factory.annotation.Autowired;
-import com.fyntrac.common.service.DataService;
 
 import java.util.Collection;
 
@@ -16,7 +14,7 @@ public abstract class BaseService<T> {
 
     @Autowired
     public BaseService(DataService<T> dataService
-                      , MemcachedRepository memcachedRepository) {
+            , MemcachedRepository memcachedRepository) {
         this.dataService = dataService;
         this.memcachedRepository = memcachedRepository;
     }

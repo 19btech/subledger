@@ -8,6 +8,8 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.util.Map;
 
 @Data
@@ -15,7 +17,9 @@ import java.util.Map;
 @AllArgsConstructor
 @NoArgsConstructor
 @Document(collection = "ChartOfAccount")
-public class ChartOfAccount {
+public class ChartOfAccount implements Serializable {
+    @Serial
+    private static final long serialVersionUID= 2663037811309659882L;
 
     @Id
     private String id;
@@ -42,4 +46,5 @@ public class ChartOfAccount {
         json.append("}");
         return json.toString();
     }
+
 }

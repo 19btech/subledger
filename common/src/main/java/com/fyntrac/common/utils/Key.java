@@ -21,4 +21,11 @@ public class Key {
     public static String allMetricLevelLtdKeyList(String tenantId) {
         return tenantId + "METRIC_LEVEL_LTD_KEY_LIST";
     }
+
+    public static String allSubledgerMappingList(String tenantId){ return tenantId + "SUBLEDGER_MAPPING";}
+    public static String allAccountTypeList(String tenantId){ return tenantId + "ACCOUNT_TYPE";}
+
+    public static String allChartOfAccountList(String tenantId){ return tenantId + "CHART_OF_ACCOUNT";}
+    public static String allMetricList(String tenantId){ return tenantId + "METRIC_NAME";}
+
 }

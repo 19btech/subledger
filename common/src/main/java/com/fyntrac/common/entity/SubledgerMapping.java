@@ -9,13 +9,17 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.io.Serial;
+import java.io.Serializable;
+
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
 @Document(collection = "SubledgerMapping")
-public class SubledgerMapping implements Cloneable {
-
+public class SubledgerMapping implements Cloneable, Serializable {
+    @Serial
+    private static final long serialVersionUID= -199377848388208678L;
     @Id
     private String id;
     private String transactionName;

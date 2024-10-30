@@ -17,7 +17,9 @@ import com.fyntrac.common.service.DataService;
 
 import java.text.ParseException;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
+import com.fyntrac.common.service.CacheBasedService;
 
 @Service
 @Slf4j
@@ -41,7 +43,7 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
     }
 
     @Override
-    public void loadIntoCache() {
+    public void loadIntoCache() throws ExecutionException, InterruptedException {
 
             AccountingPeriod previoudAccountingPeriod = getLastClosedAccountingPeriod();
             AccountingPeriod currentAccountingPeriod = getCurrentAccountingPeriod();
@@ -63,17 +65,25 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
             this.loadIntoCache(Boolean.TRUE);
     }
 
-    public void loadIntoCache(boolean forceRefresh) {
-        if(this.memcachedRepository.ifExists(Key.accountingPeriodKey(this.dataService.getTenantId()))) {
-            if(forceRefresh) {
-                this.memcachedRepository.delete(Key.accountingPeriodKey(this.dataService.getTenantId()));
-            }else{
+    public void loadIntoCache(boolean forceRefresh) throws ExecutionException, InterruptedException {
+        String tenantId = this.dataService.getTenantId();
+        String cacheKey = Key.accountingPeriodKey(tenantId);
+
+        // Check if the cache entry exists
+        if (this.memcachedRepository.ifExists(cacheKey)) {
+            // If forceRefresh is true, delete the existing cache entry
+            if (forceRefresh) {
+                this.memcachedRepository.delete(cacheKey);
+            } else {
+                // If not forcing a refresh, exit early
                 return;
             }
         }
 
-        this.memcachedRepository.putInCache(Key.accountingPeriodKey(this.dataService.getTenantId()), this.getAccountingPeriodsMap());
+        // Load the accounting periods into the cache
+        this.memcachedRepository.putInCache(cacheKey, this.getAccountingPeriodsMap());
     }
+
     public AccountingPeriod getCurrentAccountingPeriod() {
         Query query = new Query();
         query.addCriteria(Criteria.where("status").is(0));

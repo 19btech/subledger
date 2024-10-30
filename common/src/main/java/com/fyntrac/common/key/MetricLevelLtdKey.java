@@ -1,11 +1,8 @@
 package com.fyntrac.common.key;
 
-import lombok.Builder;
-import lombok.Data;
-
 import java.util.Objects;
 
-public class MetricLevelLtdKey implements AggregationLtdKey {
+public class MetricLevelLtdKey implements Key {
     protected final String metricName;
     protected final int accountingPeriodId;
     protected final String tenantId;

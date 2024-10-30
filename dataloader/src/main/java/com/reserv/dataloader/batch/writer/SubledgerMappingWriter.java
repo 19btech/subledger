@@ -51,12 +51,16 @@ public class SubledgerMappingWriter implements ItemWriter<SubledgerMapping> {
 
     private SubledgerMapping generateMapping(SubledgerMapping mapping) {
         SubledgerMapping newMapping =  mapping.clone();
-        if(newMapping.getEntryType() == EntryType.CREDIT) {
+        if(mapping.getEntryType() == EntryType.CREDIT) {
             newMapping.setEntryType(EntryType.DEBIT);
+        }else if(mapping.getEntryType() == EntryType.DEBIT) {
+            newMapping.setEntryType(EntryType.CREDIT);
         }
 
-        if(newMapping.getSign() == Sign.POSITIVE) {
+        if(mapping.getSign() == Sign.POSITIVE) {
             newMapping.setSign(Sign.NEGATIVE);
+        }else if(mapping.getSign() == Sign.NEGATIVE){
+            newMapping.setSign(Sign.POSITIVE);
         }
 
         return newMapping;

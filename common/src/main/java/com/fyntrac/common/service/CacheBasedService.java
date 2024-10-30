@@ -1,7 +1,8 @@
-package com.reserv.dataloader.service;
+package com.fyntrac.common.service;
 
 import com.fyntrac.common.repository.MemcachedRepository;
-import com.fyntrac.common.service.DataService;
+
+import java.util.concurrent.ExecutionException;
 
 public abstract class CacheBasedService<T> extends BaseService<T>{
 
@@ -9,5 +10,5 @@ public abstract class CacheBasedService<T> extends BaseService<T>{
         super(dataService, memcachedRepository);
     }
 
-    public abstract void loadIntoCache();
+    public abstract void loadIntoCache() throws ExecutionException, InterruptedException;
 }

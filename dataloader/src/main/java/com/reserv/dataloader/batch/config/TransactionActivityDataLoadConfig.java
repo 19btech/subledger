@@ -115,7 +115,7 @@ public class TransactionActivityDataLoadConfig {
         DefaultLineMapper<TransactionActivity> defaultLineMapper = new DefaultLineMapper<>();
         DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
 
-        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID","TRANSACTIONDATE","INSTRUMENTID","TRANSACTIONNAME","VALUE","ATTRIBUTEID"});
+        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID","TRANSACTIONDATE","INSTRUMENTID","TRANSACTIONNAME","AMOUNT","ATTRIBUTEID"});
         defaultLineMapper.setLineTokenizer(lineTokenizer);
         defaultLineMapper.setFieldSetMapper(new FieldSetMapper<TransactionActivity>() {
             @Override
@@ -124,7 +124,7 @@ public class TransactionActivityDataLoadConfig {
                 transactionActivity.setTransactionDate(fieldSet.readDate("TRANSACTIONDATE"));
                 transactionActivity.setInstrumentId(fieldSet.readString("INSTRUMENTID"));
                 transactionActivity.setTransactionName(fieldSet.readString("TRANSACTIONNAME"));
-                transactionActivity.setValue(fieldSet.readDouble("VALUE"));
+                transactionActivity.setAmount(fieldSet.readDouble("AMOUNT"));
                 transactionActivity.setAttributeId(fieldSet.readString("ATTRIBUTEID"));
 
                 return transactionActivity;
@@ -136,7 +136,7 @@ public class TransactionActivityDataLoadConfig {
                 .resource(new FileSystemResource(fileName))
                 .delimited()
                 .names(new String[]{
-                        "ACTIVITYUPLOADID","TRANSACTIONDATE","INSTRUMENTID","TRANSACTIONNAME","VALUE","ATTRIBUTEID"
+                        "ACTIVITYUPLOADID","TRANSACTIONDATE","INSTRUMENTID","TRANSACTIONNAME","AMOUNT","ATTRIBUTEID"
                 })
                 .linesToSkip(1)
                 .lineMapper(defaultLineMapper)

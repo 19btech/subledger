@@ -1,12 +1,14 @@
 package com.fyntrac.common.repository;
 
 import lombok.extern.slf4j.Slf4j;
+import net.spy.memcached.transcoders.SerializingTranscoder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 import net.spy.memcached.MemcachedClient;
 import net.spy.memcached.internal.OperationFuture;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 @Repository
 @Slf4j
@@ -67,6 +69,17 @@ public class MemcachedRepository {
             throw new RuntimeException(e);
         }
     }
+
+    public <T> OperationFuture<Boolean> putCollectionInCache(String key, T object, int expirationTimeInSeconds) {
+        try {
+            // Use a SerializingTranscoder for proper serialization
+            SerializingTranscoder transcoder = new SerializingTranscoder();
+            return memcachedClient.set(key, expirationTimeInSeconds, object, transcoder);
+        } catch (Exception e) {
+            log.error("Error putting object in cache", e);
+            throw new RuntimeException(e);
+        }
+    }
     public <T> OperationFuture<Boolean> putInCache(String key, T object) {
         try {
             return memcachedClient.set(key, 0, object);
@@ -95,7 +108,17 @@ public class MemcachedRepository {
         }
     }
 
-    public void delete(String key) {
-        memcachedClient.delete(key);
+    public void delete(String key) throws ExecutionException, InterruptedException {
+        Object cachedObject = memcachedClient.get(key);
+        if (cachedObject != null) {
+            boolean wasDeleted = memcachedClient.delete(key).get();
+            if (wasDeleted) {
+                System.out.println("Object deleted successfully.");
+            } else {
+                System.out.println("Failed to delete the object.");
+            }
+        } else {
+            System.out.println("Object does not exist in cache.");
+        }
     }
 }

@@ -2,16 +2,16 @@ package com.reserv.dataloader.aggregate;
 
 import  com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.*;
-import com.reserv.dataloader.key.AggregationLtdKey;
-import com.reserv.dataloader.key.AttributeLevelLtdKey;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
+import com.fyntrac.common.utils.Key;
+import com.fyntrac.common.cache.collection.CacheMap;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 
 public abstract class BaseAggregator implements Aggregator {
     protected final MemcachedRepository memcachedRepository;
@@ -41,15 +41,16 @@ public abstract class BaseAggregator implements Aggregator {
     }
 
     protected List<String> getMetrics(TransactionActivity activity) {
-        Aggregation aggregation = Aggregation.builder().transactionName(activity.getTransactionName()).build();
-        String key = this.tenantId + aggregation.hashCode();
-        List<String> metrics = this.memcachedRepository.getFromCache(key, List.class);
-        return metrics;
+        String metricKey = Key.allMetricList(tenantId);
+        CacheMap<Set<String>> metrics = this.memcachedRepository.getFromCache(metricKey, CacheMap.class);
+        Set<String> metricSet = metrics.getValue(activity.getTransactionName().toUpperCase());
+        return new ArrayList<>(metricSet);
     }
+
 
     abstract public void aggregate(TransactionActivity activity);
 
-    public void cleanup() {
+    public void cleanup() throws ExecutionException, InterruptedException {
         for(String objKey : ltdObjectCleanupList) {
             this.memcachedRepository.delete(objKey);
         }

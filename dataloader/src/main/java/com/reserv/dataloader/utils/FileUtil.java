@@ -233,27 +233,35 @@ public class FileUtil {
         }
         return value.toString();
     }
-    private static void setFormulaCellValue(Cell cell,BufferedWriter data,FormulaEvaluator evaluator,
-                                            int cellIndex) throws Exception {
 
+    private static void setFormulaCellValue(Cell cell, BufferedWriter data, FormulaEvaluator evaluator,
+                                           int cellIndex) throws Exception {
         try {
             CellValue cellValue = evaluator.evaluate(cell);
-            switch(cellValue.getCellType()) {
+            switch (cellValue.getCellType()) {
                 case BOOLEAN:
                     data.append(cellValue.getBooleanValue() + "");
                     break;
                 case NUMERIC:
-                    data.append(cellValue.getNumberValue() + "");
+                    // Check if the numeric value is a date
+                    if (DateUtil.isCellDateFormatted(cell)) {
+                        Date date = cell.getDateCellValue();
+                        // Format the date as needed, e.g., "yyyy-MM-dd"
+                        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+                        data.append("\"" + dateFormat.format(date) + "\"");
+                    } else {
+                        data.append(cellValue.getNumberValue() + "");
+                    }
                     break;
                 default:
-                    data.append("\"" + cellValue.getStringValue() + "\"" );
+                    data.append("\"" + cellValue.getStringValue() + "\"");
             }
-        }catch (Exception exp) {
+        } catch (Exception exp) {
             exp.printStackTrace();
             throw new ExcelFormulaCellException(exp.getLocalizedMessage());
         }
-
     }
+
     static String getColSeparator(int colIndex, int lastColIndex) {
         if (colIndex == lastColIndex - 1) {
             return "";

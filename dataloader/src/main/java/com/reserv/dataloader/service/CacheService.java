@@ -4,8 +4,10 @@ import com.reserv.dataloader.service.aggregation.AttributeLevelAggregationServic
 import com.reserv.dataloader.service.aggregation.InstrumentLevelAggregationService;
 import com.reserv.dataloader.service.aggregation.MetricLevelAggregationService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
+import com.fyntrac.common.service.InstrumentAttributeService;
 import org.springframework.stereotype.Service;
+
+import java.util.concurrent.ExecutionException;
 
 @Service
 public class CacheService {
@@ -30,7 +32,7 @@ public class CacheService {
 
     }
 
-    public void loadIntoCache(){
+    public void loadIntoCache() throws ExecutionException, InterruptedException {
         this.accountingPeriodService.loadIntoCache();
         // this.instrumentAttributeService.loadIntoCache();
         this.attributeLevelAggregationService.loadIntoCache();

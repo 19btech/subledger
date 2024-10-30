@@ -11,6 +11,8 @@ import org.springframework.batch.core.repository.JobRestartException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.concurrent.ExecutionException;
+
 @Service
 @Slf4j
 public class SubledgerMappingUploadService extends UploadService {
@@ -20,7 +22,7 @@ public class SubledgerMappingUploadService extends UploadService {
     @Autowired
     protected JobLauncher jobLauncher;
 
-    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException {
+    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
         super.uploadData(jobLauncher, subledgerMappingUploadJob, filePath, FileUploadActivityType.SUBLEDGER_MAPPING);
     }
 }

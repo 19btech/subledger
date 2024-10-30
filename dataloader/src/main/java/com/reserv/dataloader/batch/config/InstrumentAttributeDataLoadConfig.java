@@ -6,6 +6,7 @@ import com.reserv.dataloader.batch.processor.InstrumentAttributeItemProcessor;
 import com.reserv.dataloader.batch.writer.InstrumentAttributeWriter;
 import  com.fyntrac.common.config.TenantContextHolder;
 import  com.fyntrac.common.component.TenantDataSourceProvider;
+import com.fyntrac.common.service.InstrumentAttributeService;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
@@ -29,7 +30,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.data.mongodb.core.MongoTemplate;
-
+import com.fyntrac.common.repository.MemcachedRepository;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -43,14 +44,21 @@ public class InstrumentAttributeDataLoadConfig {
     private final TenantContextHolder tenantContextHolder;
     private final TenantDataSourceProvider dataSourceProvider;
     private MongoTemplate mongoTemplate;
+    private MemcachedRepository memcachedRepository;
+    private InstrumentAttributeService instrumentAttributeService;
+
 
     public InstrumentAttributeDataLoadConfig(JobRepository jobRepository, MongoTemplate mongoTemplate,
                                              TenantDataSourceProvider dataSourceProvider,
-                                             TenantContextHolder tenantContextHolder) {
+                                             TenantContextHolder tenantContextHolder,
+                                             MemcachedRepository memcachedRepository,
+                                             InstrumentAttributeService instrumentAttributeService) {
         this.jobRepository = jobRepository;
         this.tenantContextHolder = tenantContextHolder;
         this.dataSourceProvider = dataSourceProvider;
         this.mongoTemplate = mongoTemplate;
+        this.memcachedRepository = memcachedRepository;
+        this.instrumentAttributeService = instrumentAttributeService;
     }
 
     @Bean("instrumentAttributeUploadJob")
@@ -70,7 +78,7 @@ public class InstrumentAttributeDataLoadConfig {
                 .reader(instrumentAttributeReader("", ""))
                 .processor(instrumentAttributeMapItemProcessor())
                 .writer(instrumentAttributeWriter(dataSourceProvider,
-                        tenantContextHolder))
+                        tenantContextHolder, this.memcachedRepository, this.instrumentAttributeService))
                 .build();
     }
 
@@ -122,12 +130,14 @@ public class InstrumentAttributeDataLoadConfig {
 
     @Bean
     public ItemWriter<InstrumentAttribute> instrumentAttributeWriter(TenantDataSourceProvider dataSourceProvider,
-                                                           TenantContextHolder tenantContextHolder) {
+                                                                     TenantContextHolder tenantContextHolder
+                                                            , MemcachedRepository memcachedRepository
+                                                            , InstrumentAttributeService instrumentAttributeService) {
         MongoItemWriter<InstrumentAttribute> delegate = new MongoItemWriterBuilder<InstrumentAttribute>()
                 .template(mongoTemplate)
                 .collection("InstrumentAttribute")
                 .build();
 
-        return new InstrumentAttributeWriter(delegate, dataSourceProvider, tenantContextHolder);
+        return new InstrumentAttributeWriter(delegate, dataSourceProvider, tenantContextHolder, memcachedRepository, instrumentAttributeService);
     }
 }

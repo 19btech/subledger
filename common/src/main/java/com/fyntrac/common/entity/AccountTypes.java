@@ -8,12 +8,17 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.io.Serial;
+import java.io.Serializable;
+
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
 @Document(collection = "AccountTypes")
-public class AccountTypes {
+public class AccountTypes implements Serializable {
+    @Serial
+    private static final long serialVersionUID= 5839998558905743582L;
     @Id
     private String id;
     private String accountSubType;

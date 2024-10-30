@@ -4,7 +4,7 @@ import com.fyntrac.common.entity.InstrumentLevelLtd;
 import com.fyntrac.common.entity.Settings;
 import com.reserv.dataloader.key.InstrumentLevelLtdKey;
 import com.fyntrac.common.repository.MemcachedRepository;
-import com.reserv.dataloader.service.CacheBasedService;
+import com.fyntrac.common.service.CacheBasedService;
 import com.fyntrac.common.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
 import com.fyntrac.common.utils.Key;

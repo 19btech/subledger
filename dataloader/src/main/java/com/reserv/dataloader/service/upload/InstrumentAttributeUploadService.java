@@ -2,6 +2,7 @@ package com.reserv.dataloader.service.upload;
 
 import  com.fyntrac.common.enums.FileUploadActivityType;
 import com.fyntrac.common.entity.Attributes;
+import com.reserv.dataloader.service.AccountingPeriodService;
 import com.reserv.dataloader.service.AttributeService;
 import com.fyntrac.common.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.concurrent.ExecutionException;
 
 @Service
 @Slf4j
@@ -28,11 +30,17 @@ public class InstrumentAttributeUploadService extends UploadService {
     @Autowired
     AttributeService attributeService;
 
-    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException {
+    private final AccountingPeriodService accountingPeriodService;
+
+    @Autowired
+    InstrumentAttributeUploadService(AccountingPeriodService accountingPeriodService) {
+        this.accountingPeriodService = accountingPeriodService;
+    }
+
+    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
         LocalDateTime startingTime = DateUtil.getDateTime();
         long runid = System.currentTimeMillis();
         StringBuilder columnNames = new StringBuilder();
-        //List<String> columnNames = new ArrayList<>(0);
 
         columnNames.append("ACTIVITYUPLOADID:NUMBER");
         columnNames.append(",EFFECTIVEDATE:DATE");
@@ -44,7 +52,7 @@ public class InstrumentAttributeUploadService extends UploadService {
             columnNames.append(",");
             columnNames.append(attribute.getAttributeName()).append(":").append(attribute.getDataType());
         }
-
+        accountingPeriodService.loadIntoCache();
         JobParameters jobParameters = new JobParametersBuilder()
                 .addString("filePath", filePath)
                 .addString("columnName", columnNames.toString())
