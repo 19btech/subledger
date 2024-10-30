@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 @Component
 @Slf4j
 public class SequenceGenerator {
-    public int generateInstrumentAttributeVersionId(MongoTemplate mongoTemplate) {
+    public long generateInstrumentAttributeVersionId(MongoTemplate mongoTemplate) {
         String sequenceName = "instrumentAttributeVersionId";
 
         // Check if the sequence exists

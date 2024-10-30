@@ -7,7 +7,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 public class Sequence {
     @Id
     private String id; // This will hold the identifier for the sequence, e.g., "versionId"
-    private int seq;   // This will hold the current sequence value
+    private long seq;   // This will hold the current sequence value
 
     // Constructors
     public Sequence() {}
@@ -26,11 +26,11 @@ public class Sequence {
         this.id = id;
     }
 
-    public int getSeq() {
+    public long getSeq() {
         return seq;
     }
 
-    public void setSeq(int seq) {
+    public void setSeq(long seq) {
         this.seq = seq;
     }
 }

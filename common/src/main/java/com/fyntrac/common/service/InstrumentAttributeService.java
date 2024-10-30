@@ -31,6 +31,20 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         return instrumentAttributeRepository.findByAttributeIdAndInstrumentIdAndEndDateIsNull(attributeId, instrumentId);
     }
 
+    // Define a method in your service class
+    public List<InstrumentAttribute> getOpenInstrumentAttributes(String attributeId, String instrumentId) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("attributeId").is(attributeId));
+        query.addCriteria(Criteria.where("instrumentId").is(instrumentId));
+        query.addCriteria(Criteria.where("endDate").is(null));
+
+        return this.dataService.fetchData(query, InstrumentAttribute.class);
+    }
+
+    public List<InstrumentAttribute> findByAttributeIdAndInstrumentId(String attributeId, String instrumentId) {
+        return instrumentAttributeRepository.findByAttributeIdAndInstrumentId(attributeId, instrumentId);
+    }
+
     @Override
     public void save(InstrumentAttribute ia) {
         this.dataService.save(ia);

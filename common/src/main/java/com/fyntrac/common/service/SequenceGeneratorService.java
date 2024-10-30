@@ -12,7 +12,7 @@ public class SequenceGeneratorService {
     @Autowired
     SequenceGenerator sequenceGenerator;
 
-    public int generateInstrumentAttributeVersionId() {
+    public long generateInstrumentAttributeVersionId() {
         return this.sequenceGenerator.generateInstrumentAttributeVersionId(this.mongoTemplate);
     }
 }

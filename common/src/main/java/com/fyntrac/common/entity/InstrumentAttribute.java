@@ -27,19 +27,27 @@ public class InstrumentAttribute {
     private Date effectiveDate;
     private String instrumentId;
     private String attributeId;
+    @Field(write = Field.Write.ALWAYS)
     private Date endDate;
     private Date originationDate;
     private int periodId;
     @Indexed // Separate index on versionId
-    private int versionId;
+    private long versionId;
     @Field("attributes")
     private Map<String,Object> attributes;
 
-    @Autowired
     private SequenceGeneratorService sequenceGeneratorService;
 
     public void generateVersionId() {
         this.versionId = sequenceGeneratorService.generateInstrumentAttributeVersionId();
+    }
+
+    // Constructor to generate versionId
+    @Autowired
+    public InstrumentAttribute(SequenceGeneratorService sequenceGeneratorService) {
+        this.sequenceGeneratorService = sequenceGeneratorService;
+        setEndDate(null);
+        generateVersionId();
     }
 
     @Override

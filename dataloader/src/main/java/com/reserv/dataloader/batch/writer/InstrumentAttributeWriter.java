@@ -13,9 +13,8 @@ import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.service.InstrumentAttributeService;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute> {
@@ -37,6 +36,57 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.instrumentAttributeService = instrumentAttributeService;
     }
 
+    public Chunk<InstrumentAttribute> setEndDate(List<InstrumentAttribute> attributesList) {
+
+        // Step 1: Group by attributeId and instrumentId
+        Map<String, List<InstrumentAttribute>> groupedAttributes = new HashMap<>();
+        List<InstrumentAttribute> openVersion = new ArrayList<>(0);
+        for (InstrumentAttribute attribute : attributesList) {
+            String key = attribute.getAttributeId() + "_" + attribute.getInstrumentId();
+            groupedAttributes
+                    .computeIfAbsent(key, k -> new ArrayList<>())
+                    .add(attribute);
+        }
+
+        // Step 2: Sort each group by versionId and process endDate
+        for (List<InstrumentAttribute> subChunk : groupedAttributes.values()) {
+            // Sort the sub-chunk by versionId
+            List<InstrumentAttribute> sortedSubChunk = subChunk.stream()
+                    .sorted(Comparator.comparingInt(InstrumentAttribute::getPeriodId))
+                    .collect(Collectors.toList());
+
+            // Step 3: Set endDate of each attribute to effectiveDate of the next attribute
+            for (int i = 0; i < sortedSubChunk.size(); i++) {
+
+                InstrumentAttribute currentAttribute = sortedSubChunk.get(i);
+
+                if(sortedSubChunk.size() > i+1) {
+                    InstrumentAttribute nextAttribute = sortedSubChunk.get(i + 1);
+                    // Set endDate of the current attribute to effectiveDate of the next attribute
+                    currentAttribute.setEndDate(nextAttribute.getEffectiveDate());
+                }
+
+                if(i== 0) {
+                    List<InstrumentAttribute> openInstrumentAttributes = this.instrumentAttributeService.getOpenInstrumentAttributes(currentAttribute.getAttributeId(), currentAttribute.getInstrumentId());
+                    for(InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
+                        openInstrumentAttribute.setEndDate(currentAttribute.getEffectiveDate());
+                        openVersion.add(openInstrumentAttribute);
+                    }
+                }
+            }
+        }
+
+        // Step 4: Flatten the grouped attributes back to a list
+        List<InstrumentAttribute> flattenedList = groupedAttributes.values().stream()
+                .flatMap(List::stream)
+                .collect(Collectors.toList());
+
+        // Step 5: Create a Chunk from the flattened list
+        // Assuming you have a Pageable object to create the Chunk
+        flattenedList.addAll(openVersion);
+        return new Chunk<>(flattenedList);
+    }
+
     @Override
     public void write(Chunk<? extends InstrumentAttribute> instrumentAttributes) throws Exception {
         String tenant = tenantContextHolder.getTenant();
@@ -46,10 +96,10 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         if (tenant != null && !tenant.isEmpty()) {
             MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
 
-            for(InstrumentAttribute instrumentAttribute : instrumentAttributes) {
+            for(InstrumentAttribute instrumentAttribute : combinedAttributes) {
                 String accountingPeriod = DateUtil.getAccountingPeriod(instrumentAttribute.getEffectiveDate());
                 AccountingPeriod effectiveAccountingPeriod = accountingPeriodMap.get(accountingPeriod);
-
+                instrumentAttribute.setEndDate(null);
                 if(effectiveAccountingPeriod != null){
                     if(effectiveAccountingPeriod.getStatus() !=0) {
                         instrumentAttribute.setPeriodId(referenceData.getCurrentAccountingPeriodId());
@@ -60,21 +110,12 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                     instrumentAttribute.setPeriodId(referenceData.getCurrentAccountingPeriodId());
                 }
 
-                List<InstrumentAttribute> lastInstrumentAttributeRec = this.instrumentAttributeService.getLastOpenInstrumentAttributes(instrumentAttribute.getAttributeId(), instrumentAttribute.getInstrumentId());
-                if(lastInstrumentAttributeRec.size() > 1) {
-                    log.error("More than one open records found with endate is null {}", lastInstrumentAttributeRec);
-                }
-                    for(InstrumentAttribute ia : lastInstrumentAttributeRec) {
-                        ia.setEndDate(instrumentAttribute.getEffectiveDate());
-                        instrumentAttribute.setOriginationDate(ia.getOriginationDate());
-                        combinedAttributes.add(ia);
-                    }
             }
 
 
             delegate.setTemplate(mongoTemplate);
         }
-        Chunk<InstrumentAttribute> updatedChunk = new Chunk<>(combinedAttributes);
+        Chunk<InstrumentAttribute> updatedChunk = this.setEndDate(combinedAttributes);
         delegate.write(updatedChunk);
     }
 }

@@ -3,15 +3,18 @@ package com.reserv.dataloader.batch.processor;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.utils.DateUtil;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
 public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<String,Object>,InstrumentAttribute> {
+    @Autowired
+    com.fyntrac.common.service.SequenceGeneratorService sequenceGeneratorService;
     @Override
     public InstrumentAttribute process(Map<String, Object> item) throws Exception {
-        final InstrumentAttribute instrumentAttribute = new InstrumentAttribute();
+        final InstrumentAttribute instrumentAttribute = new InstrumentAttribute(sequenceGeneratorService);
         final Map<String, Object> attributes = new HashMap<>();
         for (Map.Entry<String, Object> entry : item.entrySet()) {
             String key = entry.getKey();

@@ -13,4 +13,7 @@ public interface InstrumentAttributeRepository extends MongoRepository<Instrumen
     // Custom query to find InstrumentAttributes by attributeId, instrumentId, and where endDate is null
     @Query("{ 'attributeId': ?0, 'instrumentId': ?1, 'endDate': null }")
     List<InstrumentAttribute> findByAttributeIdAndInstrumentIdAndEndDateIsNull(String attributeId, String instrumentId);
+    @Query("{ 'attributeId': ?0, 'instrumentId': ?1 }")
+    List<InstrumentAttribute> findByAttributeIdAndInstrumentId(String attributeId, String instrumentId);
+
 }
