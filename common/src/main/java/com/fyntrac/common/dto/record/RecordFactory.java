@@ -1,8 +1,14 @@
 package com.fyntrac.common.dto.record;
 
 import com.fyntrac.common.entity.AccountingPeriod;
+import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.entity.TransactionActivity;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.stereotype.Component;
+
+import java.util.Date;
+import java.util.Map;
 import java.util.function.Supplier;
 
 @Component
@@ -47,5 +53,29 @@ public class RecordFactory {
                 transactionActivity.getAttributeId(),
                 transactionActivity.getPeriodId(),
                 transactionActivity.getOriginalPeriodId()));
+    }
+
+    public static Records.InstrumentAttributeRecord createInstrumentAttributeRecord(InstrumentAttribute instrumentAttribute){
+        return createRecord(()-> new Records.InstrumentAttributeRecord(instrumentAttribute.getEffectiveDate()
+                , instrumentAttribute.getInstrumentId()
+                , instrumentAttribute.getAttributeId()
+                , instrumentAttribute.getEndDate()
+                , instrumentAttribute.getPeriodId()
+                , instrumentAttribute.getVersionId()
+                , instrumentAttribute.getAttributes()
+
+        ));
+    }
+
+    public static Records.InstrumentAttributeReclassMessageRecord createInstrumentAttributeReclassMessageRecord(
+            String tenantId
+            , Records.InstrumentAttributeRecord previousInstrumentAttribute
+            , Records.InstrumentAttributeRecord currentInstrumentAttribute
+    ) {
+        return createRecord(() -> new Records.InstrumentAttributeReclassMessageRecord(tenantId, previousInstrumentAttribute, currentInstrumentAttribute));
+    }
+
+    public static Records.ReclassMessageRecord createReclassMessageRecord(String tenantId, String dataKey) {
+        return createRecord(()-> new Records.ReclassMessageRecord(tenantId, dataKey));
     }
 }

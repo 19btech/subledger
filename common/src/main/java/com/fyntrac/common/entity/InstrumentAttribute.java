@@ -12,6 +12,8 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.util.Date;
 import java.util.Map;
 
@@ -21,7 +23,10 @@ import java.util.Map;
 @NoArgsConstructor
 @Document(collection = "InstrumentAttribute")
 @CompoundIndex(def = "{'attributeId': 1, 'instrumentId': 1}", name = "attribute_instrument_index")
-public class InstrumentAttribute {
+public class InstrumentAttribute implements Serializable {
+    @Serial
+    private static final long serialVersionUID = -251193653214449266L;
+
     @Id
     private String id;
     private Date effectiveDate;
@@ -29,7 +34,6 @@ public class InstrumentAttribute {
     private String attributeId;
     @Field(write = Field.Write.ALWAYS)
     private Date endDate;
-    private Date originationDate;
     private int periodId;
     @Indexed // Separate index on versionId
     private long versionId;
@@ -59,7 +63,6 @@ public class InstrumentAttribute {
         json.append("\"instrumentId\":\"").append(instrumentId).append("\",");
         json.append("\"attributeId\":\"").append(attributeId).append("\",");
         json.append("\"endDate\":\"").append(endDate).append("\",");
-        json.append("\"originationDate\":\"").append(originationDate).append("\",");
         json.append("\"periodId\":").append(periodId).append(",");
         json.append("\"versionId\":").append(versionId).append(",");
         json.append("\"attributes\":{");

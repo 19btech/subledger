@@ -1,6 +1,11 @@
 package com.fyntrac.common.dto.record;
 
+import com.fyntrac.common.entity.InstrumentAttribute;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Field;
+
 import java.util.Date;
+import java.util.Map;
 
 public class Records {
     // Record definition for Accounting Period
@@ -21,4 +26,19 @@ public class Records {
     ) {
         // No additional methods are needed unless you want to add custom behavior
     }
+
+    public record InstrumentAttributeRecord(Date effectiveDate,
+            String instrumentId,
+            String attributeId,
+            Date endDate,
+            int periodId,
+            long versionId,
+            Map<String,Object> attributes
+) {}
+
+    public record ReclassMessageRecord(String tenantId, String dataKey){}
+
+    public record InstrumentAttributeReclassMessageRecord(String tenantId
+            , InstrumentAttributeRecord previousInstrumentAttribute
+            , InstrumentAttributeRecord currentInstrumentAttribute) {}
 }

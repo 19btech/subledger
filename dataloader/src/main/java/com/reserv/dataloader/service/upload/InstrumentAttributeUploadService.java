@@ -57,6 +57,7 @@ public class InstrumentAttributeUploadService extends UploadService {
                 .addString("filePath", filePath)
                 .addString("columnName", columnNames.toString())
                 .addLong("run.id", runid)
+                .addString("tenantId", this.dataService.getTenantId())
                 .toJobParameters();
         super.uploadData(jobLauncher
                 ,instrumentAttributeUploadJob

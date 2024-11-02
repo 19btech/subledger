@@ -12,6 +12,10 @@ import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.service.InstrumentAttributeService;
+import com.fyntrac.common.dto.record.Records;
+import com.fyntrac.common.dto.record.RecordFactory;
+import com.fyntrac.common.utils.Key;
+import com.fyntrac.common.cache.collection.CacheList;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -24,6 +28,8 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     private final TenantContextHolder tenantContextHolder;
     private final MemcachedRepository memcachedRepository;
     private final InstrumentAttributeService instrumentAttributeService;
+    private CacheList<Records.InstrumentAttributeReclassMessageRecord> reclassMessageRecords;
+    private final String tenantId;
     public InstrumentAttributeWriter(MongoItemWriter<InstrumentAttribute> delegate,
                                  TenantDataSourceProvider dataSourceProvider,
                                  TenantContextHolder tenantContextHolder,
@@ -34,9 +40,47 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.tenantContextHolder = tenantContextHolder;
         this.memcachedRepository = memcachedRepository;
         this.instrumentAttributeService = instrumentAttributeService;
+        this.tenantId = tenantContextHolder.getTenant();
+        this.reclassMessageRecords = new CacheList<Records.InstrumentAttributeReclassMessageRecord>();
     }
 
-    public Chunk<InstrumentAttribute> setEndDate(List<InstrumentAttribute> attributesList) {
+    @Override
+    public void write(Chunk<? extends InstrumentAttribute> instrumentAttributes) throws Exception {
+        String tenant = tenantContextHolder.getTenant();
+
+        if(this.memcachedRepository.ifExists(Key.reclassMessageList(this.tenantId))) {
+            reclassMessageRecords = this.memcachedRepository.getFromCache(Key.reclassMessageList(this.tenantId), CacheList.class);
+        }
+
+        Map<String, com.fyntrac.common.entity.AccountingPeriod> accountingPeriodMap = this.memcachedRepository.getFromCache(com.fyntrac.common.utils.Key.accountingPeriodKey(tenant), Map.class);
+        com.fyntrac.common.config.ReferenceData referenceData = this.memcachedRepository.getFromCache(this.tenantContextHolder.getTenant(), com.fyntrac.common.config.ReferenceData.class);
+        List<InstrumentAttribute> combinedAttributes = new ArrayList<>(instrumentAttributes.getItems());
+        if (tenant != null && !tenant.isEmpty()) {
+            MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
+
+            for(InstrumentAttribute instrumentAttribute : combinedAttributes) {
+                String accountingPeriod = DateUtil.getAccountingPeriod(instrumentAttribute.getEffectiveDate());
+                AccountingPeriod effectiveAccountingPeriod = accountingPeriodMap.get(accountingPeriod);
+                instrumentAttribute.setEndDate(null);
+                if(effectiveAccountingPeriod != null){
+                    if(effectiveAccountingPeriod.getStatus() !=0) {
+                        instrumentAttribute.setPeriodId(referenceData.getCurrentAccountingPeriodId());
+                    }else{
+                        instrumentAttribute.setPeriodId(effectiveAccountingPeriod.getPeriodId());
+                    }
+                }else {
+                    instrumentAttribute.setPeriodId(referenceData.getCurrentAccountingPeriodId());
+                }
+
+            }
+            delegate.setTemplate(mongoTemplate);
+        }
+        Chunk<InstrumentAttribute> updatedChunk = this.setEndDate(combinedAttributes);
+        this.memcachedRepository.putInCache(Key.reclassMessageList(this.tenantId), reclassMessageRecords);
+        delegate.write(updatedChunk);
+    }
+
+    private Chunk<InstrumentAttribute> setEndDate(List<InstrumentAttribute> attributesList) {
 
         // Step 1: Group by attributeId and instrumentId
         Map<String, List<InstrumentAttribute>> groupedAttributes = new HashMap<>();
@@ -71,6 +115,10 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                     for(InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
                         openInstrumentAttribute.setEndDate(currentAttribute.getEffectiveDate());
                         openVersion.add(openInstrumentAttribute);
+                        Records.InstrumentAttributeRecord openInstrumentAtt = RecordFactory.createInstrumentAttributeRecord(openInstrumentAttribute);
+                        Records.InstrumentAttributeRecord currentInstrumentAtt = RecordFactory.createInstrumentAttributeRecord(currentAttribute);
+                        Records.InstrumentAttributeReclassMessageRecord reclassMessageRecord = RecordFactory.createInstrumentAttributeReclassMessageRecord(tenantId, openInstrumentAtt, currentInstrumentAtt);
+                        this.reclassMessageRecords.add(reclassMessageRecord);
                     }
                 }
             }
@@ -87,36 +135,5 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         return new Chunk<>(flattenedList);
     }
 
-    @Override
-    public void write(Chunk<? extends InstrumentAttribute> instrumentAttributes) throws Exception {
-        String tenant = tenantContextHolder.getTenant();
-        Map<String, com.fyntrac.common.entity.AccountingPeriod> accountingPeriodMap = this.memcachedRepository.getFromCache(com.fyntrac.common.utils.Key.accountingPeriodKey(tenant), Map.class);
-        com.fyntrac.common.config.ReferenceData referenceData = this.memcachedRepository.getFromCache(this.tenantContextHolder.getTenant(), com.fyntrac.common.config.ReferenceData.class);
-        List<InstrumentAttribute> combinedAttributes = new ArrayList<>(instrumentAttributes.getItems());
-        if (tenant != null && !tenant.isEmpty()) {
-            MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
-
-            for(InstrumentAttribute instrumentAttribute : combinedAttributes) {
-                String accountingPeriod = DateUtil.getAccountingPeriod(instrumentAttribute.getEffectiveDate());
-                AccountingPeriod effectiveAccountingPeriod = accountingPeriodMap.get(accountingPeriod);
-                instrumentAttribute.setEndDate(null);
-                if(effectiveAccountingPeriod != null){
-                    if(effectiveAccountingPeriod.getStatus() !=0) {
-                        instrumentAttribute.setPeriodId(referenceData.getCurrentAccountingPeriodId());
-                    }else{
-                        instrumentAttribute.setPeriodId(effectiveAccountingPeriod.getPeriodId());
-                    }
-                }else {
-                    instrumentAttribute.setPeriodId(referenceData.getCurrentAccountingPeriodId());
-                }
-
-            }
-
-
-            delegate.setTemplate(mongoTemplate);
-        }
-        Chunk<InstrumentAttribute> updatedChunk = this.setEndDate(combinedAttributes);
-        delegate.write(updatedChunk);
-    }
 }
 

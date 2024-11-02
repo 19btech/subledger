@@ -1,6 +1,6 @@
 package com.reserv.dataloader.batch.config;
 
-import com.reserv.dataloader.batch.listener.JobCompletionNotificationListener;
+import com.reserv.dataloader.batch.listener.InstrumentAttributeJobCompletionListener;
 import com.reserv.dataloader.batch.mapper.HeaderColumnNameMapper;
 import com.reserv.dataloader.batch.processor.InstrumentAttributeItemProcessor;
 import com.reserv.dataloader.batch.writer.InstrumentAttributeWriter;
@@ -62,7 +62,7 @@ public class InstrumentAttributeDataLoadConfig {
     }
 
     @Bean("instrumentAttributeUploadJob")
-    public Job instrumentAttributeUploadJob(JobCompletionNotificationListener listener, Step instrumentAttributeImportStep) {
+    public Job instrumentAttributeUploadJob(InstrumentAttributeJobCompletionListener listener, Step instrumentAttributeImportStep) {
         return new JobBuilder("instrumentAttributeUploadJob", jobRepository)
                 .incrementer(new RunIdIncrementer())
                 .listener(listener)
