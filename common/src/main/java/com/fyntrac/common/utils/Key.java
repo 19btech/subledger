@@ -27,7 +27,7 @@ public class Key {
 
     public static String allChartOfAccountList(String tenantId){ return tenantId + "CHART_OF_ACCOUNT";}
     public static String allMetricList(String tenantId){ return tenantId + "METRIC_NAME";}
-    public static String reclassMessageList(String tenantId) {
-        return tenantId + "RECLASS_MESSAGE";
+    public static String reclassMessageList(String tenantId, long runId) {
+        return tenantId + "RECLASS_MESSAGE" + "-" + runId;
     }
 }

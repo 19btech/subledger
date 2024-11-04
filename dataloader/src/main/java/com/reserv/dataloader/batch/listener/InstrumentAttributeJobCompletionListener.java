@@ -31,6 +31,7 @@ public class InstrumentAttributeJobCompletionListener implements JobExecutionLis
         StringBuilder jobExecutionMessage = new StringBuilder(0);
         String lineSeparator = System.lineSeparator();
         String tenantId = jobExecution.getJobParameters().getString("tenantId");
+        long runId = jobExecution.getJobParameters().getLong("run.id");
 
         if (jobExecution.getStatus() == BatchStatus.COMPLETED) {
             jobExecutionMessage.append("Job Status : ")
@@ -49,17 +50,12 @@ public class InstrumentAttributeJobCompletionListener implements JobExecutionLis
                     .append(jobExecution.getStepExecutions().toString());
 
             if (jobExecution.getStatus() == BatchStatus.COMPLETED) {
-                log.info(jobExecutionMessage.toString());
-                Long runId = System.currentTimeMillis();
-                JobParameters jobParameters = new JobParametersBuilder()
-                        .addLong("run.id", runId)
-                        .toJobParameters();
                 try {
                     log.info("TransactionAttribute file uploaded successfully");
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }finally {
-                    String dataKey= Key.reclassMessageList(tenantId);
+                    String dataKey= Key.reclassMessageList(tenantId, runId);
                     Records.ReclassMessageRecord reclassMessageRecord = RecordFactory.createReclassMessageRecord(tenantId, dataKey);
                     reclassMessagProducer.sendReclassMessage(reclassMessageRecord);}
             }

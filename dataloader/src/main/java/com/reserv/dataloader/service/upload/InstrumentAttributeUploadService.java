@@ -3,7 +3,7 @@ package com.reserv.dataloader.service.upload;
 import  com.fyntrac.common.enums.FileUploadActivityType;
 import com.fyntrac.common.entity.Attributes;
 import com.reserv.dataloader.service.AccountingPeriodService;
-import com.reserv.dataloader.service.AttributeService;
+import com.fyntrac.common.service.AttributeService;
 import com.fyntrac.common.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.*;

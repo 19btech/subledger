@@ -4,6 +4,7 @@ import com.fyntrac.common.entity.InstrumentAttribute;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Field;
 
+import java.io.Serializable;
 import java.util.Date;
 import java.util.Map;
 
@@ -34,11 +35,17 @@ public class Records {
             int periodId,
             long versionId,
             Map<String,Object> attributes
-) {}
+) implements Serializable {
+        private static final long serialVersionUID = 3287905346762365888L; // Optional, but good practice
+    }
 
-    public record ReclassMessageRecord(String tenantId, String dataKey){}
+    public record ReclassMessageRecord(String tenantId, String dataKey)implements Serializable {
+        private static final long serialVersionUID = -8149874708782902606L; // Optional, but good practice
+    }
 
     public record InstrumentAttributeReclassMessageRecord(String tenantId
             , InstrumentAttributeRecord previousInstrumentAttribute
-            , InstrumentAttributeRecord currentInstrumentAttribute) {}
+            , InstrumentAttributeRecord currentInstrumentAttribute) implements Serializable {
+        private static final long serialVersionUID = -8473589388962080923L; // Optional, but good practice
+    }
 }

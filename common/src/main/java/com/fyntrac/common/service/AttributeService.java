@@ -1,4 +1,4 @@
-package com.reserv.dataloader.service;
+package com.fyntrac.common.service;
 
 import com.fyntrac.common.entity.Attributes;
 import lombok.extern.slf4j.Slf4j;
@@ -6,10 +6,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
-import com.fyntrac.common.service.DataService;
 
 import java.util.Collection;
-import java.util.List;
 
 @Service
 @Slf4j
@@ -26,6 +24,10 @@ public class AttributeService {
         return dataService.fetchData(query, Attributes.class);
     }
 
+    public Collection<Attributes> getReclassableAttributes(String tenantId) {
+        Query query = new Query(Criteria.where("isReclassable").is(1));
+        return dataService.fetchData(query, tenantId,Attributes.class);
+    }
     public Collection<Attributes> getAllAttributes() {
         return dataService.fetchAllData(Attributes.class);
     }

@@ -41,7 +41,6 @@ import java.util.Map;
 @Slf4j
 public class InstrumentAttributeDataLoadConfig {
     private final JobRepository jobRepository;
-    private final TenantContextHolder tenantContextHolder;
     private final TenantDataSourceProvider dataSourceProvider;
     private MongoTemplate mongoTemplate;
     private MemcachedRepository memcachedRepository;
@@ -50,11 +49,9 @@ public class InstrumentAttributeDataLoadConfig {
 
     public InstrumentAttributeDataLoadConfig(JobRepository jobRepository, MongoTemplate mongoTemplate,
                                              TenantDataSourceProvider dataSourceProvider,
-                                             TenantContextHolder tenantContextHolder,
                                              MemcachedRepository memcachedRepository,
                                              InstrumentAttributeService instrumentAttributeService) {
         this.jobRepository = jobRepository;
-        this.tenantContextHolder = tenantContextHolder;
         this.dataSourceProvider = dataSourceProvider;
         this.mongoTemplate = mongoTemplate;
         this.memcachedRepository = memcachedRepository;
@@ -77,8 +74,8 @@ public class InstrumentAttributeDataLoadConfig {
                 .<Map<String,Object>,InstrumentAttribute>chunk(10, new ResourcelessTransactionManager())
                 .reader(instrumentAttributeReader("", ""))
                 .processor(instrumentAttributeMapItemProcessor())
-                .writer(instrumentAttributeWriter(dataSourceProvider,
-                        tenantContextHolder, this.memcachedRepository, this.instrumentAttributeService))
+                .writer(instrumentAttributeWriter(dataSourceProvider
+                        , this.memcachedRepository, this.instrumentAttributeService))
                 .build();
     }
 
@@ -130,14 +127,13 @@ public class InstrumentAttributeDataLoadConfig {
 
     @Bean
     public ItemWriter<InstrumentAttribute> instrumentAttributeWriter(TenantDataSourceProvider dataSourceProvider,
-                                                                     TenantContextHolder tenantContextHolder
-                                                            , MemcachedRepository memcachedRepository
+                                                                    MemcachedRepository memcachedRepository
                                                             , InstrumentAttributeService instrumentAttributeService) {
         MongoItemWriter<InstrumentAttribute> delegate = new MongoItemWriterBuilder<InstrumentAttribute>()
                 .template(mongoTemplate)
                 .collection("InstrumentAttribute")
                 .build();
 
-        return new InstrumentAttributeWriter(delegate, dataSourceProvider, tenantContextHolder, memcachedRepository, instrumentAttributeService);
+        return new InstrumentAttributeWriter(delegate, dataSourceProvider,  memcachedRepository, instrumentAttributeService);
     }
 }
