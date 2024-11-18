@@ -1,6 +1,5 @@
 package com.fyntrac.common.entity;
 
-import com.fyntrac.common.service.SequenceGeneratorService;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,13 +19,11 @@ import java.util.Map;
 @Data
 @Builder
 @AllArgsConstructor
-@NoArgsConstructor
 @Document(collection = "InstrumentAttribute")
 @CompoundIndex(def = "{'attributeId': 1, 'instrumentId': 1}", name = "attribute_instrument_index")
 public class InstrumentAttribute implements Serializable {
     @Serial
     private static final long serialVersionUID = -251193653214449266L;
-
     @Id
     private String id;
     private Date effectiveDate;
@@ -34,24 +31,19 @@ public class InstrumentAttribute implements Serializable {
     private String attributeId;
     @Field(write = Field.Write.ALWAYS)
     private Date endDate;
+    @Indexed
     private int periodId;
     @Indexed // Separate index on versionId
     private long versionId;
     @Field("attributes")
     private Map<String,Object> attributes;
 
-    private SequenceGeneratorService sequenceGeneratorService;
 
-    public void generateVersionId() {
-        this.versionId = sequenceGeneratorService.generateInstrumentAttributeVersionId();
-    }
 
     // Constructor to generate versionId
     @Autowired
-    public InstrumentAttribute(SequenceGeneratorService sequenceGeneratorService) {
-        this.sequenceGeneratorService = sequenceGeneratorService;
+    public InstrumentAttribute() {
         setEndDate(null);
-        generateVersionId();
     }
 
     @Override

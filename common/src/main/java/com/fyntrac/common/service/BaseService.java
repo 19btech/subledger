@@ -22,4 +22,8 @@ public abstract class BaseService<T> {
     public abstract void save(T t);
 
     public abstract Collection<T> fetchAll();
+
+    public void setTenant(String tenantId) {
+        this.dataService.setTenantId(tenantId);
+    }
 }

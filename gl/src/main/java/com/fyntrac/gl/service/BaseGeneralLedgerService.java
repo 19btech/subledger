@@ -18,7 +18,7 @@ public abstract class BaseGeneralLedgerService {
 
     }
 
-    protected void perform(Map<String, Object> executionContext) {
+    protected void perform(Map<String, Object> executionContext) throws ExecutionException, InterruptedException {
 
     }
 }

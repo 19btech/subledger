@@ -62,7 +62,8 @@ public class TransactionActivityJobCompletionListener implements JobExecutionLis
     public void afterJob(JobExecution jobExecution) {
         StringBuilder jobExecutionMessage = new StringBuilder(0);
         String lineSeparator = System.lineSeparator();
-
+        String tenantId = jobExecution.getJobParameters().getString("tenantId");
+        String key = jobExecution.getJobParameters().getString(com.fyntrac.common.utils.Key.aggregationKey());
         if (jobExecution.getStatus() == BatchStatus.COMPLETED) {
             jobExecutionMessage.append("Job Status : ")
                     .append(jobExecution.getStatus())
@@ -92,9 +93,8 @@ public class TransactionActivityJobCompletionListener implements JobExecutionLis
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }finally {
-                    AggregationRequest aggregationRequest = this.aggregationRequestService.getAggregationRequest(AggregationRequestType.COMPLETE_AGG);
-                    updatelastTransactionActivityUploadReportingPeriod(aggregationRequest.getTenantId());
-                    Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(aggregationRequest.getTenantId(), aggregationRequest.getKey());
+                    updatelastTransactionActivityUploadReportingPeriod(tenantId);
+                    Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenantId, key);
                     generalLedgerMessageProducer.bookTempGL(glRec);
 
                    // memcachedRepository.delete(aggregationRequest.getKey());

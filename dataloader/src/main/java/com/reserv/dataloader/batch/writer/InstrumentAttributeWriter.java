@@ -53,6 +53,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
 
         this.runId = jobParameters.getLong("run.id");
         this.tenantId = jobParameters.getString("tenantId");
+        this.instrumentAttributeService.setTenant(tenantId);
 
     }
         @Override
@@ -81,7 +82,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 }else {
                     instrumentAttribute.setPeriodId(referenceData.getCurrentAccountingPeriodId());
                 }
-
+                this.instrumentAttributeService.addIntoCache(this.tenantId, instrumentAttribute);
             }
             delegate.setTemplate(mongoTemplate);
         }

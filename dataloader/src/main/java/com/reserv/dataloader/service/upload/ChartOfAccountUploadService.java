@@ -37,8 +37,8 @@ public class ChartOfAccountUploadService extends UploadService {
         //List<String> columnNames = new ArrayList<>(0);
 
         columnNames.append("ACTIVITYUPLOADID:NUMBER");
-        columnNames.append(",ACCOUNTNUMBER:STRING");
         columnNames.append(",ACCOUNTNAME:STRING");
+        columnNames.append(",ACCOUNTNUMBER:STRING");
         columnNames.append(",ACCOUNTSUBTYPE:STRING");
 
         Collection<Attributes> attributes = attributeService.getReclassableAttributes();

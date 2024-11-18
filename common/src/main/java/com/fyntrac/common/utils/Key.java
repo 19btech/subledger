@@ -1,5 +1,7 @@
 package com.fyntrac.common.utils;
 
+import com.fyntrac.common.entity.InstrumentAttribute;
+
 public class Key {
 
     public static String accountingPeriodKey(String tenantId) {
@@ -29,5 +31,22 @@ public class Key {
     public static String allMetricList(String tenantId){ return tenantId + "METRIC_NAME";}
     public static String reclassMessageList(String tenantId, long runId) {
         return tenantId + "RECLASS_MESSAGE" + "-" + runId;
+    }
+
+    public static String reclassAttributes(String tenantId) {
+        return tenantId + "RECLASS_ATTRIBUTES";
+    }
+
+    public static String instrumentAttributeList(String tenantId) {
+        return tenantId + "INSTRUMENT_ATTRIBUTE";
+    }
+
+    public static String instrumentAttributeKey(String tenantId
+            , String attributeId, String instrumentId, int periodId) {
+        return tenantId + attributeId + instrumentId + periodId;
+    }
+
+    public static String aggregationKey() {
+        return "AGG-KEY";
     }
 }

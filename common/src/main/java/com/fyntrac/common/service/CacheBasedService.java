@@ -11,4 +11,5 @@ public abstract class CacheBasedService<T> extends BaseService<T>{
     }
 
     public abstract void loadIntoCache() throws ExecutionException, InterruptedException;
+
 }

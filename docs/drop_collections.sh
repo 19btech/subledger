@@ -7,7 +7,7 @@ CONTAINER_NAME="mongodb"
 DB_NAME="TOne"
 
 # List of collections to drop
-COLLECTIONS=("MetricLevelLtd" "AttributeLevelLtd" "InstrumentLevelLtd " "InstrumentAttribute" "TransactionActivity")
+COLLECTIONS=("GeneralLedgerEnteryStage" "ReclassValues" "MetricLevelLtd" "AttributeLevelLtd" "InstrumentLevelLtd " "InstrumentAttribute" "TransactionActivity")
 
 # MongoDB username and password
 USERNAME="root"

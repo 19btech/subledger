@@ -15,6 +15,19 @@ public class SequenceGenerator {
     public long generateInstrumentAttributeVersionId(MongoTemplate mongoTemplate) {
         String sequenceName = "instrumentAttributeVersionId";
 
+        Sequence sequence = this.generateSequence(mongoTemplate, sequenceName);
+        return sequence.getSeq();
+    }
+
+    public long generateAttributeSequence(MongoTemplate mongoTemplate) {
+        String sequenceName = "attributeSequence";
+
+        Sequence sequence = this.generateSequence(mongoTemplate, sequenceName);
+        return sequence.getSeq();
+    }
+
+    public Sequence generateSequence(MongoTemplate mongoTemplate, String sequenceName) {
+
         // Check if the sequence exists
         Query query = new Query(Criteria.where("id").is(sequenceName));
         Sequence sequence = mongoTemplate.findOne(query, Sequence.class);
@@ -31,9 +44,8 @@ public class SequenceGenerator {
         Update update = new Update().inc("seq", 1);
         sequence = mongoTemplate.findAndModify(query, update, FindAndModifyOptions.options().returnNew(true), Sequence.class);
 
-        return sequence.getSeq();
+        return sequence;
     }
-
     public void generateAllSequences(MongoTemplate mongoTemplate, String tenant) {
         if(mongoTemplate == null){
             log.error("MongoTemplate is null for tenant[{}]", tenant);

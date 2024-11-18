@@ -1,12 +1,15 @@
 package com.fyntrac.common.service;
 
+import com.fyntrac.common.cache.collection.CacheMap;
 import  com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.InstrumentAttribute;
+import com.fyntrac.common.entity.factory.InstrumentAttributeFactory;
 import com.fyntrac.common.repository.InstrumentAttributeRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
@@ -18,13 +21,17 @@ import java.util.concurrent.ExecutionException;
 @Slf4j
 public class InstrumentAttributeService extends CacheBasedService<InstrumentAttribute> {
 
-    private InstrumentAttributeRepository instrumentAttributeRepository;
+    private final InstrumentAttributeRepository instrumentAttributeRepository;
+    private final InstrumentAttributeFactory instrumentAttributeFactory;
 
     @Autowired
     public InstrumentAttributeService(DataService<InstrumentAttribute> dataService
-            , MemcachedRepository memcachedRepository, InstrumentAttributeRepository instrumentAttributeRepository) {
+            , MemcachedRepository memcachedRepository
+            , InstrumentAttributeRepository instrumentAttributeRepository
+            , InstrumentAttributeFactory instrumentAttributeFactory) {
         super(dataService, memcachedRepository);
         this.instrumentAttributeRepository = instrumentAttributeRepository;
+        this.instrumentAttributeFactory = instrumentAttributeFactory;
     }
 
     public List<InstrumentAttribute> getLastOpenInstrumentAttributes(String attributeId, String instrumentId) {
@@ -39,6 +46,36 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         query.addCriteria(Criteria.where("endDate").is(null));
 
         return this.dataService.fetchData(query, InstrumentAttribute.class);
+    }
+
+    // Define a method in your service class
+    public List<InstrumentAttribute> getOpenInstrumentAttributes(String attributeId, String instrumentId, String tenantId) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("attributeId").is(attributeId));
+        query.addCriteria(Criteria.where("instrumentId").is(instrumentId));
+        query.addCriteria(Criteria.where("endDate").is(null));
+
+        return this.dataService.fetchData(query, tenantId, InstrumentAttribute.class);
+    }
+
+    // Define a method in your service class
+    public InstrumentAttribute getInstrumentAttributeByPeriodId(String tenantId, String attributeId, String instrumentId, int periodId) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("attributeId").is(attributeId));
+        query.addCriteria(Criteria.where("instrumentId").is(instrumentId));
+        query.addCriteria(Criteria.where("periodId").lte(periodId));
+
+        // Sort by versionId in descending order
+        query.with(Sort.by(Sort.Order.desc("versionId")));
+
+        // Limit the result to 1
+        query.limit(1);
+
+        // Fetch the data
+        List<InstrumentAttribute> result = this.dataService.fetchData(query, tenantId, InstrumentAttribute.class);
+
+        // Return the first result if available, otherwise return null
+        return result.isEmpty() ? null : result.get(0);
     }
 
     public List<InstrumentAttribute> findByAttributeIdAndInstrumentId(String attributeId, String instrumentId) {
@@ -89,5 +126,66 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
             instrumentIds.add(ia.getInstrumentId());
         }
         return new HashSet<>(instrumentIds);
+    }
+
+    public void addIntoCache(String tenantId, InstrumentAttribute instrumentAttribute) {
+        String key = Key.instrumentAttributeList(tenantId);
+        CacheMap<InstrumentAttribute> instrumentAttributeCacheMap;
+        if(this.memcachedRepository.ifExists(key)) {
+            instrumentAttributeCacheMap = this.memcachedRepository.getFromCache(key, CacheMap.class);
+          }else{
+            instrumentAttributeCacheMap = new CacheMap<InstrumentAttribute>();
+         }
+        String iaKey = this.getKey(tenantId
+                , instrumentAttribute);
+
+        instrumentAttributeCacheMap.put(iaKey,instrumentAttribute);
+        this.memcachedRepository.putInCache(key, instrumentAttributeCacheMap);
+    }
+
+    private String getKey(String tenantId, InstrumentAttribute instrumentAttribute) {
+        return this.getKey(tenantId
+                , instrumentAttribute.getAttributeId()
+                , instrumentAttribute.getInstrumentId()
+                , instrumentAttribute.getPeriodId());
+    }
+
+    private String getKey(String tenantId, String attributeId, String instrumentId, int periodId) {
+        return Key.instrumentAttributeKey(tenantId
+                , attributeId
+                , instrumentId
+                , periodId);
+    }
+    public void getInstrumentAttribute(String tenantId, String attributeId, String instrumentId, int periodId) {
+        String key = Key.instrumentAttributeList(tenantId);
+        CacheMap<InstrumentAttribute> instrumentAttributeCacheMap;
+        if(this.memcachedRepository.ifExists(key)) {
+            instrumentAttributeCacheMap = this.memcachedRepository.getFromCache(key, CacheMap.class);
+        }else{
+            instrumentAttributeCacheMap = new CacheMap<InstrumentAttribute>();
+        }
+        String iaKey = this.getKey(tenantId
+                , attributeId, instrumentId, periodId);
+         InstrumentAttribute instrumentAttribute =  instrumentAttributeCacheMap.getValue(iaKey);
+         if(instrumentAttribute == null) {
+             instrumentAttribute = this.getInstrumentAttributeByPeriodId(tenantId, attributeId, instrumentId, periodId);
+             if(instrumentAttribute != null) {
+                 this.addIntoCache(tenantId, instrumentAttribute);
+             }
+         }
+    }
+
+    public InstrumentAttribute createInstrumentAttribute(String instrumentId,
+                                                         String attributeId,
+                                                         Date effectiveDate,
+                                                         int periodId,
+                                                         Map<String, Object> attributes) {
+        return instrumentAttributeFactory.create(
+                instrumentId,
+                attributeId,
+                effectiveDate, // effectiveDate
+                periodId, // periodId
+                new HashMap<>() // attributes
+        );
     }
 }

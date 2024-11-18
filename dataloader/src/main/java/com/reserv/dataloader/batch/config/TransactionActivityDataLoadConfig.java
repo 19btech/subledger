@@ -45,6 +45,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.validation.BindException;
+import com.fyntrac.common.service.InstrumentAttributeService;
+import com.fyntrac.common.service.AttributeService;
 
 @Configuration
 @EnableBatchProcessing(modular = true)
@@ -60,6 +62,8 @@ public class TransactionActivityDataLoadConfig {
     private final PlatformTransactionManager transactionManager;
     private final DataService<MetricLevelLtd> dataService;
     private  final SettingsService settingsService;
+    private final InstrumentAttributeService instrumentAttributeService;
+    private final AttributeService attributeService;
 
     @Autowired
     public TransactionActivityDataLoadConfig(JobRepository jobRepository
@@ -70,7 +74,9 @@ public class TransactionActivityDataLoadConfig {
                                     , PlatformTransactionManager transactionManager
                                     , AggregationRequestService metricAggregationRequestService
                                     , DataService<MetricLevelLtd> dataService
-    , SettingsService settingsService) {
+                                    , InstrumentAttributeService instrumentAttributeService
+    , SettingsService settingsService
+    , AttributeService attributeService) {
         this.jobRepository = jobRepository;
         this.tenantContextHolder = tenantContextHolder;
         this.dataSourceProvider = dataSourceProvider;
@@ -80,6 +86,8 @@ public class TransactionActivityDataLoadConfig {
         this.metricAggregationRequestService = metricAggregationRequestService;
         this.dataService = dataService;
         this.settingsService = settingsService;
+        this.instrumentAttributeService = instrumentAttributeService;
+        this.attributeService = attributeService;
     }
 
     @Bean("transactionActivityUploadJob")
@@ -98,8 +106,11 @@ public class TransactionActivityDataLoadConfig {
                 .<TransactionActivity, TransactionActivity>chunk(10, new ResourcelessTransactionManager())
                 .reader(transactionActivityFileReader(""))
                 .processor(transactionActivityItemProcessor())
-                .writer(transactionActivityItemWriter(dataSourceProvider,
-                        tenantContextHolder, this.memcachedRepository))
+                .writer(transactionActivityItemWriter(dataSourceProvider
+                        , tenantContextHolder
+                        , this.memcachedRepository
+                        , this.instrumentAttributeService
+                        , this.attributeService))
                 .build();
     }
 
@@ -155,12 +166,19 @@ public class TransactionActivityDataLoadConfig {
     @Bean
     public ItemWriter<TransactionActivity> transactionActivityItemWriter(TenantDataSourceProvider dataSourceProvider,
                                                           TenantContextHolder tenantContextHolder
-            , MemcachedRepository memcachedRepository) {
+            , MemcachedRepository memcachedRepository
+            , InstrumentAttributeService instrumentAttributeService
+            , AttributeService attributeService) {
         MongoItemWriter<TransactionActivity> delegate = new MongoItemWriterBuilder<TransactionActivity>()
                 .template(mongoTemplate)
                 .collection("TransactionActivity")
                 .build();
-        return new TransactionActivityItemWriter(delegate, dataSourceProvider, tenantContextHolder, memcachedRepository);
+        return new TransactionActivityItemWriter(delegate
+                , dataSourceProvider
+                , tenantContextHolder
+                , memcachedRepository
+                , instrumentAttributeService
+                , attributeService);
     }
 
     @Bean

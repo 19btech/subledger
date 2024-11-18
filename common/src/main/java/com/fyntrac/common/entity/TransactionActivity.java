@@ -5,31 +5,38 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.mapping.MongoId;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.Date;
+import java.util.Map;
 import java.util.Objects;
+
+import org.springframework.data.annotation.Id;
 
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
 @Document(collection = "TransactionActivity")
-public class TransactionActivity  implements Serializable {
+public class TransactionActivity implements Serializable {
     @Serial
     private static final long serialVersionUID = 8444760102552307163L;
 
-    @MongoId
-    String id;
-    Date transactionDate;
-    String instrumentId;
-    String transactionName;
-    double amount;
-    String attributeId;
-    int periodId;
-    int originalPeriodId;
+    @Id
+    private String id;
+    private Date transactionDate;
+    private String instrumentId;
+    private String transactionName;
+    private double amount;
+    private String attributeId;
+    private int periodId;
+    private int originalPeriodId;
+    private long instrumentAttributeVersionId;
+
+    @Field("attributes")
+    private Map<String, Object> attributes;
 
     @Override
     public String toString() {
@@ -39,24 +46,31 @@ public class TransactionActivity  implements Serializable {
         json.append("\"transactionDate\":\"").append(transactionDate).append("\",");
         json.append("\"instrumentId\":\"").append(instrumentId).append("\",");
         json.append("\"transactionName\":\"").append(transactionName).append("\",");
-        json.append("\"value\":\"").append(amount).append("\",");
+        json.append("\"amount\":").append(amount).append(","); // Corrected to "amount"
         json.append("\"attributeId\":\"").append(attributeId).append("\",");
-        json.append("\"originalPeriodId\":\"").append(originalPeriodId).append("\",");
+        json.append("\"periodId\":").append(periodId).append(",");
+        json.append("\"originalPeriodId\":").append(originalPeriodId).append(",");
+        json.append("\"instrumentAttributeVersionId\":").append(instrumentAttributeVersionId).append(",");
+
+        // Add attributes
+        json.append("\"attributes\":{");
+        for (Map.Entry<String, Object> entry : attributes.entrySet()) {
+            String attributeName = entry.getKey();
+            Object attributeValue = entry.getValue();
+            json.append("\"").append(attributeName).append("\":\"").append(attributeValue).append("\",");
+        }
+        // Remove the last comma if attributes are present
+        if (!attributes.isEmpty()) {
+            json.setLength(json.length() - 1); // Remove last comma
+        }
+        json.append("}");
         json.append("}");
         return json.toString();
     }
 
     @Override
     public int hashCode() {
-        int result = 17;
-        result = 31 * result + (id == null? 0 : id.hashCode());
-        result = 31 * result + (transactionDate == null? 0 : transactionDate.hashCode());
-        result = 31 * result + (instrumentId == null? 0 : instrumentId.hashCode());
-        result = 31 * result + (transactionName == null? 0 : transactionName.hashCode());
-        result = 31 * result + Double.hashCode(amount);
-        result = 31 * result + (attributeId == null? 0 : attributeId.hashCode());
-        result = 31 * result + periodId;
-        return result;
+        return Objects.hash(id, transactionDate, instrumentId, transactionName, amount, attributeId, periodId, originalPeriodId, instrumentAttributeVersionId, attributes);
     }
 
     @Override
@@ -66,11 +80,13 @@ public class TransactionActivity  implements Serializable {
         TransactionActivity that = (TransactionActivity) o;
         return periodId == that.periodId &&
                 Double.compare(that.amount, amount) == 0 &&
+                originalPeriodId == that.originalPeriodId &&
+                instrumentAttributeVersionId == that.instrumentAttributeVersionId &&
                 Objects.equals(id, that.id) &&
                 Objects.equals(transactionDate, that.transactionDate) &&
                 Objects.equals(instrumentId, that.instrumentId) &&
                 Objects.equals(transactionName, that.transactionName) &&
                 Objects.equals(attributeId, that.attributeId) &&
-                Objects.equals(originalPeriodId,that.originalPeriodId);
+                Objects.equals(attributes, that.attributes);
     }
 }

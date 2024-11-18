@@ -10,6 +10,7 @@ import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.utils.Key;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -17,6 +18,7 @@ import com.fyntrac.common.cache.collection.CacheMap;
 import com.fyntrac.common.enums.Sign;
 import com.fyntrac.common.entity.AccountTypes;
 import com.fyntrac.common.entity.ChartOfAccount;
+import com.fyntrac.common.utils.StringUtil;
 
 @Service
 public class GeneralLedgerCommonService {
@@ -45,20 +47,20 @@ public class GeneralLedgerCommonService {
                         + mapping.getTransactionName()
                         + mapping.getEntryType().getValue()
                         + mapping.getSign().getValue();
-                slMapping.put(key, mapping);
+                slMapping.put(StringUtil.convertToUpperCaseAndRemoveSpaces(key), mapping);
             }
             this.memcachedRepository.putCollectionInCache(Key.allSubledgerMappingList(tenantId), slMapping, 0);
         }
 
-        String debitKey = tenantId
+        String debitKey = StringUtil.convertToUpperCaseAndRemoveSpaces(tenantId
                 + transactionActivity.getTransactionName()
                 + EntryType.DEBIT
-                + sign.getValue();
+                + sign.getValue());
 
-        String creditKey = tenantId
+            String creditKey = StringUtil.convertToUpperCaseAndRemoveSpaces(tenantId
                 + transactionActivity.getTransactionName()
                 + EntryType.CREDIT
-                + sign.getValue();
+                + sign.getValue());
 
         CacheMap slMapping;
         slMapping = this.memcachedRepository.getFromCache(Key.allSubledgerMappingList(tenantId), CacheMap.class);
@@ -90,8 +92,7 @@ public class GeneralLedgerCommonService {
             // Iterate through the mappings and fill the mappingList
             for (AccountTypes accountType : accountTypes) {
                 // Use the hashCode of the mapping as the key
-                String key = tenantId
-                        + accountType.getAccountSubType();
+                String key = accountType.getAccountSubType();
                 accountTypeMap.put(key, accountType);
             }
             this.memcachedRepository.putCollectionInCache(Key.allAccountTypeList(tenantId), accountTypeMap, 0);
@@ -106,27 +107,48 @@ public class GeneralLedgerCommonService {
         return accountType;
     }
 
-    public ChartOfAccount getChartOfAccount(String tenantId, String accountSubType) {
-
+    public ChartOfAccount getChartOfAccount(String tenantId, String accountSubType, Map<String,Object> attributes) {
+        CacheMap<ChartOfAccount> chartOfAccountCacheMap = new CacheMap<>();
         if (!memcachedRepository.ifExists(Key.allChartOfAccountList(tenantId))) {
-            CacheMap<ChartOfAccount> chartOfAccountCacheMap = new CacheMap<>();
             List<ChartOfAccount> chartOfAccounts = this.dataService.fetchAllData(tenantId, ChartOfAccount.class);
             // Iterate through the mappings and fill the mappingList
             for (ChartOfAccount chartOfAccount : chartOfAccounts) {
                 // Use the hashCode of the mapping as the key
-                String key = tenantId
-                        + chartOfAccount.getAccountSubtype();
+                String key = this.getHashcode(chartOfAccount.getAccountSubtype(), chartOfAccount.getAttributes());
                 chartOfAccountCacheMap.put(key, chartOfAccount);
             }
-            this.memcachedRepository.putCollectionInCache(Key.allChartOfAccountList(tenantId), chartOfAccountCacheMap, 0);
+            this.memcachedRepository.putInCache(Key.allChartOfAccountList(tenantId), chartOfAccountCacheMap, 0);
         }
-        CacheMap chartOfAccounts;
-        chartOfAccounts = this.memcachedRepository.getFromCache(Key.allChartOfAccountList(tenantId), CacheMap.class);
+
+        CacheMap<ChartOfAccount> chartOfAccounts;
+        String key = this.getHashcode(accountSubType, attributes);
+        chartOfAccountCacheMap = this.memcachedRepository.getFromCache(Key.allChartOfAccountList(tenantId), CacheMap.class);
 
         ChartOfAccount chartOfAccount = null;
-        if (chartOfAccounts != null) {
-            chartOfAccount = (ChartOfAccount) chartOfAccounts.getValue(accountSubType);
+        if (chartOfAccountCacheMap != null) {
+            chartOfAccount = chartOfAccountCacheMap.getValue(key);
         }
         return chartOfAccount;
+    }
+    /**
+     * Checks if reclassification is required by comparing two attribute values.
+     *
+     * @param value1 The previous attribute value.
+     * @param value2 The current attribute value.
+     * @return True if reclassification is required, otherwise false.
+     */
+    private boolean checkReclass(Object value1, Object value2) {
+        return (value1 == null && value2 != null) ||
+                (value1 != null && value2 == null) ||
+                (value1 != null && !value1.equals(value2));
+    }
+
+    private String getHashcode(String key, Map<String, Object> attributeMap) {
+        HashSet<String> set = new HashSet<>();
+        set.add(key);
+        for(Map.Entry<String, Object> attribute : attributeMap.entrySet()) {
+            set.add(attribute.getKey() + attribute.getValue());
+        }
+        return String.valueOf(set.hashCode());
     }
 }

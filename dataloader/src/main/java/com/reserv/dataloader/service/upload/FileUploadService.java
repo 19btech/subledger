@@ -12,9 +12,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -25,9 +24,13 @@ public class FileUploadService {
     @Autowired
     private final TenantContextHolder tenantContextHolder;
     UploadService transactionsUploadService;
-    FileUploadService(TenantContextHolder tenantContextHolder, TransactionsUploadService transactionsUploadService) {
+    ActivityUploadService activityUploadService;
+    FileUploadService(TenantContextHolder tenantContextHolder
+            , TransactionsUploadService transactionsUploadService
+            , ActivityUploadService activityUploadService) {
         this.tenantContextHolder = tenantContextHolder;
         this.transactionsUploadService = transactionsUploadService;
+        this.activityUploadService = activityUploadService;
     }
     public void uploadFiles(MultipartFile ... files) throws Throwable {
 
@@ -51,15 +54,45 @@ public class FileUploadService {
 
         this.convertIntoCSVFiles(validFileSet);
         List<Path> fileList = FileUtil.listCsvFiles(OUTPUT_FOLDER_PATH, ".csv");
+        // Create a Map<AccountingRules, filePath>
+        Map<AccountingRules, String> rulesMap = new HashMap<>();
+
         for(Path file : fileList) {
             boolean isValidRule = AccountingRules.isValid(file.getFileName().toString().toLowerCase());
             if(isValidRule) {
                 AccountingRules rule = AccountingRules.get(file.getFileName().toString().toLowerCase());
                 assert rule != null;
-                UploadService uploadService =  UploadServiceFactory.getFileUploader(rule);
-                uploadService.uploadData(file.toString());
+                rulesMap.put(rule, file.toString());
             }
         }
+
+        // Sort the map by priority (higher number = higher priority)
+        Map<AccountingRules, String> sortedMap = rulesMap.entrySet()
+                .stream()
+                .sorted(Map.Entry.<AccountingRules, String>comparingByKey(Comparator.comparingInt(AccountingRules::getPriority).reversed()))
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (e1, e2) -> e1, // Merge function (not used here)
+                        LinkedHashMap::new // Maintain insertion order
+                ));
+
+        Map<AccountingRules, String> activityMap = new HashMap<>(0);
+        for(Map.Entry<AccountingRules,String> entry : sortedMap.entrySet()) {
+            AccountingRules rule = entry.getKey();
+            boolean isActivity = (rule == AccountingRules.TRANSACTIONACTIVITY || rule == AccountingRules.INSTRUMENTATTRIBUTE);
+            String file = entry.getValue();
+            if(isActivity) {
+                activityMap.put(rule, file);
+            }else{
+                UploadService uploadService = UploadServiceFactory.getFileUploader(rule);
+                uploadService.uploadData(file);
+            }
+        }
+
+        this.activityUploadService.uploadActivity(activityMap);
+
+
     }
 
     private void convertIntoCSVFiles(Set<String> fileList) throws Throwable {

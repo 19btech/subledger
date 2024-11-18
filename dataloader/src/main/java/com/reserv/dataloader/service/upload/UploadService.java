@@ -23,6 +23,7 @@ public abstract class UploadService {
     protected Long runId;
 
     public abstract void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException;
+
     public void uploadData(JobLauncher jobLauncher, Job job, String filePath, FileUploadActivityType activityType) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
         LocalDateTime startingTime = DateUtil.getDateTime();
         this.runId = System.currentTimeMillis();
@@ -50,6 +51,7 @@ public abstract class UploadService {
             , FileUploadActivityType activityType) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException{
         try {
             JobExecution execution = jobLauncher.run(job, jobParameters);
+
             this.logActivity(execution, activityType);
             log.info("Exit Status : " + execution.getStatus());
         }catch (Exception e ){

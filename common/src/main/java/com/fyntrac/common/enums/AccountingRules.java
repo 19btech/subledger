@@ -1,25 +1,31 @@
 package com.fyntrac.common.enums;
 
 public enum AccountingRules {
-    TRANSACIONS("transactions.csv"),
-    ATTRIBUTES("attributes.csv"),
-    AGGREGATION("aggregation.csv"),
-    ACCOUNTTYPE("accounttype.csv"),
-    CHARTOFACCOUNTS("chartofaccounts.csv"),
-    ACCOUNTMAPPINGS("accountmappings.csv"),
-    CHARTOFACCOUNT("chartofaccount.csv"),
-    SUBLEDGERMAPPING("subledgermapping.csv"),
-    INSTRUMENTATTRIBUTE("instrumentattribute.csv"),
-    TRANSACTIONACTIVITY("transactionactivity.csv");
+    TRANSACIONS("transactions.csv",100),
+    ATTRIBUTES("attributes.csv",90),
+    AGGREGATION("aggregation.csv",80),
+    ACCOUNTTYPE("accounttype.csv",70),
+    CHARTOFACCOUNTS("chartofaccounts.csv", 60),
+    ACCOUNTMAPPINGS("accountmappings.csv",50),
+    CHARTOFACCOUNT("chartofaccount.csv",40),
+    SUBLEDGERMAPPING("subledgermapping.csv",30),
+    INSTRUMENTATTRIBUTE("instrumentattribute.csv",20),
+    TRANSACTIONACTIVITY("transactionactivity.csv",10);
 
     private final String value;
+    private final int priority;
 
-    AccountingRules(String value) {
+    AccountingRules(String value, int priority) {
         this.value = value;
+        this.priority = priority;
     }
 
     public String getValue() {
         return value;
+    }
+
+    public int getPriority() {
+        return priority;
     }
 
     // Method to check if the input string matches any value in the AccountingRules enum

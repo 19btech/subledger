@@ -3,8 +3,13 @@ package com.fyntrac.common.entity;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.io.Serial;
+import java.io.Serializable;
+
 @Document(collection = "sequences")
-public class Sequence {
+public class Sequence implements Serializable {
+    @Serial
+    private static final long serialVersionUID = -134297821849408526L;
     @Id
     private String id; // This will hold the identifier for the sequence, e.g., "versionId"
     private long seq;   // This will hold the current sequence value

@@ -74,7 +74,7 @@ public class TransactionActivityUploadService extends UploadService {
         JobParameters jobParameters = new JobParametersBuilder()
                 .addString("filePath", filePath)
                 .addLong("run.id", this.runId)
-                .addString("agg.key", key)
+                .addString(com.fyntrac.common.utils.Key.aggregationKey(), key)
                 .addString("tenantId", this.dataService.getTenantId())
                 .toJobParameters();
         this.uploadData(jobLauncher
