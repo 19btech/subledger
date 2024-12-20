@@ -1,6 +1,7 @@
 package com.fyntrac.common.service;
 
 import com.fyntrac.common.entity.Sequence;
+import com.fyntrac.common.enums.SequenceNames;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -13,7 +14,14 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class SequenceGenerator {
     public long generateInstrumentAttributeVersionId(MongoTemplate mongoTemplate) {
-        String sequenceName = "instrumentAttributeVersionId";
+        String sequenceName = SequenceNames.INSTRUMENTATTRIBUTEVERSIONID.name();
+
+        Sequence sequence = this.generateSequence(mongoTemplate, sequenceName);
+        return sequence.getSeq();
+    }
+
+    public long generateBatchSequence(MongoTemplate mongoTemplate) {
+        String sequenceName = SequenceNames.BATCHID.name();
 
         Sequence sequence = this.generateSequence(mongoTemplate, sequenceName);
         return sequence.getSeq();

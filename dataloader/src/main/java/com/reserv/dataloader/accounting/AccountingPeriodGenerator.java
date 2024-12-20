@@ -4,15 +4,10 @@ import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.utils.DateUtil;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
 import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.time.LocalDate;
-
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.TimeZone;
 
 
 @Slf4j
@@ -47,9 +42,9 @@ public class AccountingPeriodGenerator {
         for(int period=1; period<=12; period++) {
             AccountingPeriod accountingPeriod = generateAccountingPeriod(date, period, fiscalYear);
             if(previousAccountingPeriod == null){
-                accountingPeriod.setPreviousAccountingPeriod("");
+                accountingPeriod.setPreviousAccountingPeriodId(0);
             }else{
-                accountingPeriod.setPreviousAccountingPeriod(previousAccountingPeriod.getPeriod());
+                accountingPeriod.setPreviousAccountingPeriodId(previousAccountingPeriod.getPeriodId());
             }
             accountingPeriods.add(accountingPeriod);
             date = DateUtil.incrementMonth(date,1);

@@ -8,10 +8,9 @@ import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.DataService;
 import com.reserv.dataloader.service.SettingsService;
-import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
-
+import com.fyntrac.common.cache.collection.CacheMap;
 
 import java.util.*;
 @Slf4j
@@ -133,22 +132,13 @@ public class MetricLevelAggregator  extends BaseAggregator {
     public void aggregate(TransactionActivity activity) {
         Set<MetricLevelLtd> balances = new HashSet<>(0);
 
-        Map<String, AccountingPeriod> accountingPeriodMap;
-        try {
-            accountingPeriodMap = this.memcachedRepository.getFromCache(Key.accountingPeriodKey(this.tenantId), Map.class);
-        } catch (Exception e) {
-            log.error("Failed to load accounting period map from cache", e);
-            return;
-        }
-
         List<String> metrics = this.getMetrics(activity);
 
         if(metrics == null || metrics.isEmpty()) {
             return;
         }
 
-        String accountingPeriod = DateUtil.getAccountingPeriod(activity.getTransactionDate());
-        AccountingPeriod activityAccountingPeriod = accountingPeriodMap.get(accountingPeriod);
+        AccountingPeriod activityAccountingPeriod = activity.getAccountingPeriod();
         newPeriods.add(activityAccountingPeriod.getPeriodId());
         int activityAccountingPeriodId=0;
         int previousAccountingPeriodId=0;
@@ -158,9 +148,8 @@ public class MetricLevelAggregator  extends BaseAggregator {
             previousAccountingPeriodId = referenceData.getPrevioudAccountingPeriodId();
         } else {
             activityAccountingPeriodId =  activityAccountingPeriod.getPeriodId();
-            if(activityAccountingPeriod.getPreviousAccountingPeriod() != null && !activityAccountingPeriod.getPreviousAccountingPeriod().isEmpty()) {
-                AccountingPeriod previousAccountingPeriod = accountingPeriodMap.get(activityAccountingPeriod.getPreviousAccountingPeriod());
-                previousAccountingPeriodId = previousAccountingPeriod.getPeriodId();
+            if(activityAccountingPeriod.getPreviousAccountingPeriodId() != 0) {
+                previousAccountingPeriodId = activityAccountingPeriod.getPreviousAccountingPeriodId();
             }
         }
 

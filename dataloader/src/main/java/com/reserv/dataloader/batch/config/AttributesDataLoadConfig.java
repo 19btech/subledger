@@ -87,7 +87,7 @@ public class AttributesDataLoadConfig {
 
         DefaultLineMapper<Attributes> defaultLineMapper = new DefaultLineMapper<>();
         DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
-        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID", "USERFIELD", "ATTRIBUTENAME", "ISRECLASSABLE", "DATATYPE", "ISNULLABLE"});
+        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID", "USERFIELD", "ATTRIBUTENAME", "RECLASSABLE", "VERSIONABLE", "DATATYPE", "NULLABLE"});
         defaultLineMapper.setLineTokenizer(lineTokenizer);
         defaultLineMapper.setFieldSetMapper(new FieldSetMapper<Attributes>() {
             @Override
@@ -102,8 +102,9 @@ public class AttributesDataLoadConfig {
                     attribute.setDataType(DataType.STRING);
                 }
 
-                attribute.setIsReclassable(StringUtil.parseBoolean(fieldSet.readString("ISRECLASSABLE")));
-                attribute.setIsNullable(StringUtil.parseBoolean(fieldSet.readString("ISNULLABLE")));
+                attribute.setIsReclassable(StringUtil.parseBoolean(fieldSet.readString("RECLASSABLE")));
+                attribute.setIsVersionable(StringUtil.parseBoolean(fieldSet.readString("VERSIONABLE")));
+                attribute.setIsNullable(StringUtil.parseBoolean(fieldSet.readString("NULLABLE")));
                 return attribute;
             }
         });
@@ -113,7 +114,7 @@ public class AttributesDataLoadConfig {
                 .resource(new FileSystemResource(fileName))
                 .delimited()
                 .names(new String[]{
-                        "ACTIVITYUPLOADID", "USERFIELD", "ATTRIBUTENAME", "ISRECLASSABLE", "DATATYPE", "ISNULLABLE"
+                        "ACTIVITYUPLOADID", "USERFIELD", "ATTRIBUTENAME", "RECLASSABLE", "VERSIONABLE", "DATATYPE", "NULLABLE"
                 })
                 .linesToSkip(1)
                 .lineMapper(defaultLineMapper)

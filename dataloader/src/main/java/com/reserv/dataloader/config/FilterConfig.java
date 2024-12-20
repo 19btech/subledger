@@ -1,10 +1,11 @@
-package  com.fyntrac.common.config;
+package  com.reserv.dataloader.config;
 
 import com.reserv.dataloader.filter.TenantFilter;
 import com.fyntrac.common.service.DataService;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import com.fyntrac.common.config.TenantContextHolder;
 
 import java.util.Collections;
 

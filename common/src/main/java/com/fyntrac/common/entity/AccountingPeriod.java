@@ -27,5 +27,5 @@ public class AccountingPeriod implements Serializable {
     private String period;
     private int periodId;
     private int status;
-    private String previousAccountingPeriod;
+    private int previousAccountingPeriodId;
 }

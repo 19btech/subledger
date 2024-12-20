@@ -47,6 +47,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.validation.BindException;
 import com.fyntrac.common.service.InstrumentAttributeService;
 import com.fyntrac.common.service.AttributeService;
+import com.fyntrac.common.service.AccountingPeriodService;
 
 @Configuration
 @EnableBatchProcessing(modular = true)
@@ -64,6 +65,7 @@ public class TransactionActivityDataLoadConfig {
     private  final SettingsService settingsService;
     private final InstrumentAttributeService instrumentAttributeService;
     private final AttributeService attributeService;
+    private final AccountingPeriodService accountingPeriodService;
 
     @Autowired
     public TransactionActivityDataLoadConfig(JobRepository jobRepository
@@ -76,7 +78,8 @@ public class TransactionActivityDataLoadConfig {
                                     , DataService<MetricLevelLtd> dataService
                                     , InstrumentAttributeService instrumentAttributeService
     , SettingsService settingsService
-    , AttributeService attributeService) {
+    , AttributeService attributeService
+    , AccountingPeriodService accountingPeriodService) {
         this.jobRepository = jobRepository;
         this.tenantContextHolder = tenantContextHolder;
         this.dataSourceProvider = dataSourceProvider;
@@ -88,6 +91,7 @@ public class TransactionActivityDataLoadConfig {
         this.settingsService = settingsService;
         this.instrumentAttributeService = instrumentAttributeService;
         this.attributeService = attributeService;
+        this.accountingPeriodService = accountingPeriodService;
     }
 
     @Bean("transactionActivityUploadJob")
@@ -110,7 +114,8 @@ public class TransactionActivityDataLoadConfig {
                         , tenantContextHolder
                         , this.memcachedRepository
                         , this.instrumentAttributeService
-                        , this.attributeService))
+                        , this.attributeService
+                        , this.accountingPeriodService))
                 .build();
     }
 
@@ -168,7 +173,8 @@ public class TransactionActivityDataLoadConfig {
                                                           TenantContextHolder tenantContextHolder
             , MemcachedRepository memcachedRepository
             , InstrumentAttributeService instrumentAttributeService
-            , AttributeService attributeService) {
+            , AttributeService attributeService
+            , AccountingPeriodService accountingPeriodService) {
         MongoItemWriter<TransactionActivity> delegate = new MongoItemWriterBuilder<TransactionActivity>()
                 .template(mongoTemplate)
                 .collection("TransactionActivity")
@@ -178,7 +184,8 @@ public class TransactionActivityDataLoadConfig {
                 , tenantContextHolder
                 , memcachedRepository
                 , instrumentAttributeService
-                , attributeService);
+                , attributeService
+                , accountingPeriodService);
     }
 
     @Bean

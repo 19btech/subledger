@@ -12,14 +12,14 @@ import java.util.concurrent.ExecutionException;
 @Service
 public class CacheService {
 
-    AccountingPeriodService accountingPeriodService;
+    AccountingPeriodDataUploadService accountingPeriodService;
     InstrumentAttributeService instrumentAttributeService;
     AttributeLevelAggregationService attributeLevelAggregationService;
     InstrumentLevelAggregationService instrumentLevelAggregationService;
     MetricLevelAggregationService metricLevelAggregationService;
 
     @Autowired
-    CacheService(AccountingPeriodService accountingPeriodService
+    CacheService(AccountingPeriodDataUploadService accountingPeriodService
     , InstrumentAttributeService instrumentAttributeService
     , AttributeLevelAggregationService attributeLevelAggregationService
     , InstrumentLevelAggregationService instrumentLevelAggregationService

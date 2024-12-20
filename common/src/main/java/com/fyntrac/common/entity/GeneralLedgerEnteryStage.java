@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import java.io.Serial;
@@ -39,6 +40,8 @@ public class GeneralLedgerEnteryStage implements Serializable {
     private double debitAmount;
     private double creditAmount;
     private int isReclass;
+    @Indexed
+    private long batchId;
 
     @Field("attributes")
     private Map<String, Object> attributes;
@@ -65,6 +68,7 @@ public class GeneralLedgerEnteryStage implements Serializable {
                 .append("\"debitAmount\":").append(debitAmount).append(",")
                 .append("\"creditAmount\":").append(creditAmount).append(",")
                 .append("\"isReclass\":").append(isReclass).append(",")
+                .append("\"batchId\":").append(batchId).append(",")
                 .append("\"attributes\":").append(attributes)
                 .append("}");
         return json.toString();

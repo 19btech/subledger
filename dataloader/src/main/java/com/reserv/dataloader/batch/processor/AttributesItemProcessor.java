@@ -11,6 +11,7 @@ public class AttributesItemProcessor implements ItemProcessor<Attributes,Attribu
         attribute.setIsNullable(item.getIsNullable());
         attribute.setAttributeName(item.getAttributeName());
         attribute.setIsReclassable(item.getIsReclassable());
+        attribute.setIsVersionable(item.getIsVersionable());
         attribute.setDataType(item.getDataType());
         attribute.setUserField(item.getUserField());
         return attribute;

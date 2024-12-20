@@ -1,12 +1,14 @@
 package com.fyntrac.common.dto.record;
 
 import com.fyntrac.common.entity.AccountingPeriod;
+import com.fyntrac.common.entity.Batch;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.entity.TransactionActivity;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
 import java.util.Date;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -69,13 +71,18 @@ public class RecordFactory {
 
     public static Records.InstrumentAttributeReclassMessageRecord createInstrumentAttributeReclassMessageRecord(
             String tenantId
+            , long batchId
             , Records.InstrumentAttributeRecord previousInstrumentAttribute
             , Records.InstrumentAttributeRecord currentInstrumentAttribute
     ) {
-        return createRecord(() -> new Records.InstrumentAttributeReclassMessageRecord(tenantId, previousInstrumentAttribute, currentInstrumentAttribute));
+        return createRecord(() -> new Records.InstrumentAttributeReclassMessageRecord(tenantId, batchId, previousInstrumentAttribute, currentInstrumentAttribute));
     }
 
     public static Records.ReclassMessageRecord createReclassMessageRecord(String tenantId, String dataKey) {
         return createRecord(()-> new Records.ReclassMessageRecord(tenantId, dataKey));
+    }
+
+    public static Records.AccountingPeriodCloseMessageRecord createAccountingPeriodCloseMessage(String tenant, Collection<Batch> batches){
+        return createRecord(() -> new Records.AccountingPeriodCloseMessageRecord(tenant, batches));
     }
 }

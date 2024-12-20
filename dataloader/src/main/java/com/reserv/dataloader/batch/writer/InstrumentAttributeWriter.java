@@ -1,6 +1,6 @@
 package com.reserv.dataloader.batch.writer;
 
-import  com.fyntrac.common.config.TenantContextHolder;
+import  com.fyntrac.common.entity.AccountingPeriod;
 import  com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import lombok.extern.slf4j.Slf4j;
@@ -12,16 +12,15 @@ import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import com.fyntrac.common.repository.MemcachedRepository;
-import com.fyntrac.common.utils.DateUtil;
-import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.service.InstrumentAttributeService;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.utils.Key;
 import com.fyntrac.common.cache.collection.CacheList;
-
+import com.fyntrac.common.config.ReferenceData;
 import java.util.*;
 import java.util.stream.Collectors;
+import com.fyntrac.common.service.AccountingPeriodService;
 
 @Slf4j
 public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute> {
@@ -33,17 +32,21 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     private CacheList<Records.InstrumentAttributeReclassMessageRecord> reclassMessageRecords;
     private String tenantId;
     private long runId;
+    private AccountingPeriodService accountingPeriodService;
+    private long batchId;
 
     public InstrumentAttributeWriter(MongoItemWriter<InstrumentAttribute> delegate,
                                  TenantDataSourceProvider dataSourceProvider,
                                   MemcachedRepository memcachedRepository,
-                                     InstrumentAttributeService instrumentAttributeService) {
+                                     InstrumentAttributeService instrumentAttributeService,
+                                     AccountingPeriodService accountingPeriodService) {
         this.delegate = delegate;
         this.dataSourceProvider = dataSourceProvider;
         this.memcachedRepository = memcachedRepository;
         this.instrumentAttributeService = instrumentAttributeService;
         this.reclassMessageRecords = new CacheList<Records.InstrumentAttributeReclassMessageRecord>();
         this.runId=0;
+        this.accountingPeriodService = accountingPeriodService;
     }
 
     @BeforeStep
@@ -54,6 +57,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.runId = jobParameters.getLong("run.id");
         this.tenantId = jobParameters.getString("tenantId");
         this.instrumentAttributeService.setTenant(tenantId);
+        this.batchId = jobParameters.getLong("batchId");
 
     }
         @Override
@@ -61,17 +65,20 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         String dataKey = Key.reclassMessageList(this.tenantId, this.runId);
         if(this.memcachedRepository.ifExists(dataKey)) {
             reclassMessageRecords = this.memcachedRepository.getFromCache(dataKey, CacheList.class);
+        }else{
+            this.reclassMessageRecords = new CacheList<Records.InstrumentAttributeReclassMessageRecord>();
         }
 
-        Map<String, com.fyntrac.common.entity.AccountingPeriod> accountingPeriodMap = this.memcachedRepository.getFromCache(com.fyntrac.common.utils.Key.accountingPeriodKey(this.tenantId), Map.class);
-        com.fyntrac.common.config.ReferenceData referenceData = this.memcachedRepository.getFromCache(this.tenantId, com.fyntrac.common.config.ReferenceData.class);
-        List<InstrumentAttribute> combinedAttributes = new ArrayList<>(instrumentAttributes.getItems());
-        if (this.tenantId != null && !this.tenantId.isEmpty()) {
+        ReferenceData referenceData = this.memcachedRepository.getFromCache(this.tenantId, com.fyntrac.common.config.ReferenceData.class);
+            List<InstrumentAttribute> combinedAttributes = new ArrayList<>(instrumentAttributes.getItems());
+
+            if (this.tenantId != null && !this.tenantId.isEmpty()) {
+
             MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(this.tenantId);
 
             for(InstrumentAttribute instrumentAttribute : combinedAttributes) {
-                String accountingPeriod = DateUtil.getAccountingPeriod(instrumentAttribute.getEffectiveDate());
-                AccountingPeriod effectiveAccountingPeriod = accountingPeriodMap.get(accountingPeriod);
+                int effectivePeriodId = com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(instrumentAttribute.getEffectiveDate());
+                AccountingPeriod effectiveAccountingPeriod = this.accountingPeriodService.getAccountingPeriod(effectivePeriodId, this.tenantId);
                 instrumentAttribute.setEndDate(null);
                 if(effectiveAccountingPeriod != null){
                     if(effectiveAccountingPeriod.getStatus() !=0) {
@@ -82,16 +89,17 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 }else {
                     instrumentAttribute.setPeriodId(referenceData.getCurrentAccountingPeriodId());
                 }
+                instrumentAttribute.setBatchId(batchId);
                 this.instrumentAttributeService.addIntoCache(this.tenantId, instrumentAttribute);
             }
             delegate.setTemplate(mongoTemplate);
         }
-        Chunk<InstrumentAttribute> updatedChunk = this.setEndDate(combinedAttributes);
+        Chunk<InstrumentAttribute> updatedChunk = this.setEndDate(batchId, combinedAttributes);
         this.memcachedRepository.putInCache(dataKey, reclassMessageRecords);
         delegate.write(updatedChunk);
     }
 
-    private Chunk<InstrumentAttribute> setEndDate(List<InstrumentAttribute> attributesList) {
+    private Chunk<InstrumentAttribute> setEndDate(long batchId , List<InstrumentAttribute> attributesList) {
 
         // Step 1: Group by attributeId and instrumentId
         Map<String, List<InstrumentAttribute>> groupedAttributes = new HashMap<>();
@@ -119,7 +127,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                     InstrumentAttribute nextAttribute = sortedSubChunk.get(i + 1);
                     // Set endDate of the current attribute to effectiveDate of the next attribute
                     currentAttribute.setEndDate(nextAttribute.getEffectiveDate());
-                    this.addReclassMessage(currentAttribute, nextAttribute);
+                    this.addReclassMessage(batchId, currentAttribute, nextAttribute);
                 }
 
                 if(i== 0) {
@@ -127,7 +135,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                     for(InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
                         openInstrumentAttribute.setEndDate(currentAttribute.getEffectiveDate());
                         openVersion.add(openInstrumentAttribute);
-                        this.addReclassMessage(openInstrumentAttribute, currentAttribute);
+                        this.addReclassMessage(batchId, openInstrumentAttribute, currentAttribute);
                     }
                 }
             }
@@ -149,10 +157,10 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
      * @param openInstrumentAttribute
      * @param currentAttribute
      */
-    private void addReclassMessage(InstrumentAttribute openInstrumentAttribute, InstrumentAttribute currentAttribute) {
+    private void addReclassMessage(long batchId, InstrumentAttribute openInstrumentAttribute, InstrumentAttribute currentAttribute) {
         Records.InstrumentAttributeRecord openInstrumentAtt = RecordFactory.createInstrumentAttributeRecord(openInstrumentAttribute);
         Records.InstrumentAttributeRecord currentInstrumentAtt = RecordFactory.createInstrumentAttributeRecord(currentAttribute);
-        Records.InstrumentAttributeReclassMessageRecord reclassMessageRecord = RecordFactory.createInstrumentAttributeReclassMessageRecord(tenantId, openInstrumentAtt, currentInstrumentAtt);
+        Records.InstrumentAttributeReclassMessageRecord reclassMessageRecord = RecordFactory.createInstrumentAttributeReclassMessageRecord(tenantId, batchId, openInstrumentAtt, currentInstrumentAtt);
         this.reclassMessageRecords.add(reclassMessageRecord);
     }
 }

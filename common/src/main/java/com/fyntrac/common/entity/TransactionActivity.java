@@ -31,10 +31,10 @@ public class TransactionActivity implements Serializable {
     private String transactionName;
     private double amount;
     private String attributeId;
-    private int periodId;
     private int originalPeriodId;
     private long instrumentAttributeVersionId;
-
+    private AccountingPeriod accountingPeriod;
+    private long batchId;
     @Field("attributes")
     private Map<String, Object> attributes;
 
@@ -48,8 +48,9 @@ public class TransactionActivity implements Serializable {
         json.append("\"transactionName\":\"").append(transactionName).append("\",");
         json.append("\"amount\":").append(amount).append(","); // Corrected to "amount"
         json.append("\"attributeId\":\"").append(attributeId).append("\",");
-        json.append("\"periodId\":").append(periodId).append(",");
+        json.append("\"periodId\":").append(accountingPeriod).append(",");
         json.append("\"originalPeriodId\":").append(originalPeriodId).append(",");
+        json.append("\"batchId\":").append(batchId).append(",");
         json.append("\"instrumentAttributeVersionId\":").append(instrumentAttributeVersionId).append(",");
 
         // Add attributes
@@ -70,7 +71,7 @@ public class TransactionActivity implements Serializable {
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, transactionDate, instrumentId, transactionName, amount, attributeId, periodId, originalPeriodId, instrumentAttributeVersionId, attributes);
+        return Objects.hash(id, transactionDate, instrumentId, transactionName, amount, attributeId, this.accountingPeriod.getPeriodId(), originalPeriodId, instrumentAttributeVersionId, attributes);
     }
 
     @Override
@@ -78,7 +79,7 @@ public class TransactionActivity implements Serializable {
         if (this == o) return true;
         if (!(o instanceof TransactionActivity)) return false;
         TransactionActivity that = (TransactionActivity) o;
-        return periodId == that.periodId &&
+        return this.accountingPeriod.getPeriodId() == that.accountingPeriod.getPeriodId() &&
                 Double.compare(that.amount, amount) == 0 &&
                 originalPeriodId == that.originalPeriodId &&
                 instrumentAttributeVersionId == that.instrumentAttributeVersionId &&
@@ -88,5 +89,9 @@ public class TransactionActivity implements Serializable {
                 Objects.equals(transactionName, that.transactionName) &&
                 Objects.equals(attributeId, that.attributeId) &&
                 Objects.equals(attributes, that.attributes);
+    }
+
+    public int getPeriodId() {
+        return this.accountingPeriod.getPeriodId();
     }
 }

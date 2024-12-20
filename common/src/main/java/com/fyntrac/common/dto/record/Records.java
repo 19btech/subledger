@@ -1,10 +1,12 @@
 package com.fyntrac.common.dto.record;
 
+import com.fyntrac.common.entity.Batch;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.io.Serializable;
+import java.util.Collection;
 import java.util.Date;
 import java.util.Map;
 
@@ -44,8 +46,13 @@ public class Records {
     }
 
     public record InstrumentAttributeReclassMessageRecord(String tenantId
+            , long batchId
             , InstrumentAttributeRecord previousInstrumentAttribute
             , InstrumentAttributeRecord currentInstrumentAttribute) implements Serializable {
         private static final long serialVersionUID = -8473589388962080923L; // Optional, but good practice
+    }
+
+    public record AccountingPeriodCloseMessageRecord(String tenantId, Collection<Batch> batches)implements Serializable {
+        private static final long serialVersionUID = 322984303560312158L;
     }
 }

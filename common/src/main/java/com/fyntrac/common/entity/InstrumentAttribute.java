@@ -29,6 +29,7 @@ public class InstrumentAttribute implements Serializable {
     private Date effectiveDate;
     private String instrumentId;
     private String attributeId;
+    private long batchId;
     @Field(write = Field.Write.ALWAYS)
     private Date endDate;
     @Indexed
@@ -57,6 +58,7 @@ public class InstrumentAttribute implements Serializable {
         json.append("\"endDate\":\"").append(endDate).append("\",");
         json.append("\"periodId\":").append(periodId).append(",");
         json.append("\"versionId\":").append(versionId).append(",");
+        json.append("\"batchId\":").append(batchId).append(",");
         json.append("\"attributes\":{");
 
         if (attributes != null && !attributes.isEmpty()) {

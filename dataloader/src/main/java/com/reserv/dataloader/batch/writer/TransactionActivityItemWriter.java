@@ -8,7 +8,6 @@ import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.entity.TransactionActivityList;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.DateUtil;
-import com.fyntrac.common.utils.Key;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.annotation.BeforeStep;
@@ -20,6 +19,7 @@ import com.fyntrac.common.service.InstrumentAttributeService;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.entity.Attributes;
 import com.fyntrac.common.service.AttributeService;
+import com.fyntrac.common.service.AccountingPeriodService;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -37,18 +37,22 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
     private TransactionActivityList keyList;
     private AttributeService attributeService;
     private Collection<Attributes> attributes;
+    private AccountingPeriodService accountingPeriodService;
+    private long batchId;
     public TransactionActivityItemWriter(MongoItemWriter<TransactionActivity> delegate,
                                  TenantDataSourceProvider dataSourceProvider,
                                  TenantContextHolder tenantContextHolder
             , MemcachedRepository memcachedRepository
             , InstrumentAttributeService instrumentAttributeService
-            , AttributeService attributeService) {
+            , AttributeService attributeService
+            , AccountingPeriodService accountingPeriodService) {
         this.delegate = delegate;
         this.dataSourceProvider = dataSourceProvider;
         this.tenantContextHolder = tenantContextHolder;
         this.memcachedRepository = memcachedRepository;
         this.instrumentAttributeService = instrumentAttributeService;
         this.attributeService = attributeService;
+        this.accountingPeriodService = accountingPeriodService;
     }
 
     @BeforeStep
@@ -58,6 +62,7 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
 
         this.transactionActivityKey = jobParameters.getString(com.fyntrac.common.utils.Key.aggregationKey());
         this.tenantId = jobParameters.getString("tenantId");
+        this.batchId = jobParameters.getLong("batchId");
 
         if(this.transactionActivityKey == null) {
             return;
@@ -75,27 +80,28 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
     @Override
     public void write(Chunk<? extends TransactionActivity> activity) throws Exception {
         String tenant = tenantContextHolder.getTenant();
-        Map<String, AccountingPeriod> accountingPeriodMap = this.memcachedRepository.getFromCache(Key.accountingPeriodKey(tenant), Map.class);
         ReferenceData referenceData = this.memcachedRepository.getFromCache(this.tenantContextHolder.getTenant(), ReferenceData.class);
+        AccountingPeriod currentAccountingPeriod = this.accountingPeriodService.getAccountingPeriod(referenceData.getCurrentAccountingPeriodId(), tenant);
         if (tenant != null && !tenant.isEmpty()) {
             MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
             for(TransactionActivity transactionActivity:activity) {
-                String accountingPeriod = DateUtil.getAccountingPeriod(transactionActivity.getTransactionDate());
-                AccountingPeriod effectiveAccountingPeriod =  accountingPeriodMap.get(accountingPeriod);
+                int accountingPeriodId = DateUtil.getAccountingPeriodId(transactionActivity.getTransactionDate());
+                AccountingPeriod effectiveAccountingPeriod =  this.accountingPeriodService.getAccountingPeriod(accountingPeriodId, tenant);;
 
                 if(effectiveAccountingPeriod != null){
                     if(effectiveAccountingPeriod.getStatus() !=0) {
-                        transactionActivity.setPeriodId(referenceData.getCurrentAccountingPeriodId());
+                        transactionActivity.setAccountingPeriod(currentAccountingPeriod);
                     }else{
-                        transactionActivity.setPeriodId(effectiveAccountingPeriod.getPeriodId());
+                        transactionActivity.setAccountingPeriod(effectiveAccountingPeriod);
                     }
                     transactionActivity.setOriginalPeriodId(effectiveAccountingPeriod.getPeriodId());
                 }else {
-                    transactionActivity.setPeriodId(referenceData.getCurrentAccountingPeriodId());
+                    transactionActivity.setAccountingPeriod(currentAccountingPeriod);
                     transactionActivity.setOriginalPeriodId(referenceData.getCurrentAccountingPeriodId());
                 }
                 this.setAttributes(transactionActivity);
                 keyList.add(tenantContextHolder.getTenant() + "TA" + transactionActivity.hashCode());
+                transactionActivity.setBatchId(batchId);
                 this.memcachedRepository.putInCache(tenantContextHolder.getTenant() + "TA" + transactionActivity.hashCode(), transactionActivity);
             }
             delegate.setTemplate(mongoTemplate);

@@ -3,7 +3,7 @@ package com.reserv.dataloader.service.upload;
 import  com.fyntrac.common.enums.AggregationRequestType;
 import  com.fyntrac.common.enums.FileUploadActivityType;
 import com.fyntrac.common.entity.AggregationRequest;
-import com.reserv.dataloader.service.AccountingPeriodService;
+import com.reserv.dataloader.service.AccountingPeriodDataUploadService;
 import com.reserv.dataloader.service.AggregationRequestService;
 import com.reserv.dataloader.service.CacheService;
 import com.reserv.dataloader.service.TransactionActivityService;
@@ -35,12 +35,12 @@ public class TransactionActivityUploadService extends UploadService {
 
     @Autowired
     protected JobLauncher jobLauncher;
-    private final AccountingPeriodService accountingPeriodService;
+    private final AccountingPeriodDataUploadService accountingPeriodService;
     private final AggregationService aggregationService;
     private final TransactionActivityService transactionActivityService;
     private final CacheService cacheService;
     @Autowired
-    public TransactionActivityUploadService(AccountingPeriodService accountingPeriodService
+    public TransactionActivityUploadService(AccountingPeriodDataUploadService accountingPeriodService
                                             ,TransactionActivityService transactionActivityService
     , AggregationService aggregationService
     , CacheService cacheService) {

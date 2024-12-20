@@ -53,12 +53,14 @@ public class TenantDatasourceConfig {
     }
 
     public void configureTenantDatabases(String tenant) {
-        String connectionURI = getConnectionURI(tenant);
-        MongoDatabaseFactory factory = new SimpleMongoClientDatabaseFactory(connectionURI);
-        MongoTemplate template = new MongoTemplate(factory, mappingMongoConverter);
-        tenantDataSourceProvider.addDataSource(tenant, template);
-        if(sequenceGenerator != null) {
-            sequenceGenerator.generateAllSequences(template, tenant);
+        if(tenantDataSourceProvider.getDataSource(tenant) == null) {
+            String connectionURI = getConnectionURI(tenant);
+            MongoDatabaseFactory factory = new SimpleMongoClientDatabaseFactory(connectionURI);
+            MongoTemplate template = new MongoTemplate(factory, mappingMongoConverter);
+            tenantDataSourceProvider.addDataSource(tenant, template);
+            if (sequenceGenerator != null) {
+                sequenceGenerator.generateAllSequences(template, tenant);
+            }
         }
     }
 

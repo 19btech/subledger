@@ -1,20 +1,27 @@
 package com.fyntrac.common.service;
 
+import com.fyntrac.common.entity.Sequence;
+import com.fyntrac.common.enums.SequenceNames;
 import com.mongodb.client.result.UpdateResult;
 import  com.fyntrac.common.config.TenantContextHolder;
 import  com.fyntrac.common.component.TenantDataSourceProvider;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.BulkOperations;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+// MongoDB Document
+import org.bson.Document;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
-import java.util.TimeZone;
+import java.util.*;
 
 @Service
+@Slf4j
 public class DataService<T> {
 
     private final TenantDataSourceProvider dataSourceProvider;
@@ -77,6 +84,15 @@ public class DataService<T> {
         }
     }
 
+    public <T> Collection<T> saveAll(Collection<T> entities,String tenantId, Class<T> klass) {
+        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenantId);
+        if (mongoTemplate != null) {
+            TimeZone.setDefault(TimeZone.getTimeZone("IST"));
+            return mongoTemplate.insert(entities, klass);
+        } else {
+            throw new IllegalArgumentException("Invalid tenantId: " + tenantId);
+        }
+    }
     public List<T> fetchData(Query query, Class<T> documentClass) {
         String tenant = tenantContextHolder.getTenant();
         return this.fetchData(query, tenant, documentClass);
@@ -142,5 +158,158 @@ public class DataService<T> {
 
     public String getAccountingPeriodKey() {
         return  this.getTenantId() + "-" + "AP";
+    }
+
+    public T findOne(Query query, Class<T> t) {
+        String tenant = tenantContextHolder.getTenant();
+        return findOne(query, t);
+    }
+
+    public T findOne(Query query, String tenantId, Class<T> t) {
+        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(this.getTenantId());
+        // Fetch the single unique document
+        return mongoTemplate.findOne(query, t);
+    }
+
+    // Strategy interface for custom mapping
+    public interface BulkWriteStrategy<T> {
+        Object getId(T entity);
+        Document createUpdateDocument(T entity);
+    }
+
+    /**
+     * Upserts a HashSet of objects into the specified collection.
+     *
+     * @param objectSet The set of objects to be upserted.
+     * @param clazz     The class type of the objects.
+     * @param <T>       The type of the objects.
+     * @param identifierKey The unique key used to identify existing records.
+     * @throws Exception Throws exception if bulk operation fails.
+     */
+    public <T> void upsertHashSet(HashSet<T> objectSet, Class<T> clazz, String identifierKey) throws Exception {
+        if (objectSet == null || objectSet.isEmpty()) {
+            return;
+        }
+
+        try {
+            // Prepare bulk operations
+            String tenant = tenantContextHolder.getTenant();
+            MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
+            BulkOperations bulkOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, clazz);
+
+            for (T object : objectSet) {
+                // Extract the identifier key's value using reflection
+                Object identifierValue = getFieldValue(object, identifierKey);
+
+                if (identifierValue == null) {
+                    throw new IllegalArgumentException("Identifier key value cannot be null");
+                }
+
+                // Create a query to match the identifier
+                Query query = new Query(Criteria.where(identifierKey).is(identifierValue));
+
+                // Create an update object to set all fields of the object
+                Update update = new Update();
+                for (java.lang.reflect.Field field : clazz.getDeclaredFields()) {
+                    field.setAccessible(true); // Allow access to private fields
+                    update.set(field.getName(), field.get(object));
+                }
+
+                // Add upsert operation to bulkOps
+                bulkOps.upsert(query, update);
+            }
+
+            // Execute bulk operation
+            bulkOps.execute();
+        } catch (Exception e) {
+            // Log and rethrow the exception
+            System.err.println("Error during bulk upsert: " + e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Extracts the value of a field from an object using reflection.
+     *
+     * @param object The object.
+     * @param fieldName The field name.
+     * @return The value of the field.
+     * @throws IllegalAccessException If the field cannot be accessed.
+     */
+    private Object getFieldValue(Object object, String fieldName) throws IllegalAccessException {
+        try {
+            java.lang.reflect.Field field = object.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            return field.get(object);
+        } catch (NoSuchFieldException e) {
+            throw new IllegalArgumentException("Field '" + fieldName + "' not found in class " + object.getClass().getName());
+        }
+    }
+
+    public long generateSequence(String sequenceName) {
+
+        String tenant = tenantContextHolder.getTenant();
+        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
+
+       return generateSequence(tenant, sequenceName);
+    }
+
+    public long generateSequence(String tenantid, String sequenceName) {
+
+        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenantid);
+
+        // Check if the sequence exists
+        Query query = new Query(Criteria.where("id").is(sequenceName));
+        Sequence sequence = mongoTemplate.findOne(query, Sequence.class);
+
+        if (sequence == null) {
+            // If the sequence does not exist, create it with an initial value of 0
+            sequence = new Sequence();
+            sequence.setId(sequenceName);
+            sequence.setSeq(0);
+            mongoTemplate.insert(sequence);
+        }
+
+        // Increment the sequence and return the new value
+        Update update = new Update().inc("seq", 1);
+        sequence = mongoTemplate.findAndModify(query, update, FindAndModifyOptions.options().returnNew(true), Sequence.class);
+
+        return sequence.getSeq();
+    }
+    public void generateAllSequences(MongoTemplate mongoTemplate, String tenant) {
+        if(mongoTemplate == null){
+            log.error("MongoTemplate is null for tenant[{}]", tenant);
+        }
+        this.generateSequence(SequenceNames.INSTRUMENTATTRIBUTEVERSIONID.name());
+    }
+
+    public void copyData(String attributes, Criteria criteria, String targetCollection, String sourceCollection, Class<T> klass) {
+        String tenant = tenantContextHolder.getTenant();
+
+        this.copyData(tenant, criteria, targetCollection, sourceCollection, klass, attributes);
+    }
+
+    public void copyData(String tenant
+            , Criteria criteria
+            , String targetCollection
+            , String sourceCollection
+            , Class<T> klass
+            , String ... attributes) {
+        // Define the conditions for filtering
+        // Criteria criteria = Criteria.where("someField").is("someValue"); // Adjust your filter criteria
+
+        // Define the aggregation pipeline
+        Aggregation aggregation = Aggregation.newAggregation(
+                Aggregation.match(criteria), // Apply your filter criteria here
+                // Aggregation.project("attributeId", "instrumentId", "transactionName", "transactionDate", "periodId", "glAccountNumber", "glAccountName", "glAccountType", "glAccountSubType", "debitAmount", "creditAmount", "isReclass", "batchId", "attributes"),
+                Aggregation.project(attributes),
+                Aggregation.out(targetCollection) // This will create or replace the target collection
+        );
+
+        // Execute the aggregation
+        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
+        mongoTemplate.aggregate(aggregation, sourceCollection, klass);
+
+        log.info("Data copied successfully!");
     }
 }

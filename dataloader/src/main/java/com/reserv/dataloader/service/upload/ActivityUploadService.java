@@ -1,8 +1,11 @@
 package com.reserv.dataloader.service.upload;
 
+import com.fyntrac.common.enums.SequenceNames;
 import com.fyntrac.common.enums.AccountingRules;
+import com.fyntrac.common.enums.AggregationRequestType;
+import com.fyntrac.common.enums.BatchType;
 import com.fyntrac.common.enums.FileUploadActivityType;
-import com.reserv.dataloader.service.AccountingPeriodService;
+import com.reserv.dataloader.service.AccountingPeriodDataUploadService;
 import com.reserv.dataloader.service.AggregationRequestService;
 import com.reserv.dataloader.service.CacheService;
 import com.reserv.dataloader.service.TransactionActivityService;
@@ -19,11 +22,13 @@ import com.fyntrac.common.service.AttributeService;
 import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.entity.Attributes;
 import com.fyntrac.common.utils.DateUtil;
-import com.fyntrac.common.enums.AggregationRequestType;
+
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import com.fyntrac.common.entity.Batch;
 
 @Service
 @Slf4j
@@ -47,14 +52,14 @@ public class ActivityUploadService {
     @Autowired
     DataService dataService;
 
-    private final AccountingPeriodService accountingPeriodService;
+    private final AccountingPeriodDataUploadService accountingPeriodService;
     private final AggregationService aggregationService;
     private final TransactionActivityService transactionActivityService;
     private final CacheService cacheService;
 
 
     @Autowired
-    public ActivityUploadService(AccountingPeriodService accountingPeriodService
+    public ActivityUploadService(AccountingPeriodDataUploadService accountingPeriodService
             ,TransactionActivityService transactionActivityService
             , AggregationService aggregationService
             , CacheService cacheService) {
@@ -69,9 +74,10 @@ public class ActivityUploadService {
         String filePath = activityMap.get(AccountingRules.INSTRUMENTATTRIBUTE);
         Long runid = System.currentTimeMillis();
         try {
-            JobParameters instrumentAttributeJobParameter = createInstrumentAttributeJob(filePath);
+            Batch activityBatch = this.createBatch();
+            JobParameters instrumentAttributeJobParameter = createInstrumentAttributeJob(filePath, activityBatch);
             filePath = activityMap.get(AccountingRules.TRANSACTIONACTIVITY);
-            JobParameters transactionActivityJobParameter = createTransactionActivityJob(filePath);
+            JobParameters transactionActivityJobParameter = createTransactionActivityJob(filePath, activityBatch);
 
             JobExecution instrumentAttributeExecution = jobLauncher.run(instrumentAttributeUploadJob, instrumentAttributeJobParameter);
             runid = instrumentAttributeJobParameter.getLong("run.id");
@@ -90,10 +96,11 @@ public class ActivityUploadService {
             log.error(e.getMessage());
             log.error(e.getCause().getMessage());
             logActivityException(runid, DateUtil.getDateTime(), filePath, activityType);
+            throw new ExecutionException(e);
         }
     }
 
-    public JobParameters createInstrumentAttributeJob(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+    public JobParameters createInstrumentAttributeJob(String filePath, Batch activityBatch) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
         LocalDateTime startingTime = DateUtil.getDateTime();
         long runid = System.currentTimeMillis();
         StringBuilder columnNames = new StringBuilder();
@@ -114,10 +121,11 @@ public class ActivityUploadService {
                 .addString("columnName", columnNames.toString())
                 .addLong("run.id", runid)
                 .addString("tenantId", this.dataService.getTenantId())
+                .addLong("batchId", activityBatch.getId())
                 .toJobParameters();
     }
 
-    public JobParameters createTransactionActivityJob(String filePath) throws ExecutionException, InterruptedException {
+    public JobParameters createTransactionActivityJob(String filePath, Batch activityBatch) throws ExecutionException, InterruptedException {
         this.accountingPeriodService.loadIntoCache();
         this.aggregationService.loadIntoCache();
         this.cacheService.loadIntoCache();
@@ -138,7 +146,9 @@ public class ActivityUploadService {
                 .addString("filePath", filePath)
                 .addLong("run.id", runId)
                 .addString(com.fyntrac.common.utils.Key.aggregationKey(), key)
+                .addLong("batchId", activityBatch.getId())
                 .addString("tenantId", this.dataService.getTenantId())
+
                 .toJobParameters();
     }
 
@@ -169,5 +179,13 @@ public class ActivityUploadService {
                 .build();
         dataService.save(activityLog);
 
+    }
+
+    private Batch createBatch() {
+        long batchId = this.dataService.generateSequence(SequenceNames.BATCHID.name());
+        Batch activityBatch = Batch.builder().id(batchId).batchStatus(com.fyntrac.common.enums.BatchStatus.PENDING)
+                .batchType(BatchType.ACTIVITY).uploadDate(new Date()).build();
+        this.dataService.save(activityBatch);
+         return activityBatch;
     }
 }

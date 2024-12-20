@@ -49,4 +49,12 @@ public class Key {
     public static String aggregationKey() {
         return "AGG-KEY";
     }
+
+    public static String generalLedgerAccountTypesStageKey(String tenantId) {
+        return tenantId + "GLE_ACC_STAGE_TYPE";
+    }
+
+    public static String generalLedgerAccountTypesKey(String tenantId) {
+        return tenantId + "GLE_ACC_TYPE";
+    }
 }

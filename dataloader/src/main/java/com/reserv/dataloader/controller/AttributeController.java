@@ -34,8 +34,8 @@ public class AttributeController {
     @GetMapping("/get/all")
     public ResponseEntity<Collection<Attributes>> getAllAttributes() {
         try {
-            Collection<Attributes> transactions = dataService.fetchAllData(Attributes.class);
-            return new ResponseEntity<>(transactions, HttpStatus.OK);
+            Collection<Attributes> attributes = dataService.fetchAllData(Attributes.class);
+            return new ResponseEntity<>(attributes, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes
             log.error(e.getLocalizedMessage());
@@ -46,8 +46,8 @@ public class AttributeController {
     @GetMapping("/get/isreclassable/attributes")
     public ResponseEntity<Collection<Attributes>> getIsReclassableAttributes() {
         try {
-            Collection<Attributes> transactions = this.attributeService.getReclassableAttributes();
-            return new ResponseEntity<>(transactions, HttpStatus.OK);
+            Collection<Attributes> attributes = this.attributeService.getReclassableAttributes();
+            return new ResponseEntity<>(attributes, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes
             log.error(e.getLocalizedMessage());

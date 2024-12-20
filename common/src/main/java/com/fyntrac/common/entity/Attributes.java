@@ -25,6 +25,7 @@ public class Attributes implements Serializable {
     private String userField;
     private String attributeName;
     private int isReclassable;
+    private int isVersionable;
     private DataType dataType;
     private int isNullable;
     private long sequenceId;
@@ -37,6 +38,7 @@ public class Attributes implements Serializable {
         json.append("\"userField\":\"").append(userField).append("\",");
         json.append("\"attributeName\":\"").append(attributeName).append("\",");
         json.append("\"isReclassable\":").append(isReclassable).append(",");
+        json.append("\"isVersionable\":").append(isVersionable).append(",");
         json.append("\"dataType\":\"").append(dataType).append("\",");
         json.append("\"isNullable\":").append(isNullable).append(",");
         json.append("\"sequence\":").append(sequenceId);

@@ -1,10 +1,10 @@
 package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.entity.AccountingPeriod;
-import com.fyntrac.common.entity.Settings;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
-import com.reserv.dataloader.service.AccountingPeriodService;
+import com.reserv.dataloader.pulsar.producer.AccountingPeriodCloseProducer;
+import com.reserv.dataloader.service.AccountingPeriodDataUploadService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -23,12 +23,15 @@ import com.fyntrac.common.dto.record.Records.AccountingPeriodRecord;
 @RequestMapping("/api/dataloader/accounting-period")
 public class AccountingPeriodController {
 
-    private AccountingPeriodService accountingPeriodService;
+    private AccountingPeriodDataUploadService accountingPeriodService;
+    private AccountingPeriodCloseProducer accountingPeriodCloseProducer;
 
     @Autowired
-    public AccountingPeriodController(AccountingPeriodService accountingPeriodService) {
+    public AccountingPeriodController(AccountingPeriodDataUploadService accountingPeriodService
+    , AccountingPeriodCloseProducer accountingPeriodCloseProducer) {
         this.accountingPeriodService=accountingPeriodService;
-        }
+        this.accountingPeriodCloseProducer = accountingPeriodCloseProducer;
+    }
 
     @GetMapping("/get/open-periods")
     public ResponseEntity<Collection<Records.AccountingPeriodRecord>> getOpenAccountingPeriods(){
@@ -82,7 +85,13 @@ public class AccountingPeriodController {
 
     @PostMapping("/close")
     public ResponseEntity<Records.AccountingPeriodRecord> saveDate(@RequestBody AccountingPeriodRecord accountingPeriod) throws ParseException {
-        accountingPeriodService.closeAccountingPeriod(accountingPeriod.periodId());
+        try {
+            Records.AccountingPeriodCloseMessageRecord accountingPeriodCloseMessageRecord = accountingPeriodService.generateAccountingPeriodCloseRecord();
+            accountingPeriodCloseProducer.closeAccountingPeriod(accountingPeriodCloseMessageRecord);
+        }catch (Exception exp){
+            log.error(exp.getLocalizedMessage());
+            throw new RuntimeException(exp.getLocalizedMessage());
+        }
         return new ResponseEntity<>(accountingPeriod, HttpStatus.OK);
     }
 

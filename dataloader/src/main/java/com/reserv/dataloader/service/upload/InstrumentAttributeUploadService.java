@@ -2,7 +2,7 @@ package com.reserv.dataloader.service.upload;
 
 import  com.fyntrac.common.enums.FileUploadActivityType;
 import com.fyntrac.common.entity.Attributes;
-import com.reserv.dataloader.service.AccountingPeriodService;
+import com.reserv.dataloader.service.AccountingPeriodDataUploadService;
 import com.fyntrac.common.service.AttributeService;
 import com.fyntrac.common.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -30,10 +30,10 @@ public class InstrumentAttributeUploadService extends UploadService {
     @Autowired
     AttributeService attributeService;
 
-    private final AccountingPeriodService accountingPeriodService;
+    private final AccountingPeriodDataUploadService accountingPeriodService;
 
     @Autowired
-    InstrumentAttributeUploadService(AccountingPeriodService accountingPeriodService) {
+    InstrumentAttributeUploadService(AccountingPeriodDataUploadService accountingPeriodService) {
         this.accountingPeriodService = accountingPeriodService;
     }
 

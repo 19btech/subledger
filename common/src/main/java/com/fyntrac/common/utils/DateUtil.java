@@ -1554,5 +1554,13 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
         int month = getMonthForDate(date);
         return year + "-" + (month+1);
     }
+
+    public static int getAccountingPeriodId(Date date) {
+        int year = getYearForDate(date);
+        int month = 1 + getMonthForDate(date);
+
+        String formattedMonth = String.format("%02d", month);
+        return Integer.parseInt(year + formattedMonth);
+    }
 }
 

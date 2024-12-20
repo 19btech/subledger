@@ -1,4 +1,4 @@
-package  com.fyntrac.common.config;
+package  com.reserv.dataloader.config;
 
 import com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.Tenant;

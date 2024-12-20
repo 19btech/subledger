@@ -4,7 +4,7 @@ import com.reserv.dataloader.batch.listener.InstrumentAttributeJobCompletionList
 import com.reserv.dataloader.batch.mapper.HeaderColumnNameMapper;
 import com.reserv.dataloader.batch.processor.InstrumentAttributeItemProcessor;
 import com.reserv.dataloader.batch.writer.InstrumentAttributeWriter;
-import  com.fyntrac.common.config.TenantContextHolder;
+import  com.fyntrac.common.service.AccountingPeriodService;
 import  com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.service.InstrumentAttributeService;
 import com.fyntrac.common.entity.InstrumentAttribute;
@@ -45,17 +45,19 @@ public class InstrumentAttributeDataLoadConfig {
     private MongoTemplate mongoTemplate;
     private MemcachedRepository memcachedRepository;
     private InstrumentAttributeService instrumentAttributeService;
-
+    private AccountingPeriodService accountingPeriodService;
 
     public InstrumentAttributeDataLoadConfig(JobRepository jobRepository, MongoTemplate mongoTemplate,
                                              TenantDataSourceProvider dataSourceProvider,
                                              MemcachedRepository memcachedRepository,
-                                             InstrumentAttributeService instrumentAttributeService) {
+                                             InstrumentAttributeService instrumentAttributeService,
+                                             AccountingPeriodService accountingPeriodService) {
         this.jobRepository = jobRepository;
         this.dataSourceProvider = dataSourceProvider;
         this.mongoTemplate = mongoTemplate;
         this.memcachedRepository = memcachedRepository;
         this.instrumentAttributeService = instrumentAttributeService;
+        this.accountingPeriodService = accountingPeriodService;
     }
 
     @Bean("instrumentAttributeUploadJob")
@@ -75,7 +77,7 @@ public class InstrumentAttributeDataLoadConfig {
                 .reader(instrumentAttributeReader("", ""))
                 .processor(instrumentAttributeMapItemProcessor())
                 .writer(instrumentAttributeWriter(dataSourceProvider
-                        , this.memcachedRepository, this.instrumentAttributeService))
+                        , this.memcachedRepository, this.instrumentAttributeService, this.accountingPeriodService))
                 .build();
     }
 
@@ -127,13 +129,14 @@ public class InstrumentAttributeDataLoadConfig {
 
     @Bean
     public ItemWriter<InstrumentAttribute> instrumentAttributeWriter(TenantDataSourceProvider dataSourceProvider,
-                                                                    MemcachedRepository memcachedRepository
-                                                            , InstrumentAttributeService instrumentAttributeService) {
+                                                                     MemcachedRepository memcachedRepository
+                                                            , InstrumentAttributeService instrumentAttributeService
+                                                            , AccountingPeriodService accountingPeriodService) {
         MongoItemWriter<InstrumentAttribute> delegate = new MongoItemWriterBuilder<InstrumentAttribute>()
                 .template(mongoTemplate)
                 .collection("InstrumentAttribute")
                 .build();
 
-        return new InstrumentAttributeWriter(delegate, dataSourceProvider,  memcachedRepository, instrumentAttributeService);
+        return new InstrumentAttributeWriter(delegate, dataSourceProvider,  memcachedRepository, instrumentAttributeService, accountingPeriodService);
     }
 }

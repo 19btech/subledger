@@ -78,6 +78,21 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         return result.isEmpty() ? null : result.get(0);
     }
 
+    // Define a method in your service class
+    public InstrumentAttribute getInstrumentAttributeByVersionId(String tenantId, long versionId) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("versionId").is(versionId));
+
+        // Limit the result to 1
+        query.limit(1);
+
+        // Fetch the data
+        List<InstrumentAttribute> result = this.dataService.fetchData(query, tenantId, InstrumentAttribute.class);
+
+        // Return the first result if available, otherwise return null
+        return result.isEmpty() ? null : result.get(0);
+    }
+
     public List<InstrumentAttribute> findByAttributeIdAndInstrumentId(String attributeId, String instrumentId) {
         return instrumentAttributeRepository.findByAttributeIdAndInstrumentId(attributeId, instrumentId);
     }

@@ -18,9 +18,9 @@ import com.fyntrac.common.service.DataService;
 public class SettingsService {
 
     private final DataService<Settings> dataService;
-    private final AccountingPeriodService accountingPeriodService;
+    private final AccountingPeriodDataUploadService accountingPeriodService;
     @Autowired
-    public SettingsService(DataService<Settings> dataService, AccountingPeriodService accountingPeriodService) {
+    public SettingsService(DataService<Settings> dataService, AccountingPeriodDataUploadService accountingPeriodService) {
         this.dataService = dataService;
         this.accountingPeriodService = accountingPeriodService;
     }

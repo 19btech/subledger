@@ -1,23 +1,28 @@
 package com.fyntrac.gl.service;
 
+import com.fyntrac.common.cache.collection.CacheList;
 import com.fyntrac.common.dto.record.Records;
+import com.fyntrac.common.entity.Attributes;
+import com.fyntrac.common.entity.ReclassValues;
+import com.fyntrac.common.repository.MemcachedRepository;
+import com.fyntrac.common.service.AttributeService;
+import com.fyntrac.common.service.DataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import com.fyntrac.common.service.DataService;
-import com.fyntrac.common.repository.MemcachedRepository;
-import com.fyntrac.common.service.AttributeService;
-import com.fyntrac.common.entity.Attributes;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-
-import com.fyntrac.common.cache.collection.CacheList;
-import com.fyntrac.common.entity.ReclassValues;
 
 /**
  * Service class that processes general ledger reclassification messages received from a Pulsar topic.
@@ -30,6 +35,7 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
     private final MemcachedRepository memcachedRepository;
     private final AttributeService attributeService;
     private Collection<Attributes> reclassAttributes;
+    private final DatasourceService datasourceService;
 
     @Value("${fyntrac.chunk.size}")
     private int chunkSize;
@@ -49,11 +55,13 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
     @Autowired
     public GeneralLedgerReclassService(DataService dataService,
                                        MemcachedRepository memcachedRepository,
-                                       AttributeService attributeService) {
+                                       AttributeService attributeService
+                                        , DatasourceService datasourceService) {
         this.dataService = dataService;
         this.memcachedRepository = memcachedRepository;
         this.attributeService = attributeService;
         this.reclassAttributes = new ArrayList<>(0);
+        this.datasourceService = datasourceService;
     }
 
     /**
@@ -65,6 +73,7 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
     protected void initialize(Map<String, Object> executionContext) {
         try {
             tenantId = (String) executionContext.get("tenantId");
+            this.datasourceService.addDatasource(tenantId);
             reclassAttributes = this.attributeService.getReclassableAttributes(tenantId);
         } catch (Exception e) {
             log.error("Error initializing reclass attributes for tenant {}: {}", tenantId, e.getMessage(), e);
@@ -169,6 +178,15 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
         }
     }
 
+    private Map<String, Object> getReclassableAttributes(Records.InstrumentAttributeRecord instrumentAttribute) {
+        Map<String, Object> reclassAttributes = new HashMap<>(0);
+        for(Attributes attribute : this.reclassAttributes) {
+            String attributeName = attribute.getAttributeName();
+            Object obj = instrumentAttribute.attributes().get(attributeName);
+            reclassAttributes.put(attributeName, obj);
+        }
+        return reclassAttributes;
+    }
     /**
      * Builds a ReclassValues object to represent the reclassification details.
      *
@@ -181,6 +199,7 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
      */
     private ReclassValues buildReclassValuesObject(String attributeName, Object oldValue, Object newValue,
                                                    Records.InstrumentAttributeRecord previous, Records.InstrumentAttributeRecord current) {
+        Map<String, Object> reclassAttributes = getReclassableAttributes(current);
         return ReclassValues.builder()
                 .attributeId(previous.attributeId())
                 .attributeName(attributeName)
@@ -191,6 +210,7 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
                 .currentPeriodId(current.periodId())
                 .oldValue(oldValue)
                 .newValue(newValue)
+                .attributes(reclassAttributes)
                 .build();
     }
 
