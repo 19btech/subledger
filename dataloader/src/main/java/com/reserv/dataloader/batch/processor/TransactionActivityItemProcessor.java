@@ -1,6 +1,7 @@
 package com.reserv.dataloader.batch.processor;
 
 import com.fyntrac.common.entity.TransactionActivity;
+import com.fyntrac.common.enums.Source;
 import org.springframework.batch.item.ItemProcessor;
 
 public class TransactionActivityItemProcessor implements ItemProcessor<TransactionActivity,TransactionActivity> {
@@ -12,6 +13,7 @@ public class TransactionActivityItemProcessor implements ItemProcessor<Transacti
         transactionActivity.setTransactionDate(item.getTransactionDate());
         transactionActivity.setAmount(item.getAmount());
         transactionActivity.setAttributeId(item.getAttributeId());
+        transactionActivity.setSource(Source.ETL);
         return transactionActivity;
     }
 

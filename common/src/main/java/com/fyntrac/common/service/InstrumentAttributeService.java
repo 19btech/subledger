@@ -4,6 +4,7 @@ import com.fyntrac.common.cache.collection.CacheMap;
 import  com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.entity.factory.InstrumentAttributeFactory;
+import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.repository.InstrumentAttributeRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.Key;
@@ -194,12 +195,14 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
                                                          String attributeId,
                                                          Date effectiveDate,
                                                          int periodId,
+                                                         Source source,
                                                          Map<String, Object> attributes) {
         return instrumentAttributeFactory.create(
                 instrumentId,
                 attributeId,
                 effectiveDate, // effectiveDate
                 periodId, // periodId
+                source,
                 new HashMap<>() // attributes
         );
     }

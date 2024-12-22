@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.fyntrac.common.dto.record.Records;
 
 import java.util.Collection;
 
@@ -32,6 +33,18 @@ public class AggregationController {
         try {
             Collection<Aggregation> transactions = this.aggregationService.fetchAll();
             return new ResponseEntity<>(transactions, HttpStatus.OK);
+        } catch (Exception e) {
+            // Log the exception for debugging purposes
+            log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @GetMapping("/get/metrics")
+    public ResponseEntity<Collection<Records.MetricNameRecord>> getAllMetrics() {
+        try {
+            Collection<Records.MetricNameRecord> metricRecords = this.aggregationService.fetchMetricNames();
+            return new ResponseEntity<>(metricRecords, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes
             log.error(e.getLocalizedMessage());

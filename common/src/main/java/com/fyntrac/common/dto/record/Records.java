@@ -55,4 +55,13 @@ public class Records {
     public record AccountingPeriodCloseMessageRecord(String tenantId, Collection<Batch> batches)implements Serializable {
         private static final long serialVersionUID = 322984303560312158L;
     }
+
+    public record MetricNameRecord(String metricName)implements Serializable {
+        private static final long serialVersionUID = -4338320429519961695L;
+    }
+
+    public record TransactionNameRecord(String transactionName)implements Serializable {
+        private static final long serialVersionUID = -4338320429519961695L;
+    }
+
 }

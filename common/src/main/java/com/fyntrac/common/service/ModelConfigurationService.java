@@ -1,6 +1,7 @@
 package com.fyntrac.common.service;
 
 import com.fyntrac.common.entity.Model;
+import com.fyntrac.common.entity.ModelConfig;
 import com.fyntrac.common.enums.ModelStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,7 +28,14 @@ public class ModelConfigurationService {
         return this.dataService.save(model);
     }
 
-    public Model save(String modelName, String modelOrderId, String modelFileId, boolean isDeleted, ModelStatus modelStatus, Date uploadDate, String uploadedBy) {
+    public Model save(String modelName
+            , String modelOrderId
+            , String modelFileId
+            , boolean isDeleted
+            , ModelStatus modelStatus
+            , Date uploadDate
+            , String uploadedBy
+            , ModelConfig modelConfig) {
         Model model = Model.builder()
                 .modelName(modelName)
                 .orderId(modelOrderId)
@@ -36,6 +44,7 @@ public class ModelConfigurationService {
                 .modelStatus(modelStatus)
                 .uploadDate(uploadDate)
                 .uploadedBy(uploadedBy)
+                .modelConfig(modelConfig)
                 .build();
         return this.dataService.save(model);
     }

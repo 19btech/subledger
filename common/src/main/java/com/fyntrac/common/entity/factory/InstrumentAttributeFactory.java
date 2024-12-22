@@ -2,6 +2,7 @@ package com.fyntrac.common.entity.factory;
 
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.enums.SequenceNames;
+import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.service.SequenceGeneratorService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +25,7 @@ public class InstrumentAttributeFactory {
                                       String attributeId,
                                       Date effectiveDate,
                                       int periodId,
+                                      Source source,
                                       Map<String, Object> attributes) {
         long versionId = dataService.generateSequence(SequenceNames.INSTRUMENTATTRIBUTEVERSIONID.name());
 
@@ -35,6 +37,7 @@ public class InstrumentAttributeFactory {
                 .periodId(periodId)
                 .attributes(attributes)
                 .versionId(versionId)
+                .source(source)
                 .endDate(null) // Assuming endDate is initialized to null
                 .build();
     }

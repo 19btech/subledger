@@ -5,10 +5,14 @@ import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.CacheBasedService;
 import com.fyntrac.common.service.DataService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import com.fyntrac.common.cache.collection.CacheMap;
 import com.fyntrac.common.utils.Key;
 import java.util.*;
+import java.util.stream.Collectors;
+import com.fyntrac.common.dto.record.Records;
 
 @Service
 public class AggregationService  extends CacheBasedService<Aggregation> {
@@ -37,6 +41,18 @@ public class AggregationService  extends CacheBasedService<Aggregation> {
     @Override
     public Collection<Aggregation> fetchAll() {
         return dataService.fetchAllData(Aggregation.class);
+    }
+
+    public Collection<Records.MetricNameRecord> fetchMetricNames() {
+      Collection<String> metrics = this.dataService.getMongoTemplate().query(Aggregation.class)  // Replace Metric.class with your actual class
+                .distinct("metricName")          // Specify the field name
+                .as(String.class)                // Specify the return type
+                .all();
+
+        // Map the distinct names to MetricRecord objects
+        return metrics.stream()
+                .map(Records.MetricNameRecord::new)         // Create a new MetricRecord for each distinct name
+                .collect(Collectors.toList());
     }
 
     @Override

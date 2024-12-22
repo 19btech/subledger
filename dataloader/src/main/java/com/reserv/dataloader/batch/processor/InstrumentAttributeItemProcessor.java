@@ -1,6 +1,7 @@
 package com.reserv.dataloader.batch.processor;
 
 import com.fyntrac.common.entity.InstrumentAttribute;
+import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.utils.DateUtil;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +36,6 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
                 attributes.put(key, value);
             }
         }
-        return instrumentAttributeFactory.create(instrumentId, attributeId, effectiveDate,0,attributes);
+        return instrumentAttributeFactory.create(instrumentId, attributeId, effectiveDate,0, Source.ETL,attributes);
     }
 }

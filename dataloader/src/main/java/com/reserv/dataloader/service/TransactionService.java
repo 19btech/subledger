@@ -7,9 +7,11 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import com.fyntrac.common.service.DataService;
+import com.fyntrac.common.dto.record.Records;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -34,5 +36,18 @@ public class TransactionService {
 
     public Transactions save(Transactions t) {
         return (Transactions) dataService.save(t);
+    }
+
+
+    public Collection<Records.TransactionNameRecord> fetchTransactinNames() {
+        Collection<String> metrics = this.dataService.getMongoTemplate().query(Transactions.class)  // Replace Metric.class with your actual class
+                .distinct("name")          // Specify the field name
+                .as(String.class)                // Specify the return type
+                .all();
+
+        // Map the distinct names to MetricRecord objects
+        return metrics.stream()
+                .map(Records.TransactionNameRecord::new)         // Create a new MetricRecord for each distinct name
+                .collect(Collectors.toList());
     }
 }

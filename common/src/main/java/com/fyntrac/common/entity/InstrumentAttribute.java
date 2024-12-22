@@ -1,5 +1,6 @@
 package com.fyntrac.common.entity;
 
+import com.fyntrac.common.enums.Source;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -36,6 +37,8 @@ public class InstrumentAttribute implements Serializable {
     private int periodId;
     @Indexed // Separate index on versionId
     private long versionId;
+    private Source source;
+    private String sourceId;
     @Field("attributes")
     private Map<String,Object> attributes;
 

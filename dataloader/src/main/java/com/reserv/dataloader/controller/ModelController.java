@@ -1,5 +1,7 @@
 package com.reserv.dataloader.controller;
 
+import com.fyntrac.common.entity.ModelConfig;
+import com.fyntrac.common.enums.AttributeVersion;
 import com.reserv.dataloader.service.ExcelFileService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,7 +41,21 @@ public class ModelController {
                                              @RequestParam("modelOrderId") String modelOrderId) {
         try {
             String fileId = fileService.uploadFile(file);
-            this.modelConfigurationService.save(modelName, modelOrderId, fileId, Boolean.FALSE, ModelStatus.CONFIGURE, new Date(), "Fyntrac");
+            ModelConfig modelConfig = new ModelConfig();
+            modelConfig.setMetrics(null);
+            modelConfig.setTransactions(null);
+            modelConfig.setAggregationLevel(null);
+            modelConfig.setCurrentVersion(Boolean.FALSE);
+            modelConfig.setLastOpenVersion(Boolean.FALSE);
+            modelConfig.setFirstVersion(Boolean.FALSE);
+            this.modelConfigurationService.save(modelName
+                    , modelOrderId
+                    , fileId
+                    , Boolean.FALSE
+                    , ModelStatus.CONFIGURE
+                    , new Date()
+                    , "Fyntrac"
+                    ,modelConfig);
             return ResponseEntity.ok("File uploaded successfully, ID: " + fileId);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
@@ -48,6 +64,17 @@ public class ModelController {
         }
     }
 
+    @PostMapping("/save")
+    public ResponseEntity<String> saveDate(@RequestBody Model m) {
+        try {
+            modelConfigurationService.save(m);
+            return ResponseEntity.ok("Model saved successfully, ID: " + m.getId());
+        }catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
+        }
+    }
     // Download endpoint
     @GetMapping("/download/{fileId}")
     public ResponseEntity<byte[]> downloadFile(@PathVariable String fileId) {
