@@ -12,9 +12,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import com.fyntrac.common.service.ModelConfigurationService;
+import com.fyntrac.common.service.ModelService;
 import com.fyntrac.common.enums.ModelStatus;
 import com.fyntrac.common.entity.Model;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
 import java.util.Date;
@@ -25,13 +26,13 @@ import java.util.Date;
 public class ModelController {
 
     private final ExcelFileService fileService;
-    private final ModelConfigurationService modelConfigurationService;
+    private final ModelService modelService;
 
     @Autowired
     public ModelController(ExcelFileService fileService
-                            , ModelConfigurationService modelConfigurationServicen) {
+                            , ModelService modelServicen) {
         this.fileService = fileService;
-        this.modelConfigurationService = modelConfigurationServicen;
+        this.modelService = modelServicen;
     }
     // Upload endpoint
     @PostMapping("/upload")
@@ -40,34 +41,39 @@ public class ModelController {
                                              @RequestParam("modelName") String modelName,
                                              @RequestParam("modelOrderId") String modelOrderId) {
         try {
-            String fileId = fileService.uploadFile(file);
-            ModelConfig modelConfig = new ModelConfig();
-            modelConfig.setMetrics(null);
-            modelConfig.setTransactions(null);
-            modelConfig.setAggregationLevel(null);
-            modelConfig.setCurrentVersion(Boolean.FALSE);
-            modelConfig.setLastOpenVersion(Boolean.FALSE);
-            modelConfig.setFirstVersion(Boolean.FALSE);
-            this.modelConfigurationService.save(modelName
-                    , modelOrderId
-                    , fileId
-                    , Boolean.FALSE
-                    , ModelStatus.CONFIGURE
-                    , new Date()
-                    , "Fyntrac"
-                    ,modelConfig);
-            return ResponseEntity.ok("File uploaded successfully, ID: " + fileId);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
-        }
+            if (!(modelService.ifModelExists(modelName))) {
+                String fileId = fileService.uploadFile(file);
+                ModelConfig modelConfig = new ModelConfig();
+                modelConfig.setMetrics(null);
+                modelConfig.setTransactions(null);
+                modelConfig.setAggregationLevel(null);
+                modelConfig.setCurrentVersion(Boolean.FALSE);
+                modelConfig.setLastOpenVersion(Boolean.FALSE);
+                modelConfig.setFirstVersion(Boolean.FALSE);
+                this.modelService.save(modelName
+                        , modelOrderId
+                        , fileId
+                        , Boolean.FALSE
+                        , ModelStatus.CONFIGURE
+                        , new Date()
+                        , "Fyntrac"
+                        , modelConfig);
+                return ResponseEntity.ok("File uploaded successfully, ID: " + fileId);
+            }else{
+                return ResponseEntity.badRequest().body("Model Name already exists [" + modelName + "]");
+            }
+            } catch(IllegalArgumentException e){
+                return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+            } catch(Exception e){
+                return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
+            }
+
     }
 
     @PostMapping("/save")
-    public ResponseEntity<String> saveDate(@RequestBody Model m) {
+    public ResponseEntity<String> save(@RequestBody Model m) {
         try {
-            modelConfigurationService.save(m);
+            modelService.save(m);
             return ResponseEntity.ok("Model saved successfully, ID: " + m.getId());
         }catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
@@ -89,7 +95,7 @@ public class ModelController {
     @GetMapping("/get/all")
     public ResponseEntity<Collection<Model>> getAll() {
         try {
-            Collection<Model> collection = modelConfigurationService.getModels();
+            Collection<Model> collection = modelService.getModels();
             return new ResponseEntity<>(collection, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes

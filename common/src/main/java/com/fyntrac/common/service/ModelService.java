@@ -15,12 +15,12 @@ import java.util.List;
 
 @Service
 @Slf4j
-public class ModelConfigurationService {
+public class ModelService {
 
     private final DataService<Model> dataService;
 
     @Autowired
-    public ModelConfigurationService(DataService<Model> dataService){
+    public ModelService(DataService<Model> dataService){
         this.dataService = dataService;
     }
 
@@ -54,6 +54,13 @@ public class ModelConfigurationService {
         Criteria criteria = Criteria.where("isDeleted").is(0);
         query.addCriteria(criteria);
         return this.dataService.fetchData(query, Model.class);
+    }
+
+    public boolean ifModelExists(String modelName) {
+        Query query = new Query();
+        Criteria criteria = Criteria.where("modelName").is(modelName);
+        query.addCriteria(criteria);
+        return this.dataService.fetchData(query, Model.class).isEmpty() ? Boolean.FALSE : Boolean.TRUE;
     }
 
     public Model getModel(String id) {

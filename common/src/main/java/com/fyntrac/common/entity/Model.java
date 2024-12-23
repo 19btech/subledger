@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-
+import org.springframework.data.mongodb.core.index.Indexed;
 import java.io.Serial;
 import java.io.Serializable;
 import java.text.SimpleDateFormat;
@@ -26,6 +26,7 @@ public class Model implements Serializable {
     @Id
     private String id;
     private String orderId;
+    @Indexed(unique = true) // This line adds a unique index on modelName
     private String modelName;
     private Date uploadDate;
     private UploadStatus uploadStatus;

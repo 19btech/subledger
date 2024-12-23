@@ -17,7 +17,7 @@ import java.io.Serializable;
 public class AccountBalance implements Serializable {
     @Serial
     private static final long serialVersionUID = 7617946118568456682L;
-    @Indexed(unique = true)
+    @Indexed(unique = false)
     protected int code;
     @Indexed
     protected int subCode;
