@@ -1,5 +1,6 @@
 package com.reserv.dataloader.controller;
 
+import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.ModelConfig;
 import com.fyntrac.common.enums.AttributeVersion;
 import com.reserv.dataloader.service.ExcelFileService;
@@ -44,8 +45,8 @@ public class ModelController {
             if (!(modelService.ifModelExists(modelName))) {
                 String fileId = fileService.uploadFile(file);
                 ModelConfig modelConfig = new ModelConfig();
-                modelConfig.setMetrics(null);
-                modelConfig.setTransactions(null);
+                modelConfig.setMetrics(new Records.MetricNameRecord[]{});
+                modelConfig.setTransactions(new Records.TransactionNameRecord[]{});
                 modelConfig.setAggregationLevel(null);
                 modelConfig.setCurrentVersion(Boolean.FALSE);
                 modelConfig.setLastOpenVersion(Boolean.FALSE);
