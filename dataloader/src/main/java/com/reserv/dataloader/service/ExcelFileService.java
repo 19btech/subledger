@@ -1,6 +1,13 @@
 package com.reserv.dataloader.service;
 
+import com.reserv.dataloader.exception.ExcelSheetNotFoundException;
+import com.reserv.dataloader.exception.HeaderNotFoundException;
+import com.reserv.dataloader.utils.ExcelFileUtil;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.bson.types.Binary;
@@ -16,11 +23,13 @@ import com.fyntrac.common.service.DataService;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @Service
+@Slf4j
 public class ExcelFileService {
 
     private static final List<String> ALLOWED_CONTENT_TYPES = List.of(
@@ -43,10 +52,17 @@ public class ExcelFileService {
 
         ModelFile fileDocument = new ModelFile();
         fileDocument.setContentType(file.getContentType());
-        fileDocument.setFileData(new Binary(file.getBytes()));
+        Workbook workbook = ExcelFileUtil.convertMultipartFileToWorkbook(file);
+        byte[] bytes = ExcelFileUtil.convertWorkbookToByteArray(workbook);
+        fileDocument.setFileData(new Binary(bytes));
 
         ModelFile savedDocument = this.dataService.save(fileDocument);
         return savedDocument.getId();
+    }
+
+    public boolean validateModel(Workbook workbook) {
+
+        return false;
     }
 
     // Retrieve file and convert it into Excel format
@@ -81,5 +97,58 @@ public class ExcelFileService {
         if (!ALLOWED_CONTENT_TYPES.contains(contentType) || !ALLOWED_EXTENSIONS.contains(extension)) {
             throw new IllegalArgumentException("Invalid file type. Only .xls and .xlsx files are allowed.");
         }
+    }
+
+    public Sheet getSheet(Workbook workbook, String sheetName) {
+        // Get the sheet by name
+        // Iterate through all sheets to find a match
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            Sheet sheet = workbook.getSheetAt(i);
+            if (sheet.getSheetName().equalsIgnoreCase(sheetName)) {
+                return sheet; // Return the matching sheet
+            }
+        }
+        return null;
+    }
+
+    public List<String> readExcelSheet(Workbook workbook, String sheetName) throws Exception{
+        List<String> values = new ArrayList<>(0);
+        try{
+
+
+            Sheet sheet = this.getSheet(workbook, sheetName);
+
+            if (sheet == null) {
+                throw new ExcelSheetNotFoundException("Sheet '" + sheetName + "' not found.");
+            }
+
+            // Read the header (first row)
+            Row headerRow = sheet.getRow(0);
+            if (headerRow != null) {
+                StringBuilder header = new StringBuilder();
+                for (Cell cell : headerRow) {
+                    header.append(cell.toString() + "\t"); // Print header values
+                }
+                log.info(header.toString());
+            }else{
+                throw new HeaderNotFoundException("Sheet [" + sheetName + "] header not found, invalid sheet");
+            }
+
+            // Read all values from column A (index 0)
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) { // Start from 1 to skip header
+                Row row = sheet.getRow(i);
+                if (row != null) {
+                    Cell cell = row.getCell(0); // Column A (index 0)
+                    if (cell != null) {
+                        values.add(cell.toString());// add cell value
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return values;
     }
 }

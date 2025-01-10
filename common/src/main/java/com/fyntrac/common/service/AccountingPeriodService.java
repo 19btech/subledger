@@ -100,6 +100,10 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
         return accountingPeriods.get(0);
     }
 
+    public AccountingPeriod getAccountingPeriod(int periodId) {
+        return this.getAccountingPeriod(periodId, this.dataService.getTenantId());
+    }
+
     public AccountingPeriod getAccountingPeriod(int periodId, String tenantId) {
 
         String key = Key.accountingPeriodKey(tenantId);

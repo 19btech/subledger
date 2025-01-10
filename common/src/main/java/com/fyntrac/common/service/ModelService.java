@@ -4,6 +4,7 @@ import com.fyntrac.common.entity.Model;
 import com.fyntrac.common.entity.ModelConfig;
 import com.fyntrac.common.enums.ModelStatus;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -72,5 +73,10 @@ public class ModelService {
             return null;
         }
         return modelList.get(modelList.size()-1);
+    }
+
+    public boolean validateModel(Workbook model) {
+
+        return Boolean.TRUE;
     }
 }

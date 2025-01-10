@@ -4,6 +4,7 @@ import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.ModelConfig;
 import com.fyntrac.common.enums.AttributeVersion;
 import com.reserv.dataloader.service.ExcelFileService;
+import com.reserv.dataloader.service.ModelUploadService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -28,12 +29,16 @@ public class ModelController {
 
     private final ExcelFileService fileService;
     private final ModelService modelService;
+    private final ModelUploadService modelUploadService;
+
 
     @Autowired
     public ModelController(ExcelFileService fileService
-                            , ModelService modelServicen) {
+                            , ModelService modelServicen
+                            , ModelUploadService modelUploadService) {
         this.fileService = fileService;
         this.modelService = modelServicen;
+        this.modelUploadService = modelUploadService;
     }
     // Upload endpoint
     @PostMapping("/upload")
@@ -42,7 +47,8 @@ public class ModelController {
                                              @RequestParam("modelName") String modelName,
                                              @RequestParam("modelOrderId") String modelOrderId) {
         try {
-            if (!(modelService.ifModelExists(modelName))) {
+            if (!(modelService.ifModelExists(modelName)) && this.modelUploadService.validateModel(file)) {
+
                 String fileId = fileService.uploadFile(file);
                 ModelConfig modelConfig = new ModelConfig();
                 modelConfig.setMetrics(new Records.MetricNameRecord[]{});

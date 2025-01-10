@@ -28,7 +28,7 @@ publishing {
 		mavenJava(MavenPublication) {
 			from components.java  // Publish the Java component
 			groupId = 'com.fyntrac'  // Set your group ID
-			artifactId = 'commons'    // Set your artifact ID
+			artifactId = 'gl'    // Set your artifact ID
 			version = project.version  // Set your version
 
 		}

@@ -1,9 +1,8 @@
-package com.reserv.dataloader.utils;
+package com.fyntrac.common.utils;
 
 import  com.fyntrac.common.enums.AccountingRules;
 import com.fyntrac.common.exception.ExcelFormulaCellException;
-import com.fyntrac.common.exception.InvalidExcelSheetNameException;
-import org.springframework.web.multipart.MultipartFile;
+import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.*;
 import java.io.*;
 import java.nio.file.Files;
@@ -15,25 +14,11 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 
-public class FileUtil {
+public class ExcelUtil {
 
-    public File saveFileToTempFolder(MultipartFile file, String destinationDirectory) throws Exception{
-
-        org.apache.commons.io.FileUtils.deleteQuietly(new File(destinationDirectory + File.separator +file.getOriginalFilename()));
-
-        File uploadedFile = new File(destinationDirectory + File.separator +file.getOriginalFilename());
-
-        uploadedFile.createNewFile();
-        FileOutputStream fos =new FileOutputStream(uploadedFile);
-        fos.write(file.getBytes());
-        fos.close();
-
-        return uploadedFile;
-    }
 
     public  static File saveFileToTempFolder(String filePath, String fileName, byte[] fildData) throws Exception{
 
@@ -174,7 +159,7 @@ public class FileUtil {
                                 writer.append(cell.getBooleanCellValue() + "");
                                 break;
                             case NUMERIC:
-                                writer.append(((DateUtil.isCellDateFormatted(cell)) ? getDateValue(cell) : getNumericValue(cell)) + "");
+                                writer.append(((org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) ? getDateValue(cell) : getNumericValue(cell)) + "");
                                 break;
                             case STRING:
                                 writer.append("\"" + String.valueOf(cell.getStringCellValue()).toUpperCase()
@@ -215,13 +200,13 @@ public class FileUtil {
         }
     }
 
-    private static String getDateValue(Cell cell) {
+    protected static String getDateValue(Cell cell) {
         DateFormat df = new SimpleDateFormat("yyyy-MM-dd");
         Date date = cell.getDateCellValue();
         return  df.format(date);
     }
 
-    private static String getNumericValue(Cell cell) {
+    protected static String getNumericValue(Cell cell) {
         Double value = 0.0d;
         if (cell.getCellStyle().getDataFormatString().contains("%")) {
             // Detect Percent Values
@@ -234,8 +219,8 @@ public class FileUtil {
         return value.toString();
     }
 
-    private static void setFormulaCellValue(Cell cell, BufferedWriter data, FormulaEvaluator evaluator,
-                                           int cellIndex) throws Exception {
+    protected static void setFormulaCellValue(Cell cell, BufferedWriter data, FormulaEvaluator evaluator,
+                                            int cellIndex) throws Exception {
         try {
             CellValue cellValue = evaluator.evaluate(cell);
             switch (cellValue.getCellType()) {
@@ -305,84 +290,7 @@ public class FileUtil {
     }
 
 
-    public static String convertMultipartFileToFile(MultipartFile multipartFile, String filePath) throws IOException {
-        // Create a temporary file
-        String fileName =  getFileNameWithoutExtension(multipartFile);
-        String fileExtention = getFileExtension(multipartFile);
-        Path path = Path.of(filePath + File.separator + fileName + "." + fileExtention);
-        // Copy the contents of the multipart file to the temporary file
-        try {
-            createDirectory(filePath);
-            Files.deleteIfExists(path);
-            File createdFile = path.toFile();
-            if (createdFile.exists()) {
-                createdFile.delete();
-            }
-            multipartFile.transferTo(createdFile);
-        } catch (IOException e) {
-            throw e;
-        }
-
-        return path.toAbsolutePath().toString();
-    }
-
-    public static String getFileExtension(MultipartFile multipartFile) {
-        // Get the original filename
-        String originalFilename = multipartFile.getOriginalFilename();
-
-        // Check if the filename is not null and has an extension
-        if (originalFilename != null && originalFilename.contains(".")) {
-            // Extract and return the file extension
-            return originalFilename.substring(originalFilename.lastIndexOf(".") + 1).toLowerCase();
-        }
-
-        // If filename does not contain an extension or is null, return an empty string
-        return "";
-    }
-
-    public static String getFileNameWithoutExtension(MultipartFile multipartFile) {
-        // Get the original filename
-        String originalFilename = multipartFile.getOriginalFilename();
-
-        // Check if the filename is not null and has an extension
-        if (originalFilename != null && originalFilename.contains(".")) {
-            // Extract and return the filename without the extension
-            return originalFilename.substring(0, originalFilename.lastIndexOf("."));
-        }
-
-        // If filename does not contain an extension or is null, return the original filename
-        return originalFilename;
-    }
-
-    public static Set<File> unzip(MultipartFile multipartFile, String destDirectory) throws IOException {
-        File destDir = new File(destDirectory);
-        Set<File> fileSet = new HashSet<>(0);
-        if (destDir.exists()) {
-            destDir.deleteOnExit();
-        }else {
-            destDir.mkdirs();
-        }
-
-        try (ZipInputStream zipIn = new ZipInputStream(multipartFile.getInputStream())) {
-            ZipEntry entry;
-            while ((entry = zipIn.getNextEntry()) != null) {
-                String filePath = destDirectory + File.separator + entry.getName();
-                if (!entry.isDirectory()) {
-                    File file = new File(filePath);
-                    extractFile(zipIn, file);
-                    fileSet.add(file);
-                } else {
-                    File dir = new File(filePath);
-                    dir.mkdirs();
-                }
-                zipIn.closeEntry();
-
-            }
-        }
-        return fileSet;
-    }
-
-    private static void extractFile(ZipInputStream zipIn, File file) throws IOException {
+    protected static void extractFile(ZipInputStream zipIn, File file) throws IOException {
         try (FileOutputStream fos = new FileOutputStream(file)) {
             byte[] buffer = new byte[1024];
             int bytesRead;
@@ -400,13 +308,6 @@ public class FileUtil {
         return fileName.toLowerCase().endsWith(".zip");
     }
 
-    public static boolean isZipFile(MultipartFile file) {
-        // Get the original file name
-        String originalFilename = file.getOriginalFilename();
-
-        // Check if the original file name ends with ".zip" (case-insensitive)
-        return originalFilename != null && originalFilename.toLowerCase().endsWith(".zip");
-    }
 
     public static boolean isExtensionMatched(String fileName, String expectedExtension) {
         // Get the file extension from the file name
@@ -416,7 +317,7 @@ public class FileUtil {
         return fileExtension != null && fileExtension.equalsIgnoreCase(expectedExtension);
     }
 
-    private static String getFileExtension(String fileName) {
+    protected static String getFileExtension(String fileName) {
         int lastDotIndex = fileName.lastIndexOf(".");
         if (lastDotIndex != -1 && lastDotIndex < fileName.length() - 1) {
             return fileName.substring(lastDotIndex + 1);
@@ -467,6 +368,64 @@ public class FileUtil {
             e.printStackTrace();
             return List.of(); // Return empty list on error
         }
+    }
+
+
+
+    // Method to convert Workbook to ByteArrayOutputStream
+    public static byte[] convertWorkbookToByteArray(Workbook workbook) throws IOException {
+        try (workbook; ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            workbook.write(outputStream);
+            return outputStream.toByteArray(); // Return the byte array
+        }
+        // Ensure the workbook is closed
+    }
+
+
+
+    // Recreate Workbook from byte[]
+    public static Workbook recreateWorkbookFromByteArray(byte[] data) throws IOException {
+        try (ByteArrayInputStream inputStream = new ByteArrayInputStream(data)) {
+            return WorkbookFactory.create(inputStream);
+        }
+    }
+
+    private static Sheet getSheetIgnoreCase(Workbook workbook, String sheetName) {
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            if (workbook.getSheetAt(i).getSheetName().equalsIgnoreCase(sheetName)) {
+                return workbook.getSheetAt(i);
+            }
+        }
+        return null; // Sheet not found
+    }
+
+    public static void mapJsonToExcel(List<Map<String, Object>> jsonData, Workbook workbook, String sheetName) throws IOException {
+        // Step 2: Load Excel File
+        Sheet sheet = getSheetIgnoreCase(workbook, sheetName); // Update with your actual sheet name
+
+        // Step 3: Get Excel Headers (Row 0)
+        Row headerRow = sheet.getRow(0);
+        Map<String, Integer> excelColumnMap = getColumnIndexMap(headerRow);
+
+        // Step 4: Write JSON Data to Excel Based on Matching Headers
+        int rowNum = sheet.getLastRowNum() + 1; // Append new rows
+        for (Map<String, Object> row : jsonData) {
+            Row excelRow = sheet.createRow(rowNum++);
+            for (String column : row.keySet()) {
+                if (excelColumnMap.containsKey(column)) {
+                    int colIndex = excelColumnMap.get(column);
+                    excelRow.createCell(colIndex).setCellValue(row.get(column).toString());
+                }
+            }
+        }
+    }
+
+    private static Map<String, Integer> getColumnIndexMap(Row headerRow) {
+        Map<String, Integer> columnIndexMap = new HashMap<>();
+        for (Cell cell : headerRow) {
+            columnIndexMap.put(cell.getStringCellValue(), cell.getColumnIndex());
+        }
+        return columnIndexMap;
     }
 }
 

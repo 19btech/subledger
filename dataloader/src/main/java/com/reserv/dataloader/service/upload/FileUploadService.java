@@ -2,7 +2,7 @@ package com.reserv.dataloader.service.upload;
 
 import  com.fyntrac.common.config.TenantContextHolder;
 import  com.fyntrac.common.enums.AccountingRules;
-import com.reserv.dataloader.utils.FileUtil;
+import com.reserv.dataloader.utils.ExcelFileUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,18 +42,18 @@ public class FileUploadService {
         boolean isValidFile = Boolean.FALSE;
 
         for(MultipartFile file : files) {
-            if(FileUtil.isZipFile(file)) {
-                Set<File> dataFiles =  FileUtil.unzip(file, FOLDER_PATH);
+            if(ExcelFileUtil.isZipFile(file)) {
+                Set<File> dataFiles =  ExcelFileUtil.unzip(file, FOLDER_PATH);
                 for (File f : dataFiles) {
                         validFileSet.add(f.getAbsolutePath());
                 }
             }else {
-                validFileSet.add(FileUtil.convertMultipartFileToFile(file,FOLDER_PATH));
+                validFileSet.add(ExcelFileUtil.convertMultipartFileToFile(file,FOLDER_PATH));
             }
         }
 
         this.convertIntoCSVFiles(validFileSet);
-        List<Path> fileList = FileUtil.listCsvFiles(OUTPUT_FOLDER_PATH, ".csv");
+        List<Path> fileList = ExcelFileUtil.listCsvFiles(OUTPUT_FOLDER_PATH, ".csv");
         // Create a Map<AccountingRules, filePath>
         Map<AccountingRules, String> rulesMap = new HashMap<>();
 
@@ -99,12 +99,12 @@ public class FileUploadService {
         String OUTPUT_FOLDER_PATH = System.getProperty("user.home") + File.separator + "output" + File.separator + "tenants" + File.separator + tenantContextHolder.getTenant() + File.separator;
 
         for(String file :  fileList) {
-            if(FileUtil.isExtensionMatched(file,"csv")) {
-                FileUtil.moveFileToFolder(file,OUTPUT_FOLDER_PATH);
-            }else if(FileUtil.isExtensionMatched(file,"xls") ||
-                    FileUtil.isExtensionMatched(file,"xlsx")){
+            if(ExcelFileUtil.isExtensionMatched(file,"csv")) {
+                ExcelFileUtil.moveFileToFolder(file,OUTPUT_FOLDER_PATH);
+            }else if(ExcelFileUtil.isExtensionMatched(file,"xls") ||
+                    ExcelFileUtil.isExtensionMatched(file,"xlsx")){
                 FileUtils.deleteDirectory(new File(OUTPUT_FOLDER_PATH));
-                FileUtil.convertExcelToCSV(file,OUTPUT_FOLDER_PATH, 1L);
+                ExcelFileUtil.convertExcelToCSV(file,OUTPUT_FOLDER_PATH, 1L);
             }
         }
     }
