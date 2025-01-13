@@ -2,6 +2,7 @@ package com.fyntrac.common.utils;
 
 import  com.fyntrac.common.enums.AccountingRules;
 import com.fyntrac.common.exception.ExcelFormulaCellException;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.*;
 import java.io.*;
@@ -17,6 +18,7 @@ import java.util.stream.Stream;
 import java.util.zip.ZipInputStream;
 
 
+@Slf4j
 public class ExcelUtil {
 
 
@@ -399,14 +401,25 @@ public class ExcelUtil {
         return null; // Sheet not found
     }
 
+    public static void cleanSheet(Sheet sheet) {
+        // Remove all rows except the header (first row, index 0)
+        int lastRowNum = sheet.getLastRowNum();
+        for (int i = lastRowNum; i > 0; i--) { // Start from last row to avoid index shifting
+            Row row = sheet.getRow(i);
+            if (row != null) {
+                sheet.removeRow(row);
+            }
+        }
+    }
     public static void mapJsonToExcel(List<Map<String, Object>> jsonData, Workbook workbook, String sheetName) throws IOException {
         // Step 2: Load Excel File
         Sheet sheet = getSheetIgnoreCase(workbook, sheetName); // Update with your actual sheet name
-
+        log.info("Sheet Name:", sheetName);
+        log.info("Excel Sheet Name", sheet.getSheetName());
         // Step 3: Get Excel Headers (Row 0)
         Row headerRow = sheet.getRow(0);
         Map<String, Integer> excelColumnMap = getColumnIndexMap(headerRow);
-
+        cleanSheet(sheet);
         // Step 4: Write JSON Data to Excel Based on Matching Headers
         int rowNum = sheet.getLastRowNum() + 1; // Append new rows
         for (Map<String, Object> row : jsonData) {
