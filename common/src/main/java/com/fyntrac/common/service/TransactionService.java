@@ -1,12 +1,10 @@
-package com.reserv.dataloader.service;
+package com.fyntrac.common.service;
 
 import com.fyntrac.common.entity.Transactions;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
-import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.dto.record.Records;
 
 import java.util.Collection;

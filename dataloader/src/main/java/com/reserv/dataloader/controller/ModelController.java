@@ -3,8 +3,10 @@ package com.reserv.dataloader.controller;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.ModelConfig;
 import com.fyntrac.common.enums.AttributeVersion;
+import com.reserv.dataloader.pulsar.producer.ModelExecutionProducer;
 import com.reserv.dataloader.service.ExcelFileService;
 import com.reserv.dataloader.service.ModelUploadService;
+import com.reserv.dataloader.service.model.ModelExecutionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -30,15 +32,18 @@ public class ModelController {
     private final ExcelFileService fileService;
     private final ModelService modelService;
     private final ModelUploadService modelUploadService;
+    private final ModelExecutionService modelExecutionService;
 
 
     @Autowired
     public ModelController(ExcelFileService fileService
                             , ModelService modelServicen
-                            , ModelUploadService modelUploadService) {
+                            , ModelUploadService modelUploadService
+                            , ModelExecutionService modelExecutionService) {
         this.fileService = fileService;
         this.modelService = modelServicen;
         this.modelUploadService = modelUploadService;
+        this.modelExecutionService = modelExecutionService;
     }
     // Upload endpoint
     @PostMapping("/upload")
@@ -72,6 +77,8 @@ public class ModelController {
             } catch(IllegalArgumentException e){
                 return ResponseEntity.badRequest().body("Error: " + e.getMessage());
             } catch(Exception e){
+            String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
+            log.error(stackTrace);
                 return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
             }
 
@@ -88,6 +95,19 @@ public class ModelController {
             return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
         }
     }
+
+    @PostMapping("/execute")
+    public ResponseEntity<String> executeModel(@RequestBody String date) {
+        try {
+            this.modelExecutionService.sendModelExecutionMessage();
+            return ResponseEntity.ok("Model executed successfully, for : " + date);
+        }catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
+        }
+    }
+
     // Download endpoint
     @GetMapping("/download/{fileId}")
     public ResponseEntity<byte[]> downloadFile(@PathVariable String fileId) {

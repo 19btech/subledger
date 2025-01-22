@@ -90,7 +90,9 @@ public class FileUploadService {
             }
         }
 
-        this.activityUploadService.uploadActivity(activityMap);
+        if(activityMap != null && !activityMap.isEmpty()) {
+            this.activityUploadService.uploadActivity(activityMap);
+        }
 
 
     }

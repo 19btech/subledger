@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.text.ParseException;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -34,10 +35,16 @@ public class AccountingPeriodController {
     }
 
     @GetMapping("/get/open-periods")
-    public ResponseEntity<Collection<Records.AccountingPeriodRecord>> getOpenAccountingPeriods(){
+    public ResponseEntity<Collection<Records.AccountingPeriodRecord>> getOpenAccountingPeriods() {
         try {
             Collection<AccountingPeriod> accountingPeriods = this.accountingPeriodService.getAccountingPeriods();
-            List<Records.AccountingPeriodRecord> accountingPeriodRecords =  accountingPeriods.stream()
+
+            if (accountingPeriods == null || accountingPeriods.isEmpty()) {
+                // Return an empty list instead of a message
+                return ResponseEntity.ok(Collections.emptyList());
+            }
+
+            List<Records.AccountingPeriodRecord> accountingPeriodRecords = accountingPeriods.stream()
                     .map(RecordFactory::createAccountingPeriodRecord)
                     .sorted(Comparator.comparingInt(Records.AccountingPeriodRecord::periodId))
                     .collect(Collectors.toList());
@@ -45,11 +52,11 @@ public class AccountingPeriodController {
             return new ResponseEntity<>(accountingPeriodRecords, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes
-            log.error(e.getLocalizedMessage());
+            String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
+            log.error("An error occurred while fetching accounting periods", stackTrace);
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
-
     @GetMapping("/get/last-closed-period")
     public ResponseEntity<Records.AccountingPeriodRecord> getLastClosedAccountingPeriod(){
         try {

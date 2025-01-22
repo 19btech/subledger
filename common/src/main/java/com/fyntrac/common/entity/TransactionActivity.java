@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -21,6 +22,7 @@ import org.springframework.data.annotation.Id;
 @AllArgsConstructor
 @NoArgsConstructor
 @Document(collection = "TransactionActivity")
+@CompoundIndex(def = "{'instrumentId': 1, 'attributeId': 1}", name = "transaction_activity_instrument_attribute_index")
 public class TransactionActivity implements Serializable {
     @Serial
     private static final long serialVersionUID = 8444760102552307163L;

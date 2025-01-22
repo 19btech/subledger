@@ -27,8 +27,9 @@ public class AccountingRuleController {
             }
             return ResponseEntity.ok("Files uploaded successfully");
         } catch (Exception e) {
-            log.error(e.getLocalizedMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload files");
+            String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
+            log.error(stackTrace);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload files: cause:" + stackTrace);
         } catch (Throwable e) {
             log.error(e.getLocalizedMessage());
             throw new RuntimeException(e);

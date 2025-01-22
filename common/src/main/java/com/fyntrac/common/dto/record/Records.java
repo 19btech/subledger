@@ -64,4 +64,7 @@ public class Records {
         private static final long serialVersionUID = -4338320429519961695L;
     }
 
+    public record CommonMessageRecord(String tenantId, String key)implements Serializable {
+        private static final long serialVersionUID = -1788629874681694218L;
+    }
 }

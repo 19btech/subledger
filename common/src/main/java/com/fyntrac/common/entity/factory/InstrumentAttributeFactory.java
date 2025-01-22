@@ -37,6 +37,7 @@ public class InstrumentAttributeFactory {
                 .periodId(periodId)
                 .attributes(attributes)
                 .versionId(versionId)
+                .previousVersionId(0L)
                 .source(source)
                 .endDate(null) // Assuming endDate is initialized to null
                 .build();

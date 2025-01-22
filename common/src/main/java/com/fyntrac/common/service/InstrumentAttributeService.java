@@ -11,9 +11,12 @@ import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
+// import org.bson.Document;
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
@@ -205,5 +208,46 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
                 source,
                 new HashMap<>() // attributes
         );
+    }
+
+    public List<InstrumentAttribute> findRecordsWhereEndDateIsNull(String instrumentId, String attributeId) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("endDate").is(null)
+                .and("instrumentId").is(instrumentId)
+                .and("attributeId").is(attributeId));
+        return this.dataService.fetchData(query, InstrumentAttribute.class);
+    }
+
+    public List<InstrumentAttribute> findRecordFilterByVersionId(long versionId, String instrumentId, String attributeId) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("versionId").is(versionId)
+                .and("instrumentId").is(instrumentId)
+                .and("attributeId").is(attributeId));
+        return this.dataService.fetchData(query, InstrumentAttribute.class);
+    }
+
+    public List<InstrumentAttribute> getInstruments(Date endDate, int pageNumber, int chunkSize) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("endDate").is(endDate));
+        query.skip(pageNumber * chunkSize);  // Skip the already processed data
+        query.limit(chunkSize);  // Limit to chunk size
+
+        // Fetch the chunk of data
+        return  this.dataService.fetchData(query, InstrumentAttribute.class);
+    }
+
+    public Set<String> getColumnNames() {
+
+        MongoTemplate mongoTemplate = this.dataService.getMongoTemplate();
+        Set<String> columns = new HashSet<>();
+
+        // Get one document to extract the field names (columns)
+        Map<String, Object> doc = mongoTemplate.findOne(Query.query(Criteria.where("_id").exists(true)), Map.class, "InstrumentAttribute");
+
+        if (doc != null) {
+            return doc.keySet();
+        }
+
+        return null;
     }
 }

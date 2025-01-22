@@ -2,7 +2,7 @@ package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.entity.Transactions;
 import com.fyntrac.common.dto.record.Records;
-import com.reserv.dataloader.service.TransactionService;
+import com.fyntrac.common.service.TransactionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;

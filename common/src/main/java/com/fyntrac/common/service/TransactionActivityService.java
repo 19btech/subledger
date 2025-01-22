@@ -1,6 +1,6 @@
-package com.reserv.dataloader.service;
+package com.fyntrac.common.service;
 
-import  com.fyntrac.common.config.ReferenceData;
+import com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.Key;
@@ -11,8 +11,6 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
-import com.fyntrac.common.service.DataService;
-import com.fyntrac.common.service.CacheBasedService;
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
@@ -79,5 +77,20 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
 
         // Return the periodId or 0 if no result is found
         return result != null ? result.getPeriodId() : 0;
+    }
+
+    public Set<String> getColumnNames() {
+
+        MongoTemplate mongoTemplate = this.dataService.getMongoTemplate();
+        Set<String> columns = new HashSet<>();
+
+        // Get one document to extract the field names (columns)
+        Map<String, Object> doc = mongoTemplate.findOne(Query.query(Criteria.where("_id").exists(true)), Map.class, "TransactionActivity");
+
+        if (doc != null) {
+            return doc.keySet();
+        }
+
+        return null;
     }
 }

@@ -21,7 +21,7 @@ import java.util.Map;
 @Builder
 @AllArgsConstructor
 @Document(collection = "InstrumentAttribute")
-@CompoundIndex(def = "{'attributeId': 1, 'instrumentId': 1}", name = "attribute_instrument_index")
+@CompoundIndex(def = "{'instrumentId': 1, 'attributeId': 1, 'versionId': 1}", name = "InstrumentAttribute_attribute_instrument_index")
 public class InstrumentAttribute implements Serializable {
     @Serial
     private static final long serialVersionUID = -251193653214449266L;
@@ -37,6 +37,7 @@ public class InstrumentAttribute implements Serializable {
     private int periodId;
     @Indexed // Separate index on versionId
     private long versionId;
+    private long previousVersionId;
     private Source source;
     private String sourceId;
     @Field("attributes")
@@ -61,6 +62,7 @@ public class InstrumentAttribute implements Serializable {
         json.append("\"endDate\":\"").append(endDate).append("\",");
         json.append("\"periodId\":").append(periodId).append(",");
         json.append("\"versionId\":").append(versionId).append(",");
+        json.append("\"previousVersionId\":").append(previousVersionId).append(",");
         json.append("\"batchId\":").append(batchId).append(",");
         json.append("\"attributes\":{");
 

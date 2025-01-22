@@ -8,7 +8,7 @@ import com.fyntrac.common.enums.FileUploadActivityType;
 import com.reserv.dataloader.service.AccountingPeriodDataUploadService;
 import com.reserv.dataloader.service.AggregationRequestService;
 import com.reserv.dataloader.service.CacheService;
-import com.reserv.dataloader.service.TransactionActivityService;
+import com.fyntrac.common.service.TransactionActivityService;
 import com.reserv.dataloader.service.aggregation.AggregationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.*;
@@ -93,8 +93,8 @@ public class ActivityUploadService {
                 log.info("Job instrumentAttributeUploadJob failed. Job transactionActivityExecution will not be executed.");
             }
         }catch (Exception e ){
-            log.error(e.getMessage());
-            log.error(e.getCause().getMessage());
+            String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
+            log.error(stackTrace);
             logActivityException(runid, DateUtil.getDateTime(), filePath, activityType);
             throw new ExecutionException(e);
         }

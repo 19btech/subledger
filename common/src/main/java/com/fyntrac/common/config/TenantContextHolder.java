@@ -7,15 +7,17 @@ public class TenantContextHolder {
 
     private static final ThreadLocal<String> currentTenant = new ThreadLocal<>();
 
-    public String getTenant() {
+    public static String getTenant() {
         return currentTenant.get();
     }
 
-    public void setTenant(String tenantId) {
+    public static void setTenant(String tenantId) {
         currentTenant.set(tenantId);
     }
 
-    public void clear() {
+    public static void clear() {
         currentTenant.remove();
     }
+
+
 }

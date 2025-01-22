@@ -85,4 +85,8 @@ public class RecordFactory {
     public static Records.AccountingPeriodCloseMessageRecord createAccountingPeriodCloseMessage(String tenant, Collection<Batch> batches){
         return createRecord(() -> new Records.AccountingPeriodCloseMessageRecord(tenant, batches));
     }
+
+    public static Records.CommonMessageRecord createCommonMessage(String tenant, String key){
+        return createRecord(() -> new Records.CommonMessageRecord(tenant, key));
+    }
 }

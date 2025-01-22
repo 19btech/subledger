@@ -22,6 +22,7 @@ public class MetricLevelLtd implements Serializable, BaseLevelLtd {
     private static final long serialVersionUID = 3393182226432882651L;
     @Id
     private String id;
+    @Indexed
     private String metricName;
     @Indexed(unique = false)
     private int accountingPeriodId;

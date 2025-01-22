@@ -14,11 +14,9 @@ import java.io.IOException;
 @Component
 public class TenantFilter implements Filter {
 
-    private final TenantContextHolder tenantContextHolder;
     private final DataService dataService;
     @Autowired
-    public TenantFilter(TenantContextHolder tenantContextHolder, DataService dataService) {
-        this.tenantContextHolder = tenantContextHolder;
+    public TenantFilter(DataService dataService) {
         this.dataService = dataService;
     }
 
@@ -26,7 +24,7 @@ public class TenantFilter implements Filter {
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException{
         HttpServletRequest httpRequest = (HttpServletRequest) servletRequest;
         String tenantId = httpRequest.getHeader("X-Tenant".toLowerCase());
-        tenantContextHolder.setTenant(tenantId);
+        TenantContextHolder.setTenant(tenantId);
         this.dataService.setTenantId(tenantId);
         filterChain.doFilter(servletRequest, servletResponse);
         // tenantContextHolder.clear(); // Clear tenant after request processing

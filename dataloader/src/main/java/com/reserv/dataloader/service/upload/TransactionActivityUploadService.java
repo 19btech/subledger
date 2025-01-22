@@ -6,7 +6,7 @@ import com.fyntrac.common.entity.AggregationRequest;
 import com.reserv.dataloader.service.AccountingPeriodDataUploadService;
 import com.reserv.dataloader.service.AggregationRequestService;
 import com.reserv.dataloader.service.CacheService;
-import com.reserv.dataloader.service.TransactionActivityService;
+import com.fyntrac.common.service.TransactionActivityService;
 import com.reserv.dataloader.service.aggregation.AggregationService;
 import com.fyntrac.common.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;

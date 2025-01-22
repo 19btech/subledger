@@ -13,9 +13,9 @@ import java.util.Collections;
 public class FilterConfig {
 
     @Bean
-    public FilterRegistrationBean<TenantFilter> tenantFilterRegistration(TenantContextHolder tenantContextHolder, DataService dataService) {
+    public FilterRegistrationBean<TenantFilter> tenantFilterRegistration( DataService dataService) {
         FilterRegistrationBean<TenantFilter> registrationBean = new FilterRegistrationBean<>();
-        registrationBean.setFilter(new TenantFilter(tenantContextHolder, dataService));
+        registrationBean.setFilter(new TenantFilter( dataService));
         registrationBean.setOrder(1); // Set the order to execute this filter first
         registrationBean.setUrlPatterns(Collections.singletonList("/*")); // Intercept all requests
         return registrationBean;
