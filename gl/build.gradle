@@ -13,7 +13,7 @@ def gittoken = System.getenv('GIT_KEY') // Ensure you set this in your environme
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(17)
+		languageVersion = JavaLanguageVersion.of(21)
 	}
 }
 
