@@ -48,7 +48,7 @@ publishing {
 
 docker {
 	javaApplication {
-		baseImage = 'openjdk:17-jdk-alpine'
+		baseImage = 'openjdk:21-jdk-alpine'
 		mainClassName = 'com.reserv.dataloader.DataloaderApplication' // Corrected property name
 		ports = [8089] // Specify any ports your application uses
 	}

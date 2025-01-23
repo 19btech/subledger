@@ -1,9 +1,8 @@
 package com.fyntrac.common.dto.record;
 
-import com.fyntrac.common.entity.AccountingPeriod;
-import com.fyntrac.common.entity.Batch;
-import com.fyntrac.common.entity.InstrumentAttribute;
-import com.fyntrac.common.entity.TransactionActivity;
+import com.fyntrac.common.entity.*;
+import com.fyntrac.common.enums.UploadStatus;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.stereotype.Component;
@@ -88,5 +87,9 @@ public class RecordFactory {
 
     public static Records.CommonMessageRecord createCommonMessage(String tenant, String key){
         return createRecord(() -> new Records.CommonMessageRecord(tenant, key));
+    }
+
+    public static Records.ModelRecord createModelRecord(Model model, Workbook workbook){
+        return createRecord(() -> new Records.ModelRecord(model, workbook));
     }
 }

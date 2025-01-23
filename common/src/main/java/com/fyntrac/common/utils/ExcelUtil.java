@@ -5,6 +5,8 @@ import com.fyntrac.common.exception.ExcelFormulaCellException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.*;
+import org.bson.types.Binary;
+
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -439,6 +441,20 @@ public class ExcelUtil {
             columnIndexMap.put(cell.getStringCellValue(), cell.getColumnIndex());
         }
         return columnIndexMap;
+    }
+
+
+    public static Workbook convertBinaryToWorkbook(Binary fileData) {
+        if (fileData == null || fileData.getData() == null) {
+            throw new IllegalArgumentException("The file data cannot be null");
+        }
+
+        try (ByteArrayInputStream inputStream = new ByteArrayInputStream(fileData.getData())) {
+            // Use Apache POI to create a Workbook from the input stream
+            return WorkbookFactory.create(inputStream);
+        } catch (IOException e) {
+            throw new RuntimeException("Error while converting Binary to Workbook", e);
+        }
     }
 }
 

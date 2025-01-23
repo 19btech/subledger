@@ -2,6 +2,10 @@ package com.fyntrac.common.dto.record;
 
 import com.fyntrac.common.entity.Batch;
 import com.fyntrac.common.entity.InstrumentAttribute;
+import com.fyntrac.common.entity.Model;
+import com.fyntrac.common.entity.ModelFile;
+import com.fyntrac.common.enums.UploadStatus;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -66,5 +70,9 @@ public class Records {
 
     public record CommonMessageRecord(String tenantId, String key)implements Serializable {
         private static final long serialVersionUID = -1788629874681694218L;
+    }
+
+    public record ModelRecord(Model model, Workbook workbook)implements Serializable {
+        private static final long serialVersionUID = -8716704041115418296L;
     }
 }

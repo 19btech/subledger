@@ -162,11 +162,12 @@ public class DataService<T> {
 
     public T findOne(Query query, Class<T> t) {
         String tenant = tenantContextHolder.getTenant();
-        return findOne(query, t);
+        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
+        return mongoTemplate.findOne(query,  t);
     }
 
     public T findOne(Query query, String tenantId, Class<T> t) {
-        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(this.getTenantId());
+        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenantId);
         // Fetch the single unique document
         return mongoTemplate.findOne(query, t);
     }
