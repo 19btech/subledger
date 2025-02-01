@@ -85,11 +85,53 @@ public class RecordFactory {
         return createRecord(() -> new Records.AccountingPeriodCloseMessageRecord(tenant, batches));
     }
 
-    public static Records.CommonMessageRecord createCommonMessage(String tenant, String key){
-        return createRecord(() -> new Records.CommonMessageRecord(tenant, key));
+    public static Records.CommonMessageRecord createCommonMessage(String tenant,Date executionDate, String key){
+        return createRecord(() -> new Records.CommonMessageRecord(tenant,executionDate, key));
     }
 
-    public static Records.ModelRecord createModelRecord(Model model, Workbook workbook){
-        return createRecord(() -> new Records.ModelRecord(model, workbook));
+    public static Records.ModelRecord createModelRecord(Model model, ModelFile modelFile){
+        return createRecord(() -> new Records.ModelRecord(model, modelFile));
+    }
+
+    public static Records.ExcelModelRecord createExcelModelRecord(Model model, Workbook excelModel){
+        return createRecord(() -> new Records.ExcelModelRecord(model, excelModel));
+    }
+
+    public static Records.MetricRecord createMetricRecord(String metricName, String instrumentid, String attributeId, int accountingPeriod, double beginningBalance, double activity, double endingBalance) {
+        return createRecord(() -> new Records.MetricRecord(metricName, instrumentid, attributeId, accountingPeriod, beginningBalance, activity, endingBalance));
+    }
+
+    public static Records.MetricRecord createMetricRecord(AttributeLevelLtd ltd) {
+        return createRecord(() -> new Records.MetricRecord(ltd.getMetricName()
+                , ltd.getInstrumentId()
+                , ltd.getAttributeId()
+                , ltd.getAccountingPeriodId()
+                , ltd.getBalance().getBeginningBalance()
+                , ltd.getBalance().getActivity()
+                , ltd.getBalance().getEndingBalance()));
+    }
+
+    public static Records.MetricRecord createMetricRecord(InstrumentLevelLtd ltd) {
+        return createRecord(() -> new Records.MetricRecord(ltd.getMetricName()
+                , ltd.getInstrumentId()
+                , ""
+                , ltd.getAccountingPeriodId()
+                , ltd.getBalance().getBeginningBalance()
+                , ltd.getBalance().getActivity()
+                , ltd.getBalance().getEndingBalance()));
+    }
+
+    public static Records.MetricRecord createMetricRecord(MetricLevelLtd ltd) {
+        return createRecord(() -> new Records.MetricRecord(ltd.getMetricName()
+                , ""
+                , ""
+                , ltd.getAccountingPeriodId()
+                , ltd.getBalance().getBeginningBalance()
+                , ltd.getBalance().getActivity()
+                , ltd.getBalance().getEndingBalance()));
+    }
+
+    public static Records.DateRequestRecord createDateRequest(String date) {
+        return createRecord(() -> new Records.DateRequestRecord(date));
     }
 }

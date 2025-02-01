@@ -93,4 +93,18 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
 
         return null;
     }
+
+    public List<TransactionActivity> fetchTransactions(List<String> transactionNames, String instrumentId, String attributeId, Date transactionDate) {
+        // Define the query
+        Query query = new Query();
+
+        // Add criteria to filter by transactionName (list) and transactionDate
+        query.addCriteria(Criteria.where("instrumentId").is(instrumentId)
+                .and("attributeId").is(attributeId)
+                .and("transactionName").in(transactionNames)
+                .and("transactionDate").is(transactionDate));
+
+        // Execute the query
+        return this.dataService.fetchData(query, TransactionActivity.class);
+    }
 }

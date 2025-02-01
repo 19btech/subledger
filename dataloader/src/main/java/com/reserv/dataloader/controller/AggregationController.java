@@ -1,7 +1,7 @@
 package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.entity.Aggregation;
-import com.reserv.dataloader.service.aggregation.AggregationService;
+import com.fyntrac.common.service.aggregation.AggregationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;

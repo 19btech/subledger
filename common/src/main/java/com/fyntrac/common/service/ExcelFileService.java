@@ -1,35 +1,19 @@
-package com.reserv.dataloader.service;
+package com.fyntrac.common.service;
 
-import com.reserv.dataloader.exception.ExcelSheetNotFoundException;
-import com.reserv.dataloader.exception.HeaderNotFoundException;
-import com.reserv.dataloader.exception.MismatchException;
-import com.reserv.dataloader.utils.ExcelFileUtil;
+import com.fyntrac.common.entity.ModelFile;
+import com.fyntrac.common.exception.ExcelSheetNotFoundException;
+import com.fyntrac.common.exception.HeaderNotFoundException;
+import com.fyntrac.common.exception.MismatchException;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FilenameUtils;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.usermodel.WorkbookFactory;
-import org.bson.types.Binary;
+import org.apache.poi.ss.usermodel.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.server.ResponseStatusException;
-import com.fyntrac.common.entity.ModelFile;
-import com.fyntrac.common.service.DataService;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
-
-import static org.springframework.http.HttpStatus.NOT_FOUND;
-
 @Service
 @Slf4j
 public class ExcelFileService {
@@ -39,72 +23,20 @@ public class ExcelFileService {
     public final static String EXECUTION_DATE_SHEET_NAME="i_executiondate";
     public final static String INSTRUMENT_ATTRIBUTE_SHEET_NAME= "i_instrumentattribute";
 
-    private static final List<String> ALLOWED_CONTENT_TYPES = List.of(
+    protected static final List<String> ALLOWED_CONTENT_TYPES = List.of(
             "application/vnd.ms-excel", // .xls
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" // .xlsx
     );
 
-    private static final List<String> ALLOWED_EXTENSIONS = List.of("xls", "xlsx");
+    protected static final List<String> ALLOWED_EXTENSIONS = List.of("xls", "xlsx");
 
-    private final DataService<ModelFile> dataService;
+    protected final DataService<ModelFile> dataService;
 
     @Autowired
     public ExcelFileService(DataService<ModelFile> dataService) {
         this.dataService = dataService;
     }
 
-    // Upload file to MongoDB
-    public String uploadFile(MultipartFile file) throws IOException {
-        validateFile(file);
-
-        ModelFile fileDocument = new ModelFile();
-        fileDocument.setContentType(file.getContentType());
-        Workbook workbook = ExcelFileUtil.convertMultipartFileToWorkbook(file);
-        byte[] bytes = ExcelFileUtil.convertWorkbookToByteArray(workbook);
-        fileDocument.setFileData(new Binary(bytes));
-
-        ModelFile savedDocument = this.dataService.save(fileDocument);
-        return savedDocument.getId();
-    }
-
-    public boolean validateModel(Workbook workbook) {
-
-        return false;
-    }
-
-    // Retrieve file and convert it into Excel format
-    public byte[] getExcelFile(String fileId) {
-
-        Query query = new Query();
-        query.addCriteria(Criteria.where("id").is(fileId));
-        List<ModelFile> fileDocuments = this.dataService.fetchData(query, ModelFile.class);
-
-        if (fileDocuments == null || fileDocuments.isEmpty()) {
-            throw new ResponseStatusException(NOT_FOUND, "File not found with ID: " + fileId);
-        }
-
-        ModelFile fileDocument = fileDocuments.get(0);
-        try (ByteArrayInputStream inputStream = new ByteArrayInputStream(fileDocument.getFileData().getData());
-             Workbook workbook = WorkbookFactory.create(inputStream);
-             ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
-
-            workbook.write(outputStream);
-            return outputStream.toByteArray();
-
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to convert file to Excel format", e);
-        }
-    }
-
-    // Validate file type
-    private void validateFile(MultipartFile file) {
-        String contentType = file.getContentType();
-        String extension = FilenameUtils.getExtension(file.getOriginalFilename());
-
-        if (!ALLOWED_CONTENT_TYPES.contains(contentType) || !ALLOWED_EXTENSIONS.contains(extension)) {
-            throw new IllegalArgumentException("Invalid file type. Only .xls and .xlsx files are allowed.");
-        }
-    }
 
     public Sheet getSheet(Workbook workbook, String sheetName) {
         // Get the sheet by name
@@ -155,7 +87,7 @@ public class ExcelFileService {
     }
 
     private static Set<String> getMetricDocumentFields() {
-        String headers = "\"MetricName\",\"Instrumentid\",\"AttributeId\",\"AccountingPeriod\",\"Balance.BeginningBalance\",\"Balance.Activity\",\"Balance.EndingBalance\"";
+        String headers = "\"MetricName\",\"Instrumentid\",\"AttributeId\",\"AccountingPeriod\",\"BeginningBalance\",\"Activity\",\"EndingBalance\"";
 
         // Convert to Set<String>
         Set<String> headerSet = Arrays.stream(headers.split(","))

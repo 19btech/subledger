@@ -1,13 +1,14 @@
-package com.reserv.dataloader.service.aggregation;
+package com.fyntrac.common.service.aggregation;
 
+import com.fyntrac.common.entity.AttributeLevelLtd;
 import com.fyntrac.common.entity.InstrumentLevelLtd;
 import com.fyntrac.common.entity.Settings;
-import com.reserv.dataloader.key.InstrumentLevelLtdKey;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.CacheBasedService;
 import com.fyntrac.common.service.DataService;
-import com.reserv.dataloader.service.SettingsService;
 import com.fyntrac.common.utils.Key;
+import com.fyntrac.common.key.InstrumentLevelLtdKey;
+import com.fyntrac.common.service.SettingsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -106,5 +107,16 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
         }
     }
 
+    public List<InstrumentLevelLtd> getBalance(String instrumentId, List<String> metrics, int accountingPeriodId) {
+        Query query = new Query();
+
+        // Add criteria to filter by transactionName (list) and transactionDate
+        query.addCriteria(Criteria.where("instrumentId").is(instrumentId)
+                .and("accountingPeriodId").is(accountingPeriodId)
+                .and("metricName").in(metrics));
+
+        // Execute the query
+        return this.dataService.fetchData(query, InstrumentLevelLtd.class);
+    }
 }
 

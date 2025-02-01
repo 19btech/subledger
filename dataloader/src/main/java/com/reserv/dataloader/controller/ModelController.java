@@ -2,9 +2,8 @@ package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.ModelConfig;
-import com.fyntrac.common.enums.AttributeVersion;
-import com.reserv.dataloader.pulsar.producer.ModelExecutionProducer;
-import com.reserv.dataloader.service.ExcelFileService;
+import com.fyntrac.common.utils.StringUtil;
+import com.reserv.dataloader.service.DataloaderExcelFileService;
 import com.reserv.dataloader.service.ModelUploadService;
 import com.reserv.dataloader.service.model.ModelExecutionService;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +18,6 @@ import org.springframework.web.multipart.MultipartFile;
 import com.fyntrac.common.service.ModelService;
 import com.fyntrac.common.enums.ModelStatus;
 import com.fyntrac.common.entity.Model;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
 import java.util.Date;
@@ -29,14 +27,14 @@ import java.util.Date;
 @Slf4j
 public class ModelController {
 
-    private final ExcelFileService fileService;
+    private final DataloaderExcelFileService fileService;
     private final ModelService modelService;
     private final ModelUploadService modelUploadService;
     private final ModelExecutionService modelExecutionService;
 
 
     @Autowired
-    public ModelController(ExcelFileService fileService
+    public ModelController(DataloaderExcelFileService fileService
                             , ModelService modelServicen
                             , ModelUploadService modelUploadService
                             , ModelExecutionService modelExecutionService) {
@@ -97,16 +95,22 @@ public class ModelController {
     }
 
     @PostMapping("/execute")
-    public ResponseEntity<String> executeModel(@RequestBody String date) {
+    public ResponseEntity<String> executeModel(@RequestBody Records.DateRequestRecord dateRequestRecord) {
         try {
-            this.modelExecutionService.sendModelExecutionMessage();
-            return ResponseEntity.ok("Model executed successfully, for : " + date);
+            this.modelExecutionService.sendModelExecutionMessage(dateRequestRecord.date());
+            return ResponseEntity.ok("Model executed successfully, for : " + dateRequestRecord.date());
         }catch (IllegalArgumentException e) {
+            log.error(StringUtil.getStackTrace(e));
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (Exception e) {
+            log.error(StringUtil.getStackTrace(e));
             return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
+        } catch (Throwable e) {
+            // log.error(StringUtil.getStackTrace(e));
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         }
     }
+
 
     // Download endpoint
     @GetMapping("/download/{fileId}")

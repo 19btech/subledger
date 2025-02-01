@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
 import java.util.Date;
 import org.apache.commons.lang.math.Range;
 import org.joda.time.DateTime;
@@ -1561,6 +1562,20 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
 
         String formattedMonth = String.format("%02d", month);
         return Integer.parseInt(year + formattedMonth);
+    }
+
+    public static Date parseDate(String dateString, java.time.format.DateTimeFormatter formatter) throws Throwable{
+        try {
+            // Step 1: Parse the string into a LocalDate
+            LocalDate localDate = LocalDate.parse(dateString, formatter);
+
+            // Step 2: Convert LocalDate to java.util.Date
+            Date date = Date.from(localDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
+
+            return date;
+        } catch (DateTimeParseException e) {
+            throw  e;
+        }
     }
 }
 

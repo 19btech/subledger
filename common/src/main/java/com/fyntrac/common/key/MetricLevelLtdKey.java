@@ -2,7 +2,7 @@ package com.fyntrac.common.key;
 
 import java.util.Objects;
 
-public class MetricLevelLtdKey implements Key {
+public class MetricLevelLtdKey implements AggregationLtdKey {
     protected final String metricName;
     protected final int accountingPeriodId;
     protected final String tenantId;

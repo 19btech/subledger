@@ -1,13 +1,10 @@
 package com.reserv.dataloader.batch.listener;
 
 import com.fyntrac.common.dto.record.Records;
-import  com.fyntrac.common.enums.AggregationRequestType;
-import com.fyntrac.common.entity.AggregationRequest;
 import com.reserv.dataloader.pulsar.producer.GeneralLedgerMessageProducer;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.reserv.dataloader.service.AggregationRequestService;
 import com.fyntrac.common.service.DataService;
-import com.reserv.dataloader.service.SettingsService;
 import com.fyntrac.common.service.TransactionActivityService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.*;
@@ -16,6 +13,7 @@ import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import com.fyntrac.common.dto.record.RecordFactory;
+import com.fyntrac.common.service.SettingsService;
 
 @Component
 @Slf4j

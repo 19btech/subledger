@@ -1,19 +1,15 @@
 package com.reserv.dataloader.controller;
 
-import com.reserv.dataloader.accounting.AccountingPeriodGenerator;
 import com.fyntrac.common.entity.Settings;
-import com.fyntrac.common.entity.Transactions;
-import com.fyntrac.common.service.DataService;
-import com.reserv.dataloader.service.SettingsService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.fyntrac.common.service.SettingsService;
 
 import java.text.ParseException;
 import java.util.Collection;
-import java.util.Date;
 
 @RestController
 @RequestMapping("/api/dataloader/setting")

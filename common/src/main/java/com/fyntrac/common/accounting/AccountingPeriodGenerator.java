@@ -1,9 +1,10 @@
-package com.reserv.dataloader.accounting;
+package com.fyntrac.common.accounting;
 
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.utils.DateUtil;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
 import java.text.ParseException;
 import java.util.Date;
 import java.util.HashSet;

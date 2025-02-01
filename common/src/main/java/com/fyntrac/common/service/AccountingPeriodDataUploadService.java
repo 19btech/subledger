@@ -1,26 +1,16 @@
-package com.reserv.dataloader.service;
+package com.fyntrac.common.service;
 
-import com.reserv.dataloader.accounting.AccountingPeriodGenerator;
-import  com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.Settings;
 import com.fyntrac.common.repository.MemcachedRepository;
-import com.fyntrac.common.utils.Key;
+import com.fyntrac.common.accounting.AccountingPeriodGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
-import com.fyntrac.common.service.DataService;
 
 import java.text.ParseException;
-import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
-import com.fyntrac.common.service.AccountingPeriodService;
-import com.fyntrac.common.service.BatchService;
+import java.util.Collection;
+import java.util.Set;
 
 @Service
 @Slf4j

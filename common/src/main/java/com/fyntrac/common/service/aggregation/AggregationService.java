@@ -1,18 +1,17 @@
-package com.reserv.dataloader.service.aggregation;
+package com.fyntrac.common.service.aggregation;
 
+import com.fyntrac.common.cache.collection.CacheMap;
+import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.Aggregation;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.CacheBasedService;
 import com.fyntrac.common.service.DataService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.stereotype.Service;
-import com.fyntrac.common.cache.collection.CacheMap;
 import com.fyntrac.common.utils.Key;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
 import java.util.*;
 import java.util.stream.Collectors;
-import com.fyntrac.common.dto.record.Records;
 
 @Service
 public class AggregationService  extends CacheBasedService<Aggregation> {

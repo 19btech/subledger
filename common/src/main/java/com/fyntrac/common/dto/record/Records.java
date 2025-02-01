@@ -68,11 +68,23 @@ public class Records {
         private static final long serialVersionUID = -4338320429519961695L;
     }
 
-    public record CommonMessageRecord(String tenantId, String key)implements Serializable {
+    public record CommonMessageRecord(String tenantId, Date executionDate, String key)implements Serializable {
         private static final long serialVersionUID = -1788629874681694218L;
     }
 
-    public record ModelRecord(Model model, Workbook workbook)implements Serializable {
+    public record ModelRecord(Model model, ModelFile modelFile)implements Serializable {
         private static final long serialVersionUID = -8716704041115418296L;
+    }
+
+    public record ExcelModelRecord(Model model, Workbook excelModel) implements Serializable {
+        private static final long serialVersionUID = 58415234907355427L;
+    }
+
+    public record MetricRecord(String MetricName, String Instrumentid, String attributeId, int AccountingPeriod, double BeginningBalance, double Activity, double EndingBalance) implements Serializable {
+        private static final long serialVersionUID = -1801701397561747928L;
+    }
+
+    public record DateRequestRecord(String date) implements Serializable {
+        private static final long serialVersionUID = 3196156514121109291L;
     }
 }

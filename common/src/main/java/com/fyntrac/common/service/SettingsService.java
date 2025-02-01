@@ -1,4 +1,4 @@
-package com.reserv.dataloader.service;
+package com.fyntrac.common.service;
 
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.Settings;
@@ -11,7 +11,6 @@ import java.text.ParseException;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
-import com.fyntrac.common.service.DataService;
 
 @Service
 @Slf4j

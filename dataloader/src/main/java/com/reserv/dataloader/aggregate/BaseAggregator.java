@@ -4,9 +4,9 @@ import  com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.*;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.DataService;
-import com.reserv.dataloader.service.SettingsService;
 import com.fyntrac.common.utils.Key;
 import com.fyntrac.common.cache.collection.CacheMap;
+import com.fyntrac.common.service.SettingsService;
 
 import java.util.ArrayList;
 import java.util.List;

@@ -1,16 +1,15 @@
 package com.reserv.dataloader.aggregate;
 
-import com.reserv.dataloader.key.AttributeLevelLtdKey;
+import com.fyntrac.common.key.AttributeLevelLtdKey;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.DataService;
-import com.reserv.dataloader.service.SettingsService;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 import com.fyntrac.common.entity.AccountingPeriod;
-import com.fyntrac.common.cache.collection.CacheMap;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.entity.AttributeLevelLtd;
 import com.fyntrac.common.entity.BaseLtd;
+import com.fyntrac.common.service.SettingsService;
 
 import java.util.*;
 /**

@@ -4,7 +4,7 @@ import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.reserv.dataloader.pulsar.producer.AccountingPeriodCloseProducer;
-import com.reserv.dataloader.service.AccountingPeriodDataUploadService;
+import com.fyntrac.common.service.AccountingPeriodDataUploadService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
