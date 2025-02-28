@@ -28,7 +28,8 @@ public class Errors implements Serializable {
     private String instrumentId;
     private String attributeId;
     private String modelId;
-    private String tracktrace;
+    private String stacktrace;
+    private boolean isWarning;
 
 
 }

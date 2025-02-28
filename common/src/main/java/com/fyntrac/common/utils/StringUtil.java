@@ -2,6 +2,8 @@ package com.fyntrac.common.utils;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class StringUtil {
 
@@ -52,5 +54,11 @@ public class StringUtil {
 
         // Remove the trailing space and return the result
         return properString.toString().trim();
+    }
+
+    public static List<String> convertUpperCase(List<String> list) {
+        return  list.stream()
+                .map(String::toUpperCase) // Convert each string to uppercase
+                .collect(Collectors.toList()); // Collect the results into a new list
     }
 }

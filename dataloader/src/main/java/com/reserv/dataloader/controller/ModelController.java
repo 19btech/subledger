@@ -2,6 +2,7 @@ package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.ModelConfig;
+import com.fyntrac.common.enums.AggregationLevel;
 import com.fyntrac.common.utils.StringUtil;
 import com.reserv.dataloader.service.DataloaderExcelFileService;
 import com.reserv.dataloader.service.ModelUploadService;
@@ -56,8 +57,8 @@ public class ModelController {
                 ModelConfig modelConfig = new ModelConfig();
                 modelConfig.setMetrics(new Records.MetricNameRecord[]{});
                 modelConfig.setTransactions(new Records.TransactionNameRecord[]{});
-                modelConfig.setAggregationLevel(null);
-                modelConfig.setCurrentVersion(Boolean.FALSE);
+                modelConfig.setAggregationLevel(AggregationLevel.INSTRUMENT);
+                modelConfig.setCurrentVersion(Boolean.TRUE);
                 modelConfig.setLastOpenVersion(Boolean.FALSE);
                 modelConfig.setFirstVersion(Boolean.FALSE);
                 this.modelService.save(modelName
@@ -84,6 +85,18 @@ public class ModelController {
 
     @PostMapping("/save")
     public ResponseEntity<String> save(@RequestBody Model m) {
+        try {
+            modelService.save(m);
+            return ResponseEntity.ok("Model saved successfully, ID: " + m.getId());
+        }catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/configure")
+    public ResponseEntity<String> configure(@RequestBody Model m) {
         try {
             modelService.save(m);
             return ResponseEntity.ok("Model saved successfully, ID: " + m.getId());

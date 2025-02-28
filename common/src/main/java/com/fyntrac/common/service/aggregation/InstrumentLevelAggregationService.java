@@ -9,6 +9,7 @@ import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.utils.Key;
 import com.fyntrac.common.key.InstrumentLevelLtdKey;
 import com.fyntrac.common.service.SettingsService;
+import com.fyntrac.common.utils.StringUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -109,11 +110,11 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
 
     public List<InstrumentLevelLtd> getBalance(String instrumentId, List<String> metrics, int accountingPeriodId) {
         Query query = new Query();
-
+        List<String> metricList = StringUtil.convertUpperCase(metrics);
         // Add criteria to filter by transactionName (list) and transactionDate
         query.addCriteria(Criteria.where("instrumentId").is(instrumentId)
                 .and("accountingPeriodId").is(accountingPeriodId)
-                .and("metricName").in(metrics));
+                .and("metricName").in(metricList));
 
         // Execute the query
         return this.dataService.fetchData(query, InstrumentLevelLtd.class);

@@ -39,7 +39,9 @@ public class TransactionActivity implements Serializable {
     private AccountingPeriod accountingPeriod;
     private long batchId;
     private Source source;
-    private String sourceId;
+    private long sourceId;
+    private Date postingDate;
+
     @Field("attributes")
     private Map<String, Object> attributes;
 
@@ -56,6 +58,8 @@ public class TransactionActivity implements Serializable {
         json.append("\"periodId\":").append(accountingPeriod).append(",");
         json.append("\"originalPeriodId\":").append(originalPeriodId).append(",");
         json.append("\"batchId\":").append(batchId).append(",");
+        json.append("\"postingDate\":").append(postingDate).append(",");
+        json.append("\"source\":").append(sourceId).append(",");
         json.append("\"instrumentAttributeVersionId\":").append(instrumentAttributeVersionId).append(",");
 
         // Add attributes
