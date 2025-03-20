@@ -5,7 +5,7 @@ plugins {
 	id 'maven-publish'
 }
 
-group = 'com.reserv'
+group = 'com.fyntrac'
 version = '0.0.1-SNAPSHOT'
 def projectname = 'model'
 
@@ -29,7 +29,7 @@ publishing {
 	publications {
 		mavenJava(MavenPublication) {
 			from components.java  // Publish the Java component
-			groupId = 'com.reserv'  // Set your group ID
+			groupId = 'com.fyntrac'  // Set your group ID
 			artifactId = 'model'  // Set your artifact ID
 			version = project.version  // Set your version
 		}

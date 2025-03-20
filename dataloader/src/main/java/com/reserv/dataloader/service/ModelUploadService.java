@@ -1,9 +1,7 @@
 package com.reserv.dataloader.service;
 
-import com.reserv.dataloader.exception.AccountingPeriodClosedException;
-import com.reserv.dataloader.exception.InstrumentAttributeNotFoundException;
-import com.reserv.dataloader.exception.MetricNotFoundException;
-import com.reserv.dataloader.exception.TransactionNotFoundException;
+import com.fyntrac.common.enums.InstrumentAttributeVersionType;
+import com.reserv.dataloader.exception.*;
 import com.fyntrac.common.service.aggregation.AggregationService;
 import com.reserv.dataloader.utils.ExcelFileUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -38,7 +36,7 @@ public class ModelUploadService {
     private final TransactionService transactionService;
     private final AggregationService aggregationService;
     private final AccountingPeriodService accountingPeriodService;
-    private final static List<String> instrumentAttributeTypes = new ArrayList<>(Arrays.asList("Current", "Previous", "First"));
+    private final static List<InstrumentAttributeVersionType> instrumentAttributeTypes = new ArrayList<>(Arrays.asList(InstrumentAttributeVersionType.CURRENT_OPEN_VERSION, InstrumentAttributeVersionType.LAST_CLOSED_VERSION, InstrumentAttributeVersionType.FIRST_VERSION));
 
 
     @Autowired
@@ -60,12 +58,14 @@ public class ModelUploadService {
         //get list of transactions
         //check if transactions are valid
         //if valid continue else fail validation and throw exception
-        return (validateTransactions(model)
+        return (validateTransactions(model, DataloaderExcelFileService.TRANSACTION_SHEET_NAME)
+                && validateTransactions(model, DataloaderExcelFileService.OUTPUT_TRANSACTION_SHEET_NAME)
                 && validateMetrics(model)
                 && validateExecutionDate(model)
-                && validateInstrumentAttributes(model)
-                && excelFileService.validateInstrumentAttributeColumns(model)
-                && excelFileService.validateTransactionActivityColumns(model)
+                && validateInstrumentAttributeVersionType(model, DataloaderExcelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME)
+                && excelFileService.validateInstrumentAttributeColumns(model, DataloaderExcelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME)
+                && excelFileService.validateTransactionActivityColumns(model, DataloaderExcelFileService.TRANSACTION_SHEET_NAME)
+                && excelFileService.validateTransactionActivityColumns(model, DataloaderExcelFileService.OUTPUT_TRANSACTION_SHEET_NAME)
                 && excelFileService.validateMetricColumns(model));
     }
 
@@ -74,10 +74,10 @@ public class ModelUploadService {
         return this.validateModel(workbook);
     }
 
-    public boolean validateTransactions(Workbook model) throws Exception {
-        List<String> transactions = this.excelFileService.readExcelSheet(model, DataloaderExcelFileService.TRANSACTION_SHEET_NAME);
+    public boolean validateTransactions(Workbook model, String sheetName) throws Exception {
+        List<String> transactions = this.excelFileService.readExcelSheet(model, sheetName);
         if(transactions == null || transactions.isEmpty()) {
-            throw new TransactionNotFoundException("Transaction["+ DataloaderExcelFileService.TRANSACTION_SHEET_NAME +"] is empty, please correct model first and upload again");
+            throw new TransactionNotFoundException("Transaction["+ sheetName +"] is empty, please correct model first and upload again");
         }
         Collection<TransactionNameRecord> transactionNames = transactionService.fetchTransactinNames();
         for(String transaction : transactions) {
@@ -85,24 +85,25 @@ public class ModelUploadService {
                     .anyMatch(record -> record.transactionName().equalsIgnoreCase(transaction));
 
             if(!exists) {
-                throw new TransactionNotFoundException("Transaction[" + transaction + " not a valid transaction in sheet ["+ DataloaderExcelFileService.TRANSACTION_SHEET_NAME +"], please correct model first and upload again");
+                throw new TransactionNotFoundException("Transaction[" + transaction + " not a valid transaction in sheet ["+ sheetName +"], please correct model first then upload again");
             }
         }
 
         return Boolean.TRUE;
     }
 
-    public boolean validateInstrumentAttributes(Workbook model) throws Exception {
-        List<String> iaTypes = this.excelFileService.readExcelSheet(model, DataloaderExcelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME);
+    public boolean validateInstrumentAttributeVersionType(Workbook model, String sheetName) throws Exception {
+        List<String> iaTypes = this.excelFileService.readExcelSheet(model, sheetName);
         if(iaTypes == null || iaTypes.isEmpty()) {
-            throw new InstrumentAttributeNotFoundException("InstrumentAttribute["+ DataloaderExcelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME +"] is empty, please correct model first and upload again");
+            throw new InstrumentAttributeNotFoundException("InstrumentAttribute["+ sheetName +"] is empty, please correct model first and upload again");
         }
         for(String iatype : iaTypes) {
-            boolean exists = instrumentAttributeTypes.stream()
-                    .anyMatch(type -> type.equalsIgnoreCase(iatype));
-
-            if(!exists) {
-                throw new InstrumentAttributeNotFoundException("InstrumentAttribute[" + iatype + " not a valid type in sheet ["+ DataloaderExcelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME +"], please correct model first and upload again");
+            try {
+                InstrumentAttributeVersionType iavt = InstrumentAttributeVersionType.valueOf(iatype.toUpperCase());
+                log.info("InstrumentAttribute verion type: " + iavt);
+            } catch (IllegalArgumentException e) {
+                log.error("Invalid enum value: " + iatype);
+                throw new InstrumentAttributeVersionTypeException("InstrumentAttribute verion type['" + iatype + "' not a valid version type in sheet ["+ sheetName +"], please correct model first then upload again");
             }
         }
 

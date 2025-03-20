@@ -3,6 +3,7 @@ package com.fyntrac.common.service;
 import com.fyntrac.common.repository.MemcachedRepository;
 import lombok.Getter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Collection;
 
@@ -11,6 +12,9 @@ import java.util.Collection;
 public abstract class BaseService<T> {
     protected final DataService<T> dataService;
     protected final MemcachedRepository memcachedRepository;
+
+    @Value("${fyntrac.cache.timeout}")
+    protected int cacheTimeOut;
 
     @Autowired
     public BaseService(DataService<T> dataService

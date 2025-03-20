@@ -7,8 +7,10 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.stereotype.Component;
 
+import java.io.Serializable;
 import java.util.Collection;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -134,4 +136,18 @@ public class RecordFactory {
     public static Records.DateRequestRecord createDateRequest(String date) {
         return createRecord(() -> new Records.DateRequestRecord(date));
     }
+
+    public static Records.ModelOutputData createModelOutputData(List<Map<String, Object>> transactionActivityList, List<Map<String, Object>> instrumentAttributeList) {
+        return createRecord(() -> new Records.ModelOutputData(transactionActivityList, instrumentAttributeList));
+    }
+
+    public static Records.DocumentAttribute createDocumentAttribute(String attributeName, String attributeAlias,  String dataType) {
+        return createRecord(() -> new Records.DocumentAttribute(attributeName, attributeAlias, dataType));
+    }
+
+    public static Records.QueryCriteriaItem createQueryCriteriaItem(String attributeName, String operator,String values, List<String> filters, String logicalOperator) {
+        return createRecord(() -> new Records.QueryCriteriaItem(attributeName, operator, values, filters, logicalOperator));
+    }
+
+
 }

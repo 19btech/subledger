@@ -1,5 +1,6 @@
 package com.reserv.dataloader.batch.config;
 
+import com.fyntrac.common.utils.DateUtil;
 import com.reserv.dataloader.batch.listener.TransactionActivityJobCompletionListener;
 import com.reserv.dataloader.batch.processor.TransactionActivityItemProcessor;
 import com.reserv.dataloader.batch.tasklet.AttributeLevelAggregatorTasklet;
@@ -138,7 +139,7 @@ public class TransactionActivityDataLoadConfig {
             @Override
             public TransactionActivity mapFieldSet(FieldSet fieldSet) throws BindException {
                 TransactionActivity transactionActivity = new TransactionActivity();
-                transactionActivity.setTransactionDate(fieldSet.readDate("TRANSACTIONDATE"));
+                transactionActivity.setTransactionDate(DateUtil.stripTime(fieldSet.readDate("TRANSACTIONDATE")));
                 transactionActivity.setInstrumentId(fieldSet.readString("INSTRUMENTID"));
                 transactionActivity.setTransactionName(fieldSet.readString("TRANSACTIONNAME"));
                 transactionActivity.setAmount(fieldSet.readDouble("AMOUNT"));

@@ -1,5 +1,7 @@
 package com.fyntrac.model.workflow;
 
+import com.fyntrac.common.dto.record.RecordFactory;
+import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.model.utils.ExcelUtil;
@@ -28,13 +30,16 @@ public class ExcelModelProcessor {
             // processExcel("", workbook, iTransactionData, iAggregationData, iInstrumentAttributeData);
         }
     }
-    public static void processExcel(InstrumentAttribute instrumentAttribute
+    public static Records.ModelOutputData processExcel(InstrumentAttribute instrumentAttribute
                                     , Date executionDate
                                     , AccountingPeriod accountingPeriod
                                     , Workbook workbook
                                     , List<Map<String, Object>> iTransactionData
                                     , List<Map<String, Object>> iMetricData
                                     , List<Map<String, Object>> iInstrumentAttributeData) throws IOException {
+
+        List<Map<String, Object>> oTransactionData = new ArrayList<>(0);
+        List<Map<String, Object>> oInstrumentAttributeData = new ArrayList<>(0);
 
         if (workbook != null) {
 
@@ -48,8 +53,9 @@ public class ExcelModelProcessor {
             evaluator.evaluateAll();
 
             // Read Output Data
-            List<Map<String, Object>> oTransactionData = readSheetData(workbook, "o_transaction");
-            List<Map<String, Object>> oInstrumentAttributeData = readSheetData(workbook, "o_instrumentattribute");
+            oTransactionData = readSheetData(workbook, "o_transaction");
+            oInstrumentAttributeData = readSheetData(workbook, "o_instrumentattribute");
+
 
             // Save the modified file
             String fileName = "processed_output" + instrumentAttribute.getInstrumentId() + ".xlsx";
@@ -59,6 +65,7 @@ public class ExcelModelProcessor {
 
             log.info("Processing completed successfully!");
         }
+        return RecordFactory.createModelOutputData(oTransactionData, oInstrumentAttributeData);
     }
 
     private static void writeSheetData(Workbook workbook, String sheetName, List<Map<String, Object>> data) throws IOException {
@@ -78,27 +85,48 @@ public class ExcelModelProcessor {
         if (headerRow == null) return dataList;
 
         int columnCount = headerRow.getPhysicalNumberOfCells();
+        FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
             if (row == null) continue;
 
-            Map<String, Object> rowData = new HashMap<>();
+            Map<String, Object> rowData = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
             for (int j = 0; j < columnCount; j++) {
                 Cell cell = row.getCell(j, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
-                rowData.put(headerRow.getCell(j).getStringCellValue(), getCellValue(cell));
+                rowData.put(headerRow.getCell(j).getStringCellValue(), getCellValue(cell, evaluator));
             }
             dataList.add(rowData);
         }
         return dataList;
     }
 
-    private static Object getCellValue(Cell cell) {
+
+    private static Object getCellValue(Cell cell, FormulaEvaluator evaluator) {
+        if (cell == null) {
+            return ""; // Return empty string for null cells
+        }
+
         return switch (cell.getCellType()) {
             case STRING -> cell.getStringCellValue();
             case NUMERIC -> (DateUtil.isCellDateFormatted(cell) ? getDateValue(cell) : cell.getNumericCellValue());
             case BOOLEAN -> cell.getBooleanCellValue();
-            case FORMULA -> cell.getCellFormula();
+            case FORMULA -> evaluateFormulaCell(cell, evaluator); // Evaluate the formula
+            default -> "";
+        };
+    }
+
+    private static Object evaluateFormulaCell(Cell cell, FormulaEvaluator evaluator) {
+        if (evaluator == null) {
+            return cell.getCellFormula(); // Fallback to formula string if evaluator is not provided
+        }
+
+        CellValue cellValue = evaluator.evaluate(cell); // Evaluate the formula
+        return switch (cellValue.getCellType()) {
+            case STRING -> cellValue.getStringValue();
+            case NUMERIC -> cellValue.getNumberValue();
+            case BOOLEAN -> cellValue.getBooleanValue();
+            case ERROR -> "ERROR"; // Handle formula errors
             default -> "";
         };
     }

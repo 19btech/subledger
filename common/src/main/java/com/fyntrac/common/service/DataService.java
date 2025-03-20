@@ -1,5 +1,7 @@
 package com.fyntrac.common.service;
 
+import com.fyntrac.common.dto.record.RecordFactory;
+import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.Sequence;
 import com.fyntrac.common.enums.SequenceNames;
 import com.mongodb.client.result.UpdateResult;
@@ -312,5 +314,67 @@ public class DataService<T> {
         mongoTemplate.aggregate(aggregation, sourceCollection, klass);
 
         log.info("Data copied successfully!");
+    }
+
+    public List<Records.DocumentAttribute> getAttributesWithTypes(String collectionName) {
+        List<Records.DocumentAttribute> attributesWithTypes = new ArrayList<>();
+
+        // Fetch a single document from the collection
+        Document document = this.getMongoTemplate().findOne(new org.springframework.data.mongodb.core.query.Query(), Document.class, collectionName);
+
+        if (document != null) {
+            extractAttributesWithTypes(document, attributesWithTypes);
+        }
+
+        return attributesWithTypes;
+    }
+
+    private void extractAttributesWithTypes(Document document, List<Records.DocumentAttribute> attributesWithTypes) {
+        for (String key : document.keySet()) {
+            // Skip _id and _class fields
+            if ("_id".equals(key) || "_class".equals(key)) {
+                continue;
+            }
+
+            Object value = document.get(key);
+            String dataType = value.getClass().getSimpleName();
+            String attributeAlias = convertToHungarianNotation(key);
+
+            if (value instanceof Document) {
+                // If the value is a nested document, recurse into it
+                extractAttributesWithTypes((Document) value, attributesWithTypes);
+            } else if (value instanceof Map) {
+                // If the value is a Map, iterate through its entries
+                for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                    String mapKey = entry.getKey().toString();
+                    Object mapValue = entry.getValue();
+                    String mapDataType = mapValue.getClass().getSimpleName();
+                    String mapAttributeAlias = convertToHungarianNotation(mapKey);
+                    attributesWithTypes.add(RecordFactory.createDocumentAttribute(key + "." + mapKey, mapAttributeAlias, mapDataType));
+                }
+            } else {
+                // Otherwise, just add the attribute and its type
+                attributesWithTypes.add(RecordFactory.createDocumentAttribute(key, attributeAlias, dataType));
+            }
+        }
+    }
+
+    private String convertToHungarianNotation(String attributeName) {
+        // Convert attribute name to Hungarian notation
+        StringBuilder alias = new StringBuilder();
+        String[] parts = attributeName.split("(?=\\p{Upper})"); // Split before uppercase letters
+        for (String part : parts) {
+            if (alias.length() > 0) {
+                alias.append(" ");
+            }
+            alias.append(part);
+        }
+
+        // Capitalize the first letter of the alias
+        if (alias.length() > 0) {
+            alias.setCharAt(0, Character.toUpperCase(alias.charAt(0)));
+        }
+
+        return alias.toString();
     }
 }

@@ -39,4 +39,8 @@ public class CacheService {
         this.instrumentLevelAggregationService.loadIntoCache();
         // this.metricLevelAggregationService.loadIntoCache();
     }
+
+    public void purgeCache(String key) throws ExecutionException, InterruptedException {
+        this.accountingPeriodService.getMemcachedRepository().delete(key);
+    }
 }

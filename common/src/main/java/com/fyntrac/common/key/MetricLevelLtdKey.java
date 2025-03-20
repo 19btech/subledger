@@ -28,6 +28,6 @@ public class MetricLevelLtdKey implements AggregationLtdKey {
     }
 
     public String getKey() {
-        return this.getHashCode();
+        return String.format("%s-%d-%s", tenantId, accountingPeriodId, metricName);
     }
 }

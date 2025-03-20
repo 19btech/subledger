@@ -39,7 +39,7 @@ public class TransactionActivity implements Serializable {
     private AccountingPeriod accountingPeriod;
     private long batchId;
     private Source source;
-    private long sourceId;
+    private String sourceId;
     private Date postingDate;
 
     @Field("attributes")

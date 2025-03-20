@@ -2,20 +2,25 @@ package com.fyntrac.model.service;
 
 import com.fyntrac.common.cache.collection.CacheList;
 import com.fyntrac.common.config.TenantContextHolder;
-import com.fyntrac.common.entity.AccountingPeriod;
+import com.fyntrac.common.entity.*;
+import com.fyntrac.common.enums.ErrorCode;
+import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodDataUploadService;
+import com.fyntrac.common.service.ErrorService;
+import com.fyntrac.common.service.TransactionActivityService;
 import com.fyntrac.model.exception.LoadExcelModelExecption;
+import com.fyntrac.model.pulsar.producer.GeneralLedgerMessageProducer;
 import com.fyntrac.model.workflow.ExcelModelExecutor;
 import com.fyntrac.model.workflow.ModelExecutionType;
 import com.fyntrac.model.workflow.ModelWorkflowContext;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
-import com.fyntrac.common.entity.InstrumentAttribute;
-import com.fyntrac.common.entity.Model;
-import com.fyntrac.common.entity.ModelFile;
 import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
+
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -33,14 +38,27 @@ public class ModelExecutionService {
     private final MemcachedRepository memcachedRepository;
     private final AccountingPeriodDataUploadService accountingPeriodService;
     private final ExcelModelExecutor excelModelExecutor;
+    private final TransactionActivityService transactionActivityService;
+    private final ErrorService errorService;
+    private final CommonAggregationService commonAggregationService;
+    private final GeneralLedgerMessageProducer generalLedgerMessageProducer;
+
     public ModelExecutionService(ModelDataService modelDataService
     , MemcachedRepository memcachedRepository
     , AccountingPeriodDataUploadService accountingPeriodService
-    , ExcelModelExecutor excelModelExecutor) {
+    , ExcelModelExecutor excelModelExecutor
+    , TransactionActivityService transactionActivityService
+    , ErrorService errorService
+    , CommonAggregationService commonAggregationService
+    , GeneralLedgerMessageProducer generalLedgerMessageProducer) {
         this.modelDataService = modelDataService;
         this.memcachedRepository = memcachedRepository;
         this.accountingPeriodService = accountingPeriodService;
         this.excelModelExecutor = excelModelExecutor;
+        this.transactionActivityService = transactionActivityService;
+        this.errorService = errorService;
+        this.commonAggregationService = commonAggregationService;
+        this.generalLedgerMessageProducer = generalLedgerMessageProducer;
     }
 
     public void executeModels(Date executionDate, Records.CommonMessageRecord msg) throws Throwable {
@@ -103,6 +121,7 @@ public class ModelExecutionService {
                         log.error("Error processing instrument: {}", ia, e);
                         // throw new RuntimeException("Failed to process instrument: " + ia, e);
                         // save error in database!!!!!
+
                     }
                 }));
 
@@ -129,26 +148,78 @@ public class ModelExecutionService {
         }
     }
 
-    // Step 5: Processing an instrument and starting a Camunda workflow
     private void processInstrument(Date executionDate, AccountingPeriod accountingPeriod, InstrumentAttribute instrument, List<Records.ModelRecord> activeModels) throws Throwable {
         log.info("Processing " + instrument + " on Thread: " + Thread.currentThread().getName());
 
-        // Start a model workflow
-        // build Model workflow context
-        // Map<Integer, Records.ExcelModelRecord> excelModels = this.loadModels(activeModels);
-        for(Records.ModelRecord model : activeModels) {
-            ModelWorkflowContext context = ModelWorkflowContext.builder()
-                    .currentInstrumentAttribute(instrument)
-                    .instrumentId(instrument.getInstrumentId())
-                    .attributeId(instrument.getAttributeId())
-                    .executionType(ModelExecutionType.CHAINED)
-                    .accountingPeriod(accountingPeriod)
-                    .executionDate(executionDate)
-                    .excelModel(model).build();
-            this.excelModelExecutor.execute(context);
+        // Iterate through each model
+        for (Records.ModelRecord model : activeModels) {
+            Collection<TransactionActivity> transactionActivities = null;
+            try {
+                // Build Model workflow context
+                ModelWorkflowContext context = ModelWorkflowContext.builder()
+                        .currentInstrumentAttribute(instrument)
+                        .instrumentId(instrument.getInstrumentId())
+                        .attributeId(instrument.getAttributeId())
+                        .executionType(ModelExecutionType.CHAINED)
+                        .accountingPeriod(accountingPeriod)
+                        .executionDate(executionDate)
+                        .excelModel(model).build();
+
+                // Execute the model
+                Records.ModelOutputData modelOutputData = this.excelModelExecutor.execute(context);
+
+                // Save transaction activities
+                Set<TransactionActivity> transactions = transactionActivityService.generateTransactions(
+                        modelOutputData.transactionActivityList(),
+                        instrument,
+                        accountingPeriod,
+                        executionDate,
+                        Source.MODEL,
+                        model.model().getId()
+                );
+
+                transactionActivities = this.transactionActivityService.save(transactions);
+
+                // Now send message to generate GL
+                // Now send message to Aggregate transactions
+                this.commonAggregationService.aggregate(transactions);
+
+            } catch (Exception e) {
+                // Log the exception and continue processing the next model
+                log.error("An error occurred while processing model " + model.model().getId() + " for instrument " + instrument.getInstrumentId(), e);
+                // Optionally, you can add additional handling here (e.g., notify, retry, etc.)
+                Errors error = Errors.builder().modelId(model.model().getId())
+                        .instrumentId(instrument.getInstrumentId())
+                        .attributeId(instrument.getAttributeId())
+                        .executionDate(executionDate)
+                        .code(ErrorCode.Model_Execution_Error)
+                        .isWarning(Boolean.FALSE)
+                        .stacktrace(StringUtil.getStackTrace(e))
+                        .build();
+                this.errorService.save(error);
+                throw e;
+            }finally {
+                LocalDateTime dateTime = LocalDateTime.now();
+                int timestamp = (int) (dateTime.toEpochSecond(ZoneOffset.UTC));
+                String tenantId = this.transactionActivityService.getDataService().getTenantId();
+                String key = String.format("%s-%d", tenantId, timestamp);
+                TransactionActivityList activityList = new TransactionActivityList();
+
+                if(transactionActivities != null) {
+                    transactionActivities.forEach(transactionActivity -> {
+                                String activityKey = String.format("%s-%d", key, transactionActivity.hashCode());
+                                activityList.add(activityKey);
+                            }
+                            );
+                }
+
+                String transactionActivityKey = String.format("%s-%d", key, timestamp);
+                this.memcachedRepository.putInCache(transactionActivityKey, activityList);
+                Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(this.transactionActivityService.getDataService().getTenantId(), transactionActivityKey);
+                generalLedgerMessageProducer.bookTempGL(glRec);
+            }
         }
     }
-
     public Map<Integer, Records.ExcelModelRecord> loadModels(List<Records.ModelRecord> activeModels) throws Exception {
         Map<Integer, Records.ExcelModelRecord> excelModelsMap = new HashMap<>();
         int priority = 1;

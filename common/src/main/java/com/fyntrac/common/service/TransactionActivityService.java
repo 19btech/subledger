@@ -7,6 +7,7 @@ import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.repository.MemcachedRepository;
+import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -135,23 +136,27 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
         return reclassAttributes;
     }
 
-    public Collection<TransactionActivity> save(List<Map<String, Object>> transactions
+    public Collection<TransactionActivity> save(Set<TransactionActivity>  transactionActivities) {
+        return this.dataService.saveAll(transactionActivities, TransactionActivity.class);
+    }
+
+    public Set<TransactionActivity> generateTransactions(List<Map<String, Object>> transactions
             , InstrumentAttribute instrumentAttribute
             , AccountingPeriod accountingPeriod
             , Date transactionDate
             , Source source
-            , int sourceId) {
+            , String sourceId) {
 
         Map<String, Object> attributes = this.getReclassableAttributes(instrumentAttribute.getAttributes());
 
         Set<TransactionActivity>  transactionActivities = transactions.stream()
-                .map(this::save)
+                .map(transactionActivityMap -> this.save(transactionActivityMap, accountingPeriod))
                 .collect(Collectors.toCollection(HashSet::new));
 
         transactionActivities.forEach(transactionActivity -> {
             transactionActivity.setAccountingPeriod(accountingPeriod);
             transactionActivity.setOriginalPeriodId(accountingPeriod.getPeriodId());
-            transactionActivity.setTransactionDate(transactionDate);
+            transactionActivity.setTransactionDate(DateUtil.stripTime(transactionDate));
             if(transactionActivity.getAttributeId() == null || transactionActivity.getAttributeId().isBlank()) {
                 transactionActivity.setAttributeId(instrumentAttribute.getAttributeId());
             }
@@ -165,47 +170,121 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
             transactionActivity.setSourceId(sourceId);
 
         });
-        return this.dataService.saveAll(transactionActivities, TransactionActivity.class);
+        return transactionActivities;
     }
 
-    public TransactionActivity save(Map<String, Object> map) {
+    public TransactionActivity save(Map<String, Object> map, AccountingPeriod accountingPeriod) {
         TransactionActivity.TransactionActivityBuilder builder = TransactionActivity.builder();
 
-        if (map.containsKey("id")) {
-            builder.id((String) map.get("id"));
-        }
-        if (map.containsKey("transactionDate")) {
-            builder.transactionDate((Date) map.get("transactionDate"));
-        }
+        builder.accountingPeriod(accountingPeriod);
+        builder.originalPeriodId(accountingPeriod.getPeriodId());
         if (map.containsKey("instrumentId")) {
             builder.instrumentId((String) map.get("instrumentId"));
         }
+        if (map.containsKey("instrumentId")) {
+            Object instrumentIdObj = map.get("instrumentId");
+            if(instrumentIdObj != null) {
+                String parseInstrumentId = instrumentIdObj.toString();
+                builder.instrumentId(parseInstrumentId);
+            }else{
+                builder.instrumentId("");
+            }
+
+        }
+
         if (map.containsKey("transactionName")) {
-            builder.transactionName((String) map.get("transactionName"));
+            Object transactionNameObj = map.get("transactionName");
+            if(transactionNameObj != null) {
+                String parseTransactionName = transactionNameObj.toString();
+                builder.transactionName(parseTransactionName);
+            }else{
+                builder.transactionName("");
+            }
+
         }
         if (map.containsKey("amount")) {
-            builder.amount((double) map.get("amount"));
+            Object amountObj = map.get("amount"); // No need to cast to Object explicitly
+            if (amountObj != null) {
+                try {
+                    // Convert the amount to a String and parse it as a double
+                    String amountStr = amountObj.toString(); // Ensure it's a String
+                    double parsedAmount = Double.parseDouble(amountStr);
+                    builder.amount(parsedAmount); // Set the amount if parsing succeeds
+                } catch (NumberFormatException e) {
+                    // Handle the case where the amount is not a valid number
+                    log.error("Invalid number format for 'amount': " + amountObj);
+                    builder.amount(0.0d); // Set a default value (e.g., 0.0)
+                }
+            } else {
+                // Handle the case where the amount is null
+                log.error("Amount is null.");
+                builder.amount(0.0d); // Set a default value (e.g., 0.0)
+            }
         }
         if (map.containsKey("attributeId")) {
-            builder.attributeId((String) map.get("attributeId"));
+            Object attributeIdObj = map.get("attributeId");
+            if(attributeIdObj !=null) {
+                String parseAttributeId = attributeIdObj.toString();
+                builder.attributeId(parseAttributeId);
+            }else{
+                builder.attributeId("");
+            }
+
         }
-        if (map.containsKey("originalPeriodId")) {
-            builder.originalPeriodId((int) map.get("originalPeriodId"));
-        }
+
         if (map.containsKey("instrumentAttributeVersionId")) {
-            builder.instrumentAttributeVersionId((long) map.get("instrumentAttributeVersionId"));
+            Object instrumentAttributeVersionIdObj = map.get("instrumentAttributeVersionId"); // No need to cast to Object explicitly
+            if (instrumentAttributeVersionIdObj != null) {
+                try {
+                    // Convert the amount to a String and parse it as a double
+                    String instrumentAttributeVersionIdStr = instrumentAttributeVersionIdObj.toString(); // Ensure it's a String
+                    long parsedinstrumentAttributeVersionId = Long.parseLong(instrumentAttributeVersionIdStr);
+                    builder.instrumentAttributeVersionId(parsedinstrumentAttributeVersionId); // Set the amount if parsing succeeds
+                } catch (NumberFormatException e) {
+                    // Handle the case where the amount is not a valid number
+                    log.error("Invalid number format for 'instrumentAttributeVersionId': " + instrumentAttributeVersionIdObj);
+                    builder.amount(0.0d); // Set a default value (e.g., 0.0)
+                }
+            } else {
+                // Handle the case where the amount is null
+                log.error("instrumentAttributeVersionId is null.");
+                builder.instrumentAttributeVersionId(0); // Set a default value (e.g., 0.0)
+            }
         }
-        if (map.containsKey("accountingPeriod")) {
-            builder.accountingPeriod((AccountingPeriod) map.get("accountingPeriod"));
-        }
+
         if (map.containsKey("batchId")) {
-            builder.batchId((long) map.get("batchId"));
+            Object batchIdObj = map.get("batchId"); // No need to cast to Object explicitly
+            if (batchIdObj != null) {
+                try {
+                    // Convert the amount to a String and parse it as a double
+                    String batchIdStr = batchIdObj.toString(); // Ensure it's a String
+                    long parsedBatchId = Long.parseLong(batchIdStr);
+                    builder.batchId(parsedBatchId); // Set the amount if parsing succeeds
+                } catch (NumberFormatException e) {
+                    // Handle the case where the amount is not a valid number
+                    log.error("Invalid number format for 'batchId': " + batchIdObj);
+                    builder.amount(0.0d); // Set a default value (e.g., 0.0)
+                }
+            } else {
+                // Handle the case where the amount is null
+                log.error("batchId is null.");
+                builder.batchId(0); // Set a default value (e.g., 0.0)
+            }
         }
+
         if (map.containsKey("source")) {
             builder.source((Source) map.get("source"));
         }
+
         if (map.containsKey("sourceId")) {
-            builder.sourceId((long) map.get("sourceId"));
+            Object sourceIdObj = map.get("sourceId");
+            if(sourceIdObj !=null) {
+                String parseSourceId = sourceIdObj.toString();
+                builder.sourceId(parseSourceId);
+            }else{
+                builder.sourceId("");
+            }
+
         }
 
         return builder.build();

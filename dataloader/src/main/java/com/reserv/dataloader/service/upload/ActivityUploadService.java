@@ -73,6 +73,7 @@ public class ActivityUploadService {
         String filePath = activityMap.get(AccountingRules.INSTRUMENTATTRIBUTE);
         Long runid = System.currentTimeMillis();
         try {
+            this.cacheService.purgeCache(com.fyntrac.common.utils.Key.aggregationKey());
             Batch activityBatch = this.createBatch();
             JobParameters instrumentAttributeJobParameter = createInstrumentAttributeJob(filePath, activityBatch);
             filePath = activityMap.get(AccountingRules.TRANSACTIONACTIVITY);

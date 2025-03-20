@@ -62,6 +62,7 @@ public class TransactionActivityUploadService extends UploadService {
         this.runId = System.currentTimeMillis();
         String key = this.dataService.getTenantId() + "TA" + this.runId;
 
+        this.cacheService.purgeCache(com.fyntrac.common.utils.Key.aggregationKey());
         AggregationRequest aggregationRequest = AggregationRequest.builder()
                 .isAggregationComplete(Boolean.FALSE)
                 .isInprogress(Boolean.FALSE)

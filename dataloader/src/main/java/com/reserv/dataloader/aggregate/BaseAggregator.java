@@ -1,6 +1,6 @@
 package com.reserv.dataloader.aggregate;
 
-import  com.fyntrac.common.config.ReferenceData;
+import com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.*;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.DataService;

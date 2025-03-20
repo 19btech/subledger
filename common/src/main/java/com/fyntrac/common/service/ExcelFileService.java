@@ -22,7 +22,8 @@ public class ExcelFileService {
     public final static String METRIC_SHEET_NAME="i_metric";
     public final static String EXECUTION_DATE_SHEET_NAME="i_executiondate";
     public final static String INSTRUMENT_ATTRIBUTE_SHEET_NAME= "i_instrumentattribute";
-
+    public final static String OUTPUT_INSTRUMENT_ATTRIBUTE_SHEET_NAME= "o_instrumentattribute";
+    public final static String OUTPUT_TRANSACTION_SHEET_NAME="o_transaction";
     protected static final List<String> ALLOWED_CONTENT_TYPES = List.of(
             "application/vnd.ms-excel", // .xls
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" // .xlsx
@@ -78,7 +79,37 @@ public class ExcelFileService {
             if (row != null) {
                 Cell cell = row.getCell(0); // Column A (index 0)
                 if (cell != null) {
-                    values.add(cell.toString()); // Add cell value
+                    switch (cell.getCellType()) {
+                        case STRING:
+                            values.add(cell.getStringCellValue());
+                            break;
+                        case FORMULA:
+                            // Evaluate the formula to get the actual value
+                            FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
+                            CellValue cellValue = evaluator.evaluate(cell);
+                            switch (cellValue.getCellType()) {
+                                case STRING:
+                                    values.add(cellValue.getStringValue());
+                                    break;
+                                case NUMERIC:
+                                    values.add(String.valueOf(cellValue.getNumberValue()));
+                                    break;
+                                case BOOLEAN:
+                                    values.add(String.valueOf(cellValue.getBooleanValue()));
+                                    break;
+                                case ERROR:
+                                    values.add("ERROR");
+                                    break;
+                                default:
+                                    values.add("UNKNOWN");
+                                    break;
+                            }
+                            break;
+                        default:
+                            values.add(cell.toString());
+                            break;
+                    }
+                    // values.add(cell.toString()); // Add cell value
                 }
             }
         }
@@ -184,16 +215,16 @@ public class ExcelFileService {
         return areHeadersSubsetOfDocumentFields(mongoFields, excelHeaders, sheetName);
     }
 
-    public boolean validateInstrumentAttributeColumns(Workbook workbook) throws Exception {
+    public boolean validateInstrumentAttributeColumns(Workbook workbook, String sheetName) throws Exception {
 
-        List<String> excelHeaders = getExcelHeaders(workbook, INSTRUMENT_ATTRIBUTE_SHEET_NAME);
+        List<String> excelHeaders = getExcelHeaders(workbook, sheetName);
         Set<String> mongoFields = getColumnNamesFromDocument("InstrumentAttribute");
         mongoFields.add("Type");
-        return areHeadersSubsetOfDocumentFields(mongoFields, excelHeaders, INSTRUMENT_ATTRIBUTE_SHEET_NAME);
+        return areHeadersSubsetOfDocumentFields(mongoFields, excelHeaders, sheetName);
     }
 
-    public boolean validateTransactionActivityColumns(Workbook workbook) throws Exception {
-        return compareExcelWithMongo(workbook, TRANSACTION_SHEET_NAME, "TransactionActivity");
+    public boolean validateTransactionActivityColumns(Workbook workbook, String sheetName) throws Exception {
+        return compareExcelWithMongo(workbook, sheetName, "TransactionActivity");
     }
 
     public boolean validateMetricColumns(Workbook workbook) throws Exception {

@@ -1577,5 +1577,43 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
             throw  e;
         }
     }
+
+    public static int dateInNumber(Date date) {
+        if (date == null) {
+            throw new IllegalArgumentException("Date cannot be null");
+        }
+
+        // Create a Calendar instance and set the date
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(date);
+
+        // Extract year, month, and day
+        int year = calendar.get(Calendar.YEAR);
+        int month = calendar.get(Calendar.MONTH) + 1; // Months are 0-based in Calendar
+        int day = calendar.get(Calendar.DAY_OF_MONTH);
+
+        // Combine year, month, and day into a single integer in the format YYYYMMDD
+        String dateNumber = String.format("%d%d%d", year,month,day);
+        return Integer.parseInt(dateNumber);
+    }
+
+    public static Date stripTime(Date date) {
+        if (date == null) {
+            throw new IllegalArgumentException("Date cannot be null");
+        }
+
+        // Create a Calendar instance and set the date
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(date);
+
+        // Set the time fields to zero (midnight)
+        calendar.set(Calendar.HOUR_OF_DAY, 0);
+        calendar.set(Calendar.MINUTE, 0);
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
+
+        // Return the modified date
+        return calendar.getTime();
+    }
 }
 

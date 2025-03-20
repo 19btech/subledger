@@ -12,6 +12,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import java.io.Serializable;
 import java.util.Collection;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 
 public class Records {
@@ -86,5 +87,17 @@ public class Records {
 
     public record DateRequestRecord(String date) implements Serializable {
         private static final long serialVersionUID = 3196156514121109291L;
+    }
+
+    public record ModelOutputData(List<Map<String, Object>> transactionActivityList, List<Map<String, Object>> instrumentAttributeList)  implements  Serializable{
+        private static final long serialVersionUID = 721671730137381082L;
+    }
+
+    public record DocumentAttribute(String attributeName, String attributeAlias, String dataType) implements Serializable{
+        private static final long serialVersionUID = 8318251040744803358L;
+    }
+
+    public record QueryCriteriaItem(String attributeName, String operator,String values, List<String> filters, String logicalOperator) implements Serializable{
+        private static final long serialVersionUID = -6100862855198499095L;
     }
 }

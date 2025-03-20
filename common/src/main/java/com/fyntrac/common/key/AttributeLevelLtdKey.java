@@ -28,7 +28,16 @@ public class AttributeLevelLtdKey extends InstrumentLevelLtdKey {
     }
 
     @Override
-    public String getKey(){
-        return this.getHashCode();
+    /**
+     * Generates a unique cache key based on tenant ID, accounting period, instrument, attribute, and metric.
+     *
+     * @param tenantId           The tenant ID.
+     * @param accountingPeriodId The accounting period ID.
+     * @param instrumentId       The instrument ID.
+     * @param metricName         The metric name.
+     * @return A unique cache key for the given parameters.
+     */
+    public String getKey() {
+        return String.format("%s-%d-%s-%s-%s", tenantId, accountingPeriodId, instrumentId, attributeid, metricName);
     }
 }

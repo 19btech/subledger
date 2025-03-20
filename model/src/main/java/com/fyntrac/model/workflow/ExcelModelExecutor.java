@@ -49,7 +49,7 @@ public class ExcelModelExecutor {
         this.metricLevelLtdService = metricLevelLtdService;
     }
 
-    public void execute(ModelWorkflowContext context) throws Throwable {
+    public Records.ModelOutputData execute(ModelWorkflowContext context) throws Throwable {
         // Load the workbook from the context or a file
         // this.workbook = excelFileService.loadWorkbook(context.getExcelFilePath());
 
@@ -64,7 +64,7 @@ public class ExcelModelExecutor {
         loadMetrics(context, workbook);
 
         // Pass the appropriate execution date
-        ExcelModelProcessor.processExcel(context.getCurrentInstrumentAttribute(), context.getExecutionDate(), context.getAccountingPeriod(), workbook, context.getITransactions(), context.getIMetrics(), context.getIInstrumentAttributes() );
+        return ExcelModelProcessor.processExcel(context.getCurrentInstrumentAttribute(), context.getExecutionDate(), context.getAccountingPeriod(), workbook, context.getITransactions(), context.getIMetrics(), context.getIInstrumentAttributes() );
     }
 
     private void  loadTransactions(ModelWorkflowContext context, Workbook workbook) throws Throwable {
