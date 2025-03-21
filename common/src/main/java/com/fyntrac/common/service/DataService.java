@@ -349,8 +349,7 @@ public class DataService<T> {
                     String mapKey = entry.getKey().toString();
                     Object mapValue = entry.getValue();
                     String mapDataType = mapValue.getClass().getSimpleName();
-                    String mapAttributeAlias = convertToHungarianNotation(mapKey);
-                    attributesWithTypes.add(RecordFactory.createDocumentAttribute(key + "." + mapKey, mapAttributeAlias, mapDataType));
+                    attributesWithTypes.add(RecordFactory.createDocumentAttribute(key + "." + mapKey, mapKey, mapDataType));
                 }
             } else {
                 // Otherwise, just add the attribute and its type

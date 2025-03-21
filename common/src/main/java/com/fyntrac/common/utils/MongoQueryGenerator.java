@@ -11,7 +11,7 @@ public class MongoQueryGenerator {
 
     public static Query generateQuery(List<Records.QueryCriteriaItem> criteriaList) {
         List<Criteria> criteriaListMongo = new ArrayList<>();
-
+        int index=0;
         for (Records.QueryCriteriaItem criteria : criteriaList) {
             Criteria criteriaMongo = null;
 
@@ -70,10 +70,23 @@ public class MongoQueryGenerator {
 
             // Add criteria to the list
             criteriaListMongo.add(criteriaMongo);
+
+            // If this is not the last criteria, add the logical operator
+            if (index < criteriaList.size() - 1) {
+                // Handle logical operator
+                if (criteria.logicalOperator().equalsIgnoreCase("OR")) {
+                    criteriaListMongo.add(new Criteria().orOperator(criteriaMongo));
+                } else {
+                    if (!criteriaListMongo.isEmpty()) {
+                        criteriaListMongo.add(new Criteria().andOperator(criteriaMongo));
+                    }
+                }
+            }
+            index++;
         }
 
         // Combine all criteria into a single query
-        Criteria finalCriteria = new Criteria().andOperator(criteriaListMongo.toArray(new Criteria[0]));
+        Criteria finalCriteria = new Criteria().orOperator(criteriaListMongo.toArray(new Criteria[0]));
         return new Query(finalCriteria);
     }
 
