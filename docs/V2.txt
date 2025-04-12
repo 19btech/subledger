@@ -1,0 +1,36 @@
+Add two new columns to the i_ExecutionDate input in Model 1: lastExecutionDate and replayDate.
+
+Include a postingDate column in i_Transactions, I_InstrumentAttribute, and I_Metric.
+
+Create a new output table called InventoryClose with the following columns: InstrumentID, AttributeID, EndDate, and Closed.
+
+Allow clients to add multiple transactions with the same name in the i_Transactions table. 
+The system should insert the results in descending order of transactionDate (with the most recent date first) 
+for each posting date.
+
+  The model logic should retrieve data from Transaction and Aggregation for the latest postingDate. However, 
+  this latest postingDate logic does not apply to the InstrumentAttribute input. 
+  Instead, InstrumentAttribute will always be fetched in the model for each execution based on the version where 
+  the EndDate is null.  
+  
+  If transaction is not replayable then set effective date of that transaction to posting date if sent on an earlier effective
+  
+  Remove Metric level check from configuration screen on model for aggregation
+  
+  I have a table named transaction having columns InstrumentId, AttributeId, postingDate, metricId, beginningbalance, activityAmount, endingBalance. what I want is to build a mechanism where I have to maintain life to date balances of each instrumentId for every postingDate. but the problem I am facing is this need will generate huge data footprint but for my solution I need that so please suggest better ideas/solution
+  
+  ###
+  i_instrumentAttribute
+  i_transactionActivity
+  i-Metric (change it to i_balances)
+  
+  put attributeId column in second column (fix it for validation)
+  
+  only fill data into input sheet according to provided attributeId in model (tightly coupled with model)
+  
+  AttributeId = 0 means , it refers to tenant, such attributeId will call in every model execution
+  and it will fill in the model at the top (after header)
+  
+  add a column named 'EntryType' as a system column. values {Booking, Reversal} by default it should Booking
+  
+  i_transactionActivity: transactions should be tightly coupled with model, if transaction does not exist on that posting date then system should fill empty data for that transaction.
