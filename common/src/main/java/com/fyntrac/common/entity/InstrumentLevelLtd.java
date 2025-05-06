@@ -9,6 +9,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import javax.validation.constraints.NotNull;
 import java.io.Serial;
 import java.io.Serializable;
 
@@ -28,12 +29,14 @@ public class InstrumentLevelLtd implements Serializable, BaseLevelLtd {
     private String instrumentId;
     @Indexed(unique = false)
     private int accountingPeriodId;
+    @NotNull
+    private Integer postingDate;
     BaseLtd balance;
 
     public String getKey(String tenantId) {
         return new InstrumentLevelLtdKey(tenantId,
                 this.getMetricName().toUpperCase(),
                 this.getInstrumentId(),
-                this.getAccountingPeriodId()).getKey();
+                this.getPostingDate()).getKey();
     }
 }

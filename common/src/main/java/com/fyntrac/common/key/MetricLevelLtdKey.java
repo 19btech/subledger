@@ -28,6 +28,13 @@ public class MetricLevelLtdKey implements AggregationLtdKey {
     }
 
     public String getKey() {
-        return String.format("%s-%d-%s", tenantId, accountingPeriodId, metricName);
+        // Remove ALL whitespace (spaces, tabs, newlines) from each string component
+        String cleanTenantId = tenantId != null ? tenantId.replaceAll("\\s", "") : "";
+        String cleanMetricName = metricName != null ? metricName.replaceAll("\\s", "") : "";
+
+        return String.format("%s-%d-%s",
+                cleanTenantId,
+                accountingPeriodId,
+                cleanMetricName);
     }
 }

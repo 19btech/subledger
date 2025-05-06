@@ -1,12 +1,12 @@
 package com.reserv.dataloader.batch.tasklet;
 
+import com.fyntrac.common.service.ExecutionStateService;
 import com.reserv.dataloader.aggregate.InstrumentLevelAggregator;
 import  com.fyntrac.common.enums.AggregationRequestType;
 import com.fyntrac.common.entity.AggregationRequest;
 import com.fyntrac.common.entity.TransactionActivityList;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.DataService;
-import com.reserv.dataloader.service.AggregationRequestService;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
@@ -25,12 +25,12 @@ public class InstrumentLevelAggregatorTasklet extends BaseAggregatorTasklet impl
     public InstrumentLevelAggregatorTasklet(MemcachedRepository memcachedRepository
             , DataService dataService
             , SettingsService settingsService
-            , AggregationRequestService metricAggregationRequestService
+                                            , ExecutionStateService executionStateService
             , String tenantId) {
         super(memcachedRepository
                 , dataService
                 , settingsService
-                , metricAggregationRequestService
+                ,executionStateService
                 , tenantId);
     }
 
@@ -39,13 +39,16 @@ public class InstrumentLevelAggregatorTasklet extends BaseAggregatorTasklet impl
         if(this.tenantId == null) {
             return RepeatStatus.FINISHED;
         }
+        String key = contribution.getStepExecution().getJobParameters().getString(this.KEY);
+        AggregationRequest aggregationRequest = AggregationRequest.builder()
+                .isAggregationComplete(Boolean.FALSE)
+                .isInprogress(Boolean.FALSE)
+                .tenantId(this.dataService.getTenantId())
+                .requestType(AggregationRequestType.INSTRUMENT_LEVEL_AGG)
+                .key(key).build();
 
-        AggregationRequest aggregationRequest = this.metricAggregationRequestService.getAggregationRequest(AggregationRequestType.INSTRUMENT_LEVEL_AGG);
-
-        if (aggregationRequest != null && !aggregationRequest.isInprogress() && !aggregationRequest.isAggregationComplete()) {
             // Read TransactionActivity objects from Memcached
             this.aggregateTransactionActivities(aggregationRequest);
-        }
 
 
         return RepeatStatus.FINISHED;
@@ -63,7 +66,7 @@ public class InstrumentLevelAggregatorTasklet extends BaseAggregatorTasklet impl
 
         List<Future<List<String>>> futures = new ArrayList<>();
         for (List<String> chunk : chunks) {
-            futures.add(executor.submit(new AggregationTask(new InstrumentLevelAggregator(this.memcachedRepository, this.dataService, this.settingsService,this.tenantId)
+            futures.add(executor.submit(new AggregationTask(new InstrumentLevelAggregator(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService,this.tenantId)
                     ,chunk)));
         }
         executor.shutdown();

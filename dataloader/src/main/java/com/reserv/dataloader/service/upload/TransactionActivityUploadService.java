@@ -3,7 +3,6 @@ package com.reserv.dataloader.service.upload;
 import  com.fyntrac.common.enums.AggregationRequestType;
 import  com.fyntrac.common.enums.FileUploadActivityType;
 import com.fyntrac.common.entity.AggregationRequest;
-import com.reserv.dataloader.service.AggregationRequestService;
 import com.reserv.dataloader.service.CacheService;
 import com.fyntrac.common.service.TransactionActivityService;
 import com.fyntrac.common.service.aggregation.AggregationService;
@@ -29,9 +28,6 @@ import java.util.concurrent.ExecutionException;
 public class TransactionActivityUploadService extends UploadService {
     @Autowired
     private Job transactionActivityUploadJob;
-
-    @Autowired
-    AggregationRequestService metricAggregationRequestService;
 
     @Autowired
     protected JobLauncher jobLauncher;
@@ -62,20 +58,20 @@ public class TransactionActivityUploadService extends UploadService {
         this.runId = System.currentTimeMillis();
         String key = this.dataService.getTenantId() + "TA" + this.runId;
 
-        this.cacheService.purgeCache(com.fyntrac.common.utils.Key.aggregationKey());
+        this.cacheService.purgeCache(com.fyntrac.common.utils.Key.aggregationKey(this.dataService.getTenantId(), this.runId));
         AggregationRequest aggregationRequest = AggregationRequest.builder()
                 .isAggregationComplete(Boolean.FALSE)
                 .isInprogress(Boolean.FALSE)
                 .tenantId(this.dataService.getTenantId())
                 .key(key).build();
-        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.ATTRIBUTE_LEVEL_AGG);
-        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.INSTRUMENT_LEVEL_AGG);
-        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.METRIC_LEVEL_AGG);
-        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.COMPLETE_AGG);
+//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.ATTRIBUTE_LEVEL_AGG);
+//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.INSTRUMENT_LEVEL_AGG);
+//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.METRIC_LEVEL_AGG);
+//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.COMPLETE_AGG);
         JobParameters jobParameters = new JobParametersBuilder()
                 .addString("filePath", filePath)
                 .addLong("run.id", this.runId)
-                .addString(com.fyntrac.common.utils.Key.aggregationKey(), key)
+                .addString("aggregation-key", key)
                 .addString("tenantId", this.dataService.getTenantId())
                 .toJobParameters();
         this.uploadData(jobLauncher

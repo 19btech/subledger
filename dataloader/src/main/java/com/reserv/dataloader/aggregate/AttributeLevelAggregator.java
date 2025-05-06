@@ -1,14 +1,13 @@
 package com.reserv.dataloader.aggregate;
 
+import com.fyntrac.common.entity.*;
 import com.fyntrac.common.key.AttributeLevelLtdKey;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.DataService;
+import com.fyntrac.common.service.ExecutionStateService;
+import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
-import com.fyntrac.common.entity.AccountingPeriod;
-import com.fyntrac.common.entity.TransactionActivity;
-import com.fyntrac.common.entity.AttributeLevelLtd;
-import com.fyntrac.common.entity.BaseLtd;
 import com.fyntrac.common.service.SettingsService;
 
 import java.util.*;
@@ -20,7 +19,6 @@ public class AttributeLevelAggregator extends BaseAggregator {
 
     private Set<String> allAttributeLevelInstruments;
     private Set<Integer> newPeriods;
-    private int lastTransactionActitvityAccountingPeriod;
 
     /**
      * Constructor
@@ -32,10 +30,12 @@ public class AttributeLevelAggregator extends BaseAggregator {
     public AttributeLevelAggregator(MemcachedRepository memcachedRepository
             , DataService<AttributeLevelLtd> dataService
             , SettingsService settingsService
+                                    , ExecutionStateService executionStateService
             , String tenantId) {
         super(memcachedRepository
                 ,dataService
                 ,settingsService
+                , executionStateService
                 , tenantId);
         newPeriods = new HashSet<>(0);
 
@@ -48,12 +48,6 @@ public class AttributeLevelAggregator extends BaseAggregator {
             log.error("Failed to load allAttributeLevelInstruments from cache", e);
             throw new RuntimeException("Initialization failed", e);
         }
-        try {
-            this.lastTransactionActitvityAccountingPeriod = this.settingsService.fetch().getLastTransactionActivityUploadReportingPeriod();
-        } catch (Exception e) {
-            log.error("Failed to fetch lastTransactionActivityUploadReportingPeriod from settingsService", e);
-            throw new RuntimeException("Initialization failed", e);
-        }
 
     }
 
@@ -62,6 +56,7 @@ public class AttributeLevelAggregator extends BaseAggregator {
      * @param activities
      */
     public void aggregate(List<String> activities) {
+
         for(String transactionActivityKey : activities) {
             try {
                 TransactionActivity transactionActivity = this.memcachedRepository.getFromCache(transactionActivityKey, TransactionActivity.class);
@@ -140,35 +135,17 @@ public class AttributeLevelAggregator extends BaseAggregator {
         Set<AttributeLevelLtd> balances = new HashSet<>(0);
 
         List<String> metrics = this.getMetrics(activity);
-
-        if(metrics == null || metrics.isEmpty()) {
+        ExecutionState executionState = this.getExecutionState();
+        if(executionState == null || (metrics == null || metrics.isEmpty())) {
             return;
         }
 
-        AccountingPeriod activityAccountingPeriod = activity.getAccountingPeriod();
-        newPeriods.add(activityAccountingPeriod.getPeriodId());
-        int activityAccountingPeriodId=0;
-        int previousAccountingPeriodId=0;
-        if(activityAccountingPeriod == null) {
-            return;
-        }else if(activityAccountingPeriod.getStatus() != 0) {
-            previousAccountingPeriodId = referenceData.getPrevioudAccountingPeriodId();
-        } else {
-            activityAccountingPeriodId =  activityAccountingPeriod.getPeriodId();
-            if(activityAccountingPeriod.getPreviousAccountingPeriodId() != 0) {
-                previousAccountingPeriodId = activity.getAccountingPeriod().getPreviousAccountingPeriodId();
-            }
-        }
-
-        if(activityAccountingPeriodId > lastTransactionActitvityAccountingPeriod) {
-            lastTransactionActitvityAccountingPeriod = activityAccountingPeriodId;
-        }
 
         for(String metric : metrics) {
 
             try {
-                AttributeLevelLtdKey previousPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), previousAccountingPeriodId);
-                AttributeLevelLtdKey currentPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), activityAccountingPeriodId);
+                AttributeLevelLtdKey previousPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), executionState.getLastActivityPostingDate());
+                AttributeLevelLtdKey currentPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), executionState.getActivityPostingDate());
 
                 AttributeLevelLtd currentLtd = this.memcachedRepository.getFromCache(currentPeriodKey.getKey(), AttributeLevelLtd.class);
                 AttributeLevelLtd previousLtd = this.memcachedRepository.getFromCache(previousPeriodKey.getKey(), AttributeLevelLtd.class);
@@ -196,12 +173,13 @@ public class AttributeLevelAggregator extends BaseAggregator {
                             .beginningBalance(beginningBalance)
                             .activity(activity.getAmount()).build();
                     currentLtd = AttributeLevelLtd.builder()
-                            .accountingPeriodId(activityAccountingPeriodId)
+                            .postingDate(activity.getPostingDate())
+                            .accountingPeriodId(activity.getPeriodId())
                             .instrumentId(activity.getInstrumentId())
                             .attributeId(activity.getAttributeId())
                             .metricName(metric)
                             .balance(balance).build();
-                    this.memcachedRepository.putInCache(currentPeriodKey.getKey(), currentLtd);
+                    this.memcachedRepository.putInCache(currentPeriodKey.getKey().trim(), currentLtd);
                     // this.memcachedRepository.delete(previousPeriodKey.getKey());
                     this.ltdObjectCleanupList.add(previousPeriodKey.getKey());
                     allAttributeLevelInstruments.add(currentPeriodKey.getKey());

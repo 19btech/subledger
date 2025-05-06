@@ -2,10 +2,7 @@ package com.fyntrac.common.utils;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.*;
 import java.time.format.DateTimeParseException;
 import java.util.Date;
 import org.apache.commons.lang.math.Range;
@@ -1614,6 +1611,38 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
 
         // Return the modified date
         return calendar.getTime();
+    }
+
+    /**
+     * Converts the given Date to UTC normalized Date.
+     *
+     * @param date the input Date
+     * @return a Date object normalized to UTC representing the same instant in time
+     */
+    public static Date toUTC(Date date) {
+        if (date == null) {
+            throw new IllegalArgumentException("Date must not be null");
+        }
+        // Convert Date to Instant
+        Instant instant = date.toInstant();
+        // Convert Instant to ZonedDateTime in UTC
+        ZonedDateTime utcZoned = instant.atZone(ZoneId.of("UTC"));
+        // Convert back to Instant to get Date in UTC representation
+        Instant utcInstant = utcZoned.toInstant();
+        // Return Date object corresponding to UTC instant
+        return Date.from(utcInstant);
+    }
+
+    public static LocalDate convertDateToLocalDate(Date date) {
+        // Convert Date to Instant
+        Instant instant = date.toInstant();
+        // Convert Instant to LocalDate using the system's default time zone
+        return instant.atZone(ZoneId.systemDefault()).toLocalDate();
+    }
+
+    public static LocalDateTime convertDateToLocalDateTime(Date date, ZoneId zone) {
+        Instant instant = date.toInstant();
+        return instant.atZone(zone).toLocalDateTime();
     }
 }
 

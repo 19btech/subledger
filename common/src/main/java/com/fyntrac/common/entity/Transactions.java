@@ -20,6 +20,7 @@ public class Transactions {
     private String name;
     private int exclusive;
     private int isGL;
+    private int isReplayable;
 
     @Override
     public String toString() {
@@ -29,6 +30,7 @@ public class Transactions {
         json.append("\"name\":\"").append(name).append("\",");
         json.append("\"exclusive\":").append(exclusive).append(",");
         json.append("\"isGL\":").append(isGL);
+        json.append("\"isReplayable\":").append(isReplayable);
         json.append("}");
         return json.toString();
     }

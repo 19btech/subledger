@@ -10,6 +10,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.BitSet;
 
 @Data
 @Builder
@@ -23,6 +24,11 @@ public class Aggregation implements Serializable {
     private String id;
     private String transactionName;
     private String metricName;
+
+    public static BitSet group(String instrumentId) {
+        return null;
+    }
+
     @Override
     public String toString() {
         StringBuilder json = new StringBuilder();

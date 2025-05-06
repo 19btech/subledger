@@ -33,6 +33,10 @@ public class Key {
         return tenantId + "RECLASS_MESSAGE" + "-" + runId;
     }
 
+    public static String replayMessageList(String tenantId, long runId) {
+        return tenantId + "REPLAY_MESSAGE" + "-" + runId;
+    }
+
     public static String reclassAttributes(String tenantId) {
         return tenantId + "RECLASS_ATTRIBUTES";
     }
@@ -46,8 +50,8 @@ public class Key {
         return tenantId + attributeId + instrumentId + periodId;
     }
 
-    public static String aggregationKey() {
-        return "AGG-KEY";
+    public static String aggregationKey(String tenantId, Long runId) {
+        return String.format("AGG-KEY-%s-%d", tenantId, runId);
     }
 
     public static String generalLedgerAccountTypesStageKey(String tenantId) {

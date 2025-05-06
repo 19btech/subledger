@@ -5,7 +5,6 @@ import com.fyntrac.common.enums.AccountingRules;
 import com.fyntrac.common.enums.AggregationRequestType;
 import com.fyntrac.common.enums.BatchType;
 import com.fyntrac.common.enums.FileUploadActivityType;
-import com.reserv.dataloader.service.AggregationRequestService;
 import com.reserv.dataloader.service.CacheService;
 import com.fyntrac.common.service.TransactionActivityService;
 import com.fyntrac.common.service.aggregation.AggregationService;
@@ -40,9 +39,6 @@ public class ActivityUploadService {
     private Job transactionActivityUploadJob;
 
     @Autowired
-    AggregationRequestService metricAggregationRequestService;
-
-    @Autowired
     protected JobLauncher jobLauncher;
 
     @Autowired
@@ -73,7 +69,6 @@ public class ActivityUploadService {
         String filePath = activityMap.get(AccountingRules.INSTRUMENTATTRIBUTE);
         Long runid = System.currentTimeMillis();
         try {
-            this.cacheService.purgeCache(com.fyntrac.common.utils.Key.aggregationKey());
             Batch activityBatch = this.createBatch();
             JobParameters instrumentAttributeJobParameter = createInstrumentAttributeJob(filePath, activityBatch);
             filePath = activityMap.get(AccountingRules.TRANSACTIONACTIVITY);
@@ -106,6 +101,7 @@ public class ActivityUploadService {
         StringBuilder columnNames = new StringBuilder();
 
         columnNames.append("ACTIVITYUPLOADID:NUMBER");
+        columnNames.append(",POSTINGDATE:DATE");
         columnNames.append(",EFFECTIVEDATE:DATE");
         columnNames.append(",ATTRIBUTEID:STRING");
         columnNames.append(",INSTRUMENTID:STRING");
@@ -138,14 +134,14 @@ public class ActivityUploadService {
                 .isInprogress(Boolean.FALSE)
                 .tenantId(this.dataService.getTenantId())
                 .key(key).build();
-        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.ATTRIBUTE_LEVEL_AGG);
-        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.INSTRUMENT_LEVEL_AGG);
-        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.METRIC_LEVEL_AGG);
-        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.COMPLETE_AGG);
+//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.ATTRIBUTE_LEVEL_AGG);
+//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.INSTRUMENT_LEVEL_AGG);
+//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.METRIC_LEVEL_AGG);
+//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.COMPLETE_AGG);
         return new JobParametersBuilder()
                 .addString("filePath", filePath)
                 .addLong("run.id", runId)
-                .addString(com.fyntrac.common.utils.Key.aggregationKey(), key)
+                .addString(com.fyntrac.common.utils.Key.aggregationKey(this.dataService.getTenantId(), runId), key)
                 .addLong("batchId", activityBatch.getId())
                 .addString("tenantId", this.dataService.getTenantId())
 

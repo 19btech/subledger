@@ -25,6 +25,7 @@ public class InstrumentAttributeFactory {
                                       String attributeId,
                                       Date effectiveDate,
                                       int periodId,
+                                      int postingDate,
                                       Source source,
                                       Map<String, Object> attributes) {
         long versionId = dataService.generateSequence(SequenceNames.INSTRUMENTATTRIBUTEVERSIONID.name());
@@ -40,6 +41,7 @@ public class InstrumentAttributeFactory {
                 .previousVersionId(0L)
                 .source(source)
                 .endDate(null) // Assuming endDate is initialized to null
+                .postingDate(postingDate)
                 .build();
     }
 }

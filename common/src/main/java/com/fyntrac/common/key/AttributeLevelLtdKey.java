@@ -38,6 +38,17 @@ public class AttributeLevelLtdKey extends InstrumentLevelLtdKey {
      * @return A unique cache key for the given parameters.
      */
     public String getKey() {
-        return String.format("%s-%d-%s-%s-%s", tenantId, accountingPeriodId, instrumentId, attributeid, metricName);
+        // Remove ALL whitespace (spaces, tabs, newlines) from each string component
+        String cleanTenantId = tenantId != null ? tenantId.replaceAll("\\s", "") : "";
+        String cleanInstrumentId = instrumentId != null ? instrumentId.replaceAll("\\s", "") : "";
+        String cleanAttributeId = attributeid != null ? attributeid.replaceAll("\\s", "") : "";
+        String cleanMetricName = metricName != null ? metricName.replaceAll("\\s", "") : "";
+
+        return String.format("%s-%d-%s-%s-%s",
+                cleanTenantId,
+                accountingPeriodId,
+                cleanInstrumentId,
+                cleanAttributeId,
+                cleanMetricName);
     }
 }

@@ -10,6 +10,7 @@ public class TransactionsItemProcessor implements ItemProcessor<Transactions,Tra
         transaction.setName(item.getName());
         transaction.setExclusive(item.getExclusive());
         transaction.setIsGL(item.getIsGL());
+        transaction.setIsReplayable(item.getIsReplayable());
         return transaction;
     }
 }

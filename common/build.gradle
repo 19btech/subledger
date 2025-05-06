@@ -55,6 +55,10 @@ dependencies {
 	implementation 'joda-time:joda-time:2.12.2'
 	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
 	implementation 'colt:colt:1.2.0'
+	// Validation API
+	implementation 'javax.validation:validation-api:2.0.1.Final' // Validation API
+	// Hibernate Validator (implementation of the validation API)
+	implementation 'org.hibernate.validator:hibernate-validator:6.2.0.Final' // Check for the latest version
 	runtimeOnly 'com.h2database:h2'
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'

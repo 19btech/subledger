@@ -149,5 +149,10 @@ public class RecordFactory {
         return createRecord(() -> new Records.QueryCriteriaItem(attributeName, operator, values, filters, logicalOperator));
     }
 
+    public static Records.TransactionActivityReplayRecord createTransactionActivityReplayRecord(String instrumentId
+    , String attributeId
+    , Integer replayDate) {
+     return createRecord(() -> new Records.TransactionActivityReplayRecord(instrumentId, attributeId, replayDate));
+    }
 
 }

@@ -100,4 +100,8 @@ public class Records {
     public record QueryCriteriaItem(String attributeName, String operator,String values, List<String> filters, String logicalOperator) implements Serializable{
         private static final long serialVersionUID = -6100862855198499095L;
     }
+
+    public record TransactionActivityReplayRecord(String instrumentId, String attributeId, Integer replayDate) implements Serializable{
+        private static final long serialVersionUID = 3735691512748555397L;
+    }
 }

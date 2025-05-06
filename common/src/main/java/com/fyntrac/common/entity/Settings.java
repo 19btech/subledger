@@ -22,5 +22,4 @@ public class Settings {
     private Date fiscalPeriodStartDate;
     private Date reportingPeriod;
     private int restatementMode;
-    private int lastTransactionActivityUploadReportingPeriod;
 }

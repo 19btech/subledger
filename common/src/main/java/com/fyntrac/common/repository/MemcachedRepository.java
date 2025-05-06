@@ -3,6 +3,7 @@ package com.fyntrac.common.repository;
 import lombok.extern.slf4j.Slf4j;
 import net.spy.memcached.transcoders.SerializingTranscoder;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 import net.spy.memcached.MemcachedClient;
 import net.spy.memcached.internal.OperationFuture;
@@ -14,7 +15,8 @@ import java.util.concurrent.ExecutionException;
 @Slf4j
 public class MemcachedRepository {
     protected final MemcachedClient memcachedClient;
-
+    @Value("${fyntrac.cache.timeout}")
+    protected int cacheTimeOut;
     @Autowired
     public MemcachedRepository(MemcachedClient memcachedClient) {
         this.memcachedClient = memcachedClient;
@@ -49,7 +51,7 @@ public class MemcachedRepository {
     }
 
     public <T>  OperationFuture<Boolean> replaceInCache(String key, T object) {
-        return this.replaceInCache(key,object, 0);
+        return this.replaceInCache(key,object, cacheTimeOut);
     }
 
     public <T> OperationFuture<Boolean> appendInCache(String key, T object) {

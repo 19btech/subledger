@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -16,6 +17,8 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.springframework.data.annotation.Id;
+
+import javax.validation.constraints.NotNull;
 
 @Data
 @Builder
@@ -29,6 +32,7 @@ public class TransactionActivity implements Serializable {
 
     @Id
     private String id;
+    @Indexed
     private Date transactionDate;
     private String instrumentId;
     private String transactionName;
@@ -40,8 +44,11 @@ public class TransactionActivity implements Serializable {
     private long batchId;
     private Source source;
     private String sourceId;
-    private Date postingDate;
-
+    @NotNull
+    @Indexed
+    private Integer postingDate;
+    @Indexed
+    private Integer effectiveDate;
     @Field("attributes")
     private Map<String, Object> attributes;
 
@@ -59,6 +66,7 @@ public class TransactionActivity implements Serializable {
         json.append("\"originalPeriodId\":").append(originalPeriodId).append(",");
         json.append("\"batchId\":").append(batchId).append(",");
         json.append("\"postingDate\":").append(postingDate).append(",");
+        json.append("\"effectiveDate\":").append(effectiveDate).append(",");
         json.append("\"source\":").append(sourceId).append(",");
         json.append("\"instrumentAttributeVersionId\":").append(instrumentAttributeVersionId).append(",");
 

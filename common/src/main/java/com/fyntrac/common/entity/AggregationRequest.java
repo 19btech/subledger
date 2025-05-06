@@ -1,5 +1,6 @@
 package com.fyntrac.common.entity;
 
+import com.fyntrac.common.enums.AggregationRequestType;
 import lombok.Builder;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -17,4 +18,5 @@ public class AggregationRequest implements Serializable {
     private boolean isAggregationComplete;
     private boolean isInprogress;
     private String tenantId;
+    private AggregationRequestType requestType;
 }

@@ -71,9 +71,7 @@ public class AttributeLevelAggregationService extends CacheBasedService<Attribut
      */
     @Override
     public void loadIntoCache() {
-        Settings s = this.settingsService.fetch();
-        int lastActivityUploadAccountingPeriod = s.getLastTransactionActivityUploadReportingPeriod();
-        this.loadIntoCache(lastActivityUploadAccountingPeriod, this.dataService.getTenantId());
+
     }
 
     /**

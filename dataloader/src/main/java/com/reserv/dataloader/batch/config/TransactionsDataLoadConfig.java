@@ -85,7 +85,7 @@ public class TransactionsDataLoadConfig {
 
         DefaultLineMapper<Transactions> defaultLineMapper = new DefaultLineMapper<>();
         DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
-        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID", "NAME","EXCLUSIVE","ISGL"});
+        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID", "NAME","ISREPLAYABLE","EXCLUSIVE","ISGL"});
         defaultLineMapper.setLineTokenizer(lineTokenizer);
         defaultLineMapper.setFieldSetMapper(new FieldSetMapper<Transactions>() {
             @Override
@@ -94,6 +94,7 @@ public class TransactionsDataLoadConfig {
                 transaction.setName(fieldSet.readString("NAME"));
                 transaction.setExclusive(fieldSet.readInt("EXCLUSIVE"));
                 transaction.setIsGL(fieldSet.readInt("ISGL"));
+                transaction.setIsReplayable(fieldSet.readInt("ISREPLAYABLE"));
                 return transaction;
             }
         });
@@ -103,7 +104,7 @@ public class TransactionsDataLoadConfig {
                 .resource(new FileSystemResource(fileName))
                 .delimited()
                 .names(new String[]{
-                        "ACTIVITYUPLOADID", "NAME","EXCLUSIVE","ISGL"
+                        "ACTIVITYUPLOADID", "NAME","ISREPLAYABLE","EXCLUSIVE","ISGL"
                 })
                 .linesToSkip(1)
                 .lineMapper(defaultLineMapper)

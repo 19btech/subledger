@@ -31,7 +31,6 @@ public class GeneralLedgerEnteryStage implements Serializable {
     private String attributeId;
     private String instrumentId;
     private String transactionName;
-    private Date transactionDate;
     private int periodId;
     private String glAccountNumber;
     private String glAccountName;
@@ -42,6 +41,7 @@ public class GeneralLedgerEnteryStage implements Serializable {
     private int isReclass;
     @Indexed
     private long batchId;
+    private Date transactionDate;
 
     @Field("attributes")
     private Map<String, Object> attributes;

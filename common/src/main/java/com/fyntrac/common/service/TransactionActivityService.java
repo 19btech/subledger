@@ -1,24 +1,24 @@
 package com.fyntrac.common.service;
 
 import com.fyntrac.common.config.ReferenceData;
-import com.fyntrac.common.entity.AccountingPeriod;
-import com.fyntrac.common.entity.Attributes;
-import com.fyntrac.common.entity.InstrumentAttribute;
-import com.fyntrac.common.entity.TransactionActivity;
+import com.fyntrac.common.entity.*;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.aggregation.GroupOperation;
+import org.springframework.data.mongodb.core.aggregation.ProjectionOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -27,6 +27,9 @@ import java.util.stream.Collectors;
 @Slf4j
 public class TransactionActivityService extends CacheBasedService<TransactionActivity> {
     private AttributeService attributeService;
+    @Value("${fyntrac.chunk.size}")
+    private int chunkSize;
+
     @Autowired
     public TransactionActivityService(DataService<TransactionActivity> dataService
                                       , MemcachedRepository memcachedRepository
@@ -75,21 +78,33 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
     }
 
     public int getLastAccountingPeriodId(String tenantId) {
-        // Fetch the MongoTemplate for the specified tenant
-        MongoTemplate mongoTemplate = this.dataService.getMongoTemplate(tenantId);
-
-        // Create a query to find the maximum periodId
-        Query query = new Query();
-        query.with(Sort.by(Sort.Direction.DESC, "periodId")); // Sort by periodId in descending order
-        query.limit(1); // Limit the result to only one document
-
         // Execute the query to get the result
-        TransactionActivity result = mongoTemplate.findOne(query, TransactionActivity.class);
+        TransactionActivity result = this.get(tenantId,"periodId");
 
         // Return the periodId or 0 if no result is found
         return result != null ? result.getPeriodId() : 0;
     }
 
+    public Integer getLatestActivityPostingDate(String tenantId) {
+        // Execute the query to get the result
+        TransactionActivity result = this.get(tenantId, "postingDate");
+
+        // Return the periodId or 0 if no result is found
+        return result != null ? result.getPostingDate() : 0;
+    }
+
+    public TransactionActivity get(String tenantId, String ... properties) {
+        // Fetch the MongoTemplate for the specified tenant
+        MongoTemplate mongoTemplate = this.dataService.getMongoTemplate(tenantId);
+
+        // Create a query to find the maximum periodId
+        Query query = new Query();
+        query.with(Sort.by(Sort.Direction.DESC, properties)); // Sort by periodId in descending order
+        query.limit(1); // Limit the result to only one document
+
+        // Execute the query to get the result
+        return  mongoTemplate.findOne(query, TransactionActivity.class);
+    }
     public Set<String> getColumnNames() {
 
         MongoTemplate mongoTemplate = this.dataService.getMongoTemplate();
@@ -289,4 +304,45 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
 
         return builder.build();
     }
+
+    public void updateInstrumentActivityState() {
+        MongoTemplate mongoTemplate = this.dataService.getMongoTemplate();
+        // Drop the InstrumentActivityState collection to clear existing data
+        mongoTemplate.dropCollection(InstrumentActivityState.class);
+
+        long totalRecords = mongoTemplate.count(new Query(), TransactionActivity.class);
+        long processedRecords = 0;
+
+        while (processedRecords < totalRecords) {
+            GroupOperation group = Aggregation.group("instrumentId", "attributeId")
+                    .max("effectiveDate").as("maxTransactionDate");
+
+            ProjectionOperation project = Aggregation.project()
+                    .and("_id.instrumentId").as("instrumentId")
+                    .and("_id.attributeId").as("attributeId")
+                    .and("maxTransactionDate").as("maxTransactionDate")
+                    .andExclude("_id");
+
+            Aggregation aggregation = Aggregation.newAggregation(
+                    group,
+                    project,
+                    Aggregation.skip(processedRecords),
+                    Aggregation.limit(chunkSize)
+            );
+
+            AggregationResults<InstrumentActivityState> results = mongoTemplate.aggregate(aggregation,
+                    TransactionActivity.class,
+                    InstrumentActivityState.class);
+
+            List<InstrumentActivityState> maxDates = results.getMappedResults();
+
+            if (!maxDates.isEmpty()) {
+                mongoTemplate.insertAll(maxDates);
+            }
+
+            processedRecords += maxDates.size();
+        }
+    }
+
+
 }

@@ -1,6 +1,7 @@
 package com.reserv.dataloader.batch.tasklet;
 
 import com.reserv.dataloader.aggregate.Aggregator;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -11,7 +12,10 @@ import java.util.concurrent.Callable;
 public class AggregationTask implements Callable<List<String>> {
     private final List<String> chunk;
     private final Aggregator aggregator;
-    private static final int NUM_BUCKETS = 10000;
+
+    @Value("${fyntrac.chunk.size}")
+    private int NUM_BUCKETS;
+
     public AggregationTask(Aggregator aggregator
             , List<String> chunk) {
         this.chunk = chunk;

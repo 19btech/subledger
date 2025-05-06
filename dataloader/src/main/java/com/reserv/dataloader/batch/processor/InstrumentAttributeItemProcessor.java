@@ -20,6 +20,8 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
         Date effectiveDate = null;
         String instrumentId = "";
         String attributeId = "";
+        int postingDate=0;
+
 
         for (Map.Entry<String, Object> entry : item.entrySet()) {
             String key = entry.getKey();
@@ -32,10 +34,13 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
                 instrumentId = (String) value;
             } else if (key.equalsIgnoreCase("ATTRIBUTEID")) {
                 attributeId = (String) value;
-            } else {
+            } else if (key.equalsIgnoreCase("POSTINGDATE")) {
+                Date pDate = DateUtil.parseDate((String) value);
+                postingDate = DateUtil.dateInNumber(pDate);
+        }else {
                 attributes.put(key, value);
             }
         }
-        return instrumentAttributeFactory.create(instrumentId, attributeId, effectiveDate,0, Source.ETL,attributes);
+        return instrumentAttributeFactory.create(instrumentId, attributeId, effectiveDate,0, postingDate, Source.ETL,attributes);
     }
 }

@@ -1,12 +1,12 @@
 package com.reserv.dataloader.batch.tasklet;
 
+import com.fyntrac.common.service.ExecutionStateService;
 import com.reserv.dataloader.aggregate.AttributeLevelAggregator;
 import  com.fyntrac.common.enums.AggregationRequestType;
 import com.fyntrac.common.entity.AggregationRequest;
 import com.fyntrac.common.entity.TransactionActivityList;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.DataService;
-import com.reserv.dataloader.service.AggregationRequestService;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
@@ -25,12 +25,12 @@ public class AttributeLevelAggregatorTasklet extends BaseAggregatorTasklet imple
     public AttributeLevelAggregatorTasklet(MemcachedRepository memcachedRepository
             , DataService dataService
                                            , SettingsService settingsService
-            , AggregationRequestService metricAggregationRequestService
+                                           , ExecutionStateService executionStateService
             , String tenantId) {
         super(memcachedRepository
                 , dataService
                 , settingsService
-                , metricAggregationRequestService
+                , executionStateService
                 , tenantId);
     }
 
@@ -40,12 +40,16 @@ public class AttributeLevelAggregatorTasklet extends BaseAggregatorTasklet imple
             return RepeatStatus.FINISHED;
         }
 
-        AggregationRequest aggregationRequest = this.metricAggregationRequestService.getAggregationRequest(AggregationRequestType.ATTRIBUTE_LEVEL_AGG);
+        String key = contribution.getStepExecution().getJobParameters().getString(this.KEY);
+        AggregationRequest aggregationRequest = AggregationRequest.builder()
+                .isAggregationComplete(Boolean.FALSE)
+                .isInprogress(Boolean.FALSE)
+                .tenantId(this.dataService.getTenantId())
+                .requestType(AggregationRequestType.ATTRIBUTE_LEVEL_AGG)
+                .key(key).build();
 
-        if (aggregationRequest != null && !aggregationRequest.isInprogress() && !aggregationRequest.isAggregationComplete()) {
             // Read TransactionActivity objects from Memcached
             this.aggregateTransactionActivities(aggregationRequest);
-        }
 
 
         return RepeatStatus.FINISHED;
@@ -64,7 +68,7 @@ public class AttributeLevelAggregatorTasklet extends BaseAggregatorTasklet imple
 
         List<Future<List<String>>> futures = new ArrayList<>();
         for (List<String> chunk : chunks) {
-            AttributeLevelAggregator aggregator = new AttributeLevelAggregator(this.memcachedRepository, this.dataService,  this.settingsService,this.tenantId);
+            AttributeLevelAggregator aggregator = new AttributeLevelAggregator(this.memcachedRepository, this.dataService,  this.settingsService,this.executionStateService,this.tenantId);
             futures.add(executor.submit(new AggregationTask(aggregator
                     ,chunk)));
         }

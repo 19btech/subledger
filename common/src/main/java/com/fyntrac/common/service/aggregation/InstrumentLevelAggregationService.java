@@ -60,11 +60,7 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
      * load data into cache
      */
     @Override
-    public void loadIntoCache() {
-        Settings s = this.settingsService.fetch();
-        int lastActivityUploadAccountingPeriod = s.getLastTransactionActivityUploadReportingPeriod();
-        this.loadIntoCache(lastActivityUploadAccountingPeriod, this.dataService.getTenantId());
-    }
+    public void loadIntoCache() {}
 
     /**
      * to load data for an accounting period

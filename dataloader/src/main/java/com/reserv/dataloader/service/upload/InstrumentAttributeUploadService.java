@@ -43,6 +43,7 @@ public class InstrumentAttributeUploadService extends UploadService {
         StringBuilder columnNames = new StringBuilder();
 
         columnNames.append("ACTIVITYUPLOADID:NUMBER");
+        columnNames.append(",POSTINGDATE:DATE");
         columnNames.append(",EFFECTIVEDATE:DATE");
         columnNames.append(",ATTRIBUTEID:STRING");
         columnNames.append(",INSTRUMENTID:STRING");

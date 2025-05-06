@@ -10,6 +10,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import javax.validation.constraints.NotNull;
 import java.io.Serial;
 import java.io.Serializable;
 @Data
@@ -29,6 +30,8 @@ public class AttributeLevelLtd implements Serializable, BaseLevelLtd {
     private String attributeId;
     @Indexed
     private int accountingPeriodId;
+    @NotNull
+    private Integer postingDate;
     BaseLtd balance;
 
     public String getKey(String tenantId) {
@@ -36,7 +39,7 @@ public class AttributeLevelLtd implements Serializable, BaseLevelLtd {
                 this.getMetricName().toUpperCase(),
                 this.getInstrumentId(),
                 this.getAttributeId(),
-                this.getAccountingPeriodId()).getKey();
+                this.getPostingDate()).getKey();
     }
 }
 

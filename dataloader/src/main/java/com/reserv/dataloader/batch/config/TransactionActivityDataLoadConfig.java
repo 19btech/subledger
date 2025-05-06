@@ -1,9 +1,11 @@
 package com.reserv.dataloader.batch.config;
 
+import com.fyntrac.common.service.*;
 import com.fyntrac.common.utils.DateUtil;
 import com.reserv.dataloader.batch.listener.TransactionActivityJobCompletionListener;
 import com.reserv.dataloader.batch.processor.TransactionActivityItemProcessor;
 import com.reserv.dataloader.batch.tasklet.AttributeLevelAggregatorTasklet;
+import com.reserv.dataloader.batch.tasklet.InstrumentActivityStateTasklet;
 import com.reserv.dataloader.batch.tasklet.InstrumentLevelAggregatorTasklet;
 import com.reserv.dataloader.batch.tasklet.MetricLevelAggregatorTasklet;
 import com.reserv.dataloader.batch.writer.TransactionActivityItemWriter;
@@ -12,9 +14,6 @@ import  com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.MetricLevelLtd;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.repository.MemcachedRepository;
-import com.fyntrac.common.service.DataService;
-import com.reserv.dataloader.service.AggregationRequestService;
-import com.fyntrac.common.service.SettingsService;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
@@ -47,9 +46,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.validation.BindException;
-import com.fyntrac.common.service.InstrumentAttributeService;
-import com.fyntrac.common.service.AttributeService;
-import com.fyntrac.common.service.AccountingPeriodService;
+
+import java.util.Date;
 
 @Configuration
 @EnableBatchProcessing(modular = true)
@@ -61,13 +59,14 @@ public class TransactionActivityDataLoadConfig {
     private final TenantDataSourceProvider dataSourceProvider;
     private final MongoTemplate mongoTemplate;
     private final MemcachedRepository memcachedRepository;
-    private final AggregationRequestService metricAggregationRequestService;
     private final PlatformTransactionManager transactionManager;
     private final DataService<MetricLevelLtd> dataService;
     private  final SettingsService settingsService;
     private final InstrumentAttributeService instrumentAttributeService;
     private final AttributeService attributeService;
     private final AccountingPeriodService accountingPeriodService;
+    private final ExecutionStateService executionStateService;
+    private final TransactionActivityService activityService;
 
     @Autowired
     public TransactionActivityDataLoadConfig(JobRepository jobRepository
@@ -76,24 +75,26 @@ public class TransactionActivityDataLoadConfig {
                                      , TenantContextHolder tenantContextHolder
                                      , MemcachedRepository memcachedRepository
                                     , PlatformTransactionManager transactionManager
-                                    , AggregationRequestService metricAggregationRequestService
                                     , DataService<MetricLevelLtd> dataService
                                     , InstrumentAttributeService instrumentAttributeService
     , SettingsService settingsService
     , AttributeService attributeService
-    , AccountingPeriodService accountingPeriodService) {
+    , AccountingPeriodService accountingPeriodService
+    , ExecutionStateService executionStateService
+    , TransactionActivityService activityService) {
         this.jobRepository = jobRepository;
         this.tenantContextHolder = tenantContextHolder;
         this.dataSourceProvider = dataSourceProvider;
         this.mongoTemplate = mongoTemplate;
         this.memcachedRepository = memcachedRepository;
         this.transactionManager = transactionManager;
-        this.metricAggregationRequestService = metricAggregationRequestService;
         this.dataService = dataService;
         this.settingsService = settingsService;
         this.instrumentAttributeService = instrumentAttributeService;
         this.attributeService = attributeService;
         this.accountingPeriodService = accountingPeriodService;
+        this.executionStateService = executionStateService;
+        this.activityService = activityService;
     }
 
     @Bean("transactionActivityUploadJob")
@@ -133,12 +134,15 @@ public class TransactionActivityDataLoadConfig {
         DefaultLineMapper<TransactionActivity> defaultLineMapper = new DefaultLineMapper<>();
         DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
 
-        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID","TRANSACTIONDATE","INSTRUMENTID","TRANSACTIONNAME","AMOUNT","ATTRIBUTEID"});
+        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID" ,"POSTINGDATE" ,"TRANSACTIONDATE","INSTRUMENTID","TRANSACTIONNAME","AMOUNT","ATTRIBUTEID"});
         defaultLineMapper.setLineTokenizer(lineTokenizer);
         defaultLineMapper.setFieldSetMapper(new FieldSetMapper<TransactionActivity>() {
             @Override
             public TransactionActivity mapFieldSet(FieldSet fieldSet) throws BindException {
                 TransactionActivity transactionActivity = new TransactionActivity();
+                Date postingDate = DateUtil.stripTime(fieldSet.readDate("POSTINGDATE"));
+                int postingDateIntValue = DateUtil.dateInNumber(postingDate);
+                transactionActivity.setPostingDate(postingDateIntValue);
                 transactionActivity.setTransactionDate(DateUtil.stripTime(fieldSet.readDate("TRANSACTIONDATE")));
                 transactionActivity.setInstrumentId(fieldSet.readString("INSTRUMENTID"));
                 transactionActivity.setTransactionName(fieldSet.readString("TRANSACTIONNAME"));
@@ -154,7 +158,7 @@ public class TransactionActivityDataLoadConfig {
                 .resource(new FileSystemResource(fileName))
                 .delimited()
                 .names(new String[]{
-                        "ACTIVITYUPLOADID","TRANSACTIONDATE","INSTRUMENTID","TRANSACTIONNAME","AMOUNT","ATTRIBUTEID"
+                        "ACTIVITYUPLOADID","POSTINGDATE","TRANSACTIONDATE","INSTRUMENTID","TRANSACTIONNAME","AMOUNT","ATTRIBUTEID"
                 })
                 .linesToSkip(1)
                 .lineMapper(defaultLineMapper)
@@ -217,6 +221,14 @@ public class TransactionActivityDataLoadConfig {
                 .build();
     }
 
+
+    @Bean("updateInstrumentActivitySateJob")
+    public Job updateInstrumentActivitySateJob() {
+        return new JobBuilder("updateInstrumentActivitySateJob", this.jobRepository)
+                .start(instrumentActivityStateStep())
+                .build();
+    }
+
     @Bean
     public Step metricLevelAggregationStep() {
         return new StepBuilder("metricLevelAggregationStep", jobRepository)
@@ -239,21 +251,34 @@ public class TransactionActivityDataLoadConfig {
     }
 
     @Bean
+    public Step instrumentActivityStateStep() {
+        return  new StepBuilder("instrumentActivityStateStep", jobRepository)
+                .tasklet(instrumentActivityStateTasklet(), transactionManager)
+                .build();
+    }
+
+    @Bean
     @StepScope
     public Tasklet metricLevelAggregatorTasklet() {
-        return new MetricLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService,this.metricAggregationRequestService, this.dataService.getTenantId());
+        return new MetricLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService,this.dataService.getTenantId());
     }
 
     @Bean
     @StepScope
     public Tasklet instrumentLevelAggregatorTasklet() {
-        return new InstrumentLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService,this.metricAggregationRequestService, this.dataService.getTenantId());
+        return new InstrumentLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService, this.dataService.getTenantId());
     }
 
     @Bean
     @StepScope
     public Tasklet attributeLevelAggregatorTasklet() {
-        return new AttributeLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService, this.metricAggregationRequestService, this.dataService.getTenantId());
+        return new AttributeLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService,this.dataService.getTenantId());
+    }
+
+    @Bean
+    @StepScope
+    public Tasklet instrumentActivityStateTasklet() {
+        return new InstrumentActivityStateTasklet(activityService);
     }
 }
 

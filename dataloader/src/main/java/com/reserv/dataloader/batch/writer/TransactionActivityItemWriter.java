@@ -1,13 +1,17 @@
 package com.reserv.dataloader.batch.writer;
 
+import com.fyntrac.common.cache.collection.CacheList;
 import com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.config.TenantContextHolder;
+import com.fyntrac.common.dto.record.RecordFactory;
+import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.entity.TransactionActivityList;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.DateUtil;
+import com.fyntrac.common.utils.Key;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.annotation.BeforeStep;
@@ -21,6 +25,7 @@ import com.fyntrac.common.entity.Attributes;
 import com.fyntrac.common.service.AttributeService;
 import com.fyntrac.common.service.AccountingPeriodService;
 
+import java.time.ZoneId;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -39,6 +44,9 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
     private Collection<Attributes> attributes;
     private AccountingPeriodService accountingPeriodService;
     private long batchId;
+    private Long runId;
+    private CacheList<Records.TransactionActivityReplayRecord> transactionActivityReplayRecordCacheList;
+
     public TransactionActivityItemWriter(MongoItemWriter<TransactionActivity> delegate,
                                  TenantDataSourceProvider dataSourceProvider,
                                  TenantContextHolder tenantContextHolder
@@ -53,6 +61,7 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
         this.instrumentAttributeService = instrumentAttributeService;
         this.attributeService = attributeService;
         this.accountingPeriodService = accountingPeriodService;
+        this.transactionActivityReplayRecordCacheList = new CacheList<Records.TransactionActivityReplayRecord>();
     }
 
     @BeforeStep
@@ -60,9 +69,10 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
         JobParameters jobParameters = stepExecution.getJobParameters();
         // store the job parameters in a field
 
-        this.transactionActivityKey = jobParameters.getString(com.fyntrac.common.utils.Key.aggregationKey());
         this.tenantId = jobParameters.getString("tenantId");
         this.batchId = jobParameters.getLong("batchId");
+        this.runId = jobParameters.getLong("run.id");
+        this.transactionActivityKey = com.fyntrac.common.utils.Key.aggregationKey(tenantId, runId);
 
         if(this.transactionActivityKey == null) {
             return;
@@ -79,6 +89,14 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
 
     @Override
     public void write(Chunk<? extends TransactionActivity> activity) throws Exception {
+        String dataKey = Key.replayMessageList(this.tenantId, this.runId);
+        if(this.memcachedRepository.ifExists(dataKey)) {
+            this.transactionActivityReplayRecordCacheList = this.memcachedRepository.getFromCache(dataKey, CacheList.class);
+        }else{
+            this.transactionActivityReplayRecordCacheList = new CacheList<Records.TransactionActivityReplayRecord>();
+        }
+
+
         String tenant = tenantContextHolder.getTenant();
         ReferenceData referenceData = this.memcachedRepository.getFromCache(this.tenantContextHolder.getTenant(), ReferenceData.class);
         AccountingPeriod currentAccountingPeriod = this.accountingPeriodService.getAccountingPeriod(referenceData.getCurrentAccountingPeriodId(), tenant);
@@ -103,13 +121,25 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
                 keyList.add(tenantContextHolder.getTenant() + "TA" + transactionActivity.hashCode());
                 transactionActivity.setBatchId(batchId);
                 this.memcachedRepository.putInCache(tenantContextHolder.getTenant() + "TA" + transactionActivity.hashCode(), transactionActivity);
+                isReplayActivity(transactionActivity);
             }
             delegate.setTemplate(mongoTemplate);
             delegate.write(activity);
             this.memcachedRepository.replaceInCache(this.transactionActivityKey, keyList, 43200);
+            this.memcachedRepository.putInCache(dataKey, this.transactionActivityReplayRecordCacheList);
+
         }
     }
 
+    private boolean isReplayActivity(TransactionActivity activity) {
+        boolean isReplayActiity = this.instrumentAttributeService.existsReplay(activity.getInstrumentId(), activity.getAttributeId(),  activity.getEffectiveDate());
+        if(isReplayActiity) {
+            Records.TransactionActivityReplayRecord replayRecord = RecordFactory.createTransactionActivityReplayRecord(activity.getInstrumentId(), activity.getAttributeId(), activity.getEffectiveDate());
+            this.transactionActivityReplayRecordCacheList.add(replayRecord);
+            return Boolean.TRUE;
+        }
+        return Boolean.FALSE;
+    }
     private void setAttributes(TransactionActivity transactionActivity) {
         InstrumentAttribute instrumentAttribute = this.getLatestInstrumentAttribute(transactionActivity);
         long instrumentAttributeVersionId = 0;

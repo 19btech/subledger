@@ -4,13 +4,13 @@ import com.fyntrac.common.enums.Source;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
+import javax.validation.constraints.NotNull;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -42,6 +42,8 @@ public class InstrumentAttribute implements Serializable {
     private String sourceId;
     @Field("attributes")
     private Map<String,Object> attributes;
+    @NotNull
+    private Integer postingDate;
 
 
 

@@ -11,7 +11,7 @@ public class MongoQueryGenerator {
 
     public static Query generateQuery(List<Records.QueryCriteriaItem> criteriaList) {
         List<Criteria> criteriaListMongo = new ArrayList<>();
-        int index=0;
+
         for (Records.QueryCriteriaItem criteria : criteriaList) {
             Criteria criteriaMongo = null;
 
@@ -69,25 +69,29 @@ public class MongoQueryGenerator {
             }
 
             // Add criteria to the list
-            criteriaListMongo.add(criteriaMongo);
-
-            // If this is not the last criteria, add the logical operator
-            if (index < criteriaList.size() - 1) {
-                // Handle logical operator
-                if (criteria.logicalOperator().equalsIgnoreCase("OR")) {
-                    criteriaListMongo.add(new Criteria().orOperator(criteriaMongo));
-                } else {
-                    if (!criteriaListMongo.isEmpty()) {
-                        criteriaListMongo.add(new Criteria().andOperator(criteriaMongo));
-                    }
-                }
+            if (criteriaMongo != null) {
+                criteriaListMongo.add(criteriaMongo);
             }
-            index++;
         }
 
-        // Combine all criteria into a single query
-        Criteria finalCriteria = new Criteria().orOperator(criteriaListMongo.toArray(new Criteria[0]));
+        // Combine all criteria into a single query with logical operators
+        Criteria finalCriteria = null;
+
+        for (int i = 0; i < criteriaListMongo.size(); i++) {
+            Criteria currentCriteria = criteriaListMongo.get(i);
+
+            if (finalCriteria == null) {
+                finalCriteria = currentCriteria; // Initialize with the first criteria
+            } else {
+                String logicalOperator = criteriaList.get(i - 1).logicalOperator(); // Get the logical operator from the previous criteria
+                if (logicalOperator.equalsIgnoreCase("OR")) {
+                    finalCriteria = new Criteria().orOperator(finalCriteria, currentCriteria);
+                } else {
+                    finalCriteria = new Criteria().andOperator(finalCriteria, currentCriteria);
+                }
+            }
+        }
+
         return new Query(finalCriteria);
     }
-
 }

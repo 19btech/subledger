@@ -63,9 +63,7 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
      */
     @Override
     public void loadIntoCache() {
-        Settings s = this.settingsService.fetch();
-        int lastActivityUploadAccountingPeriod = s.getLastTransactionActivityUploadReportingPeriod();
-        this.loadIntoCache(lastActivityUploadAccountingPeriod, this.dataService.getTenantId());
+
     }
 
     /**

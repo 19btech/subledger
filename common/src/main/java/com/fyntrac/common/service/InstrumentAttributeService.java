@@ -2,11 +2,13 @@ package com.fyntrac.common.service;
 
 import com.fyntrac.common.cache.collection.CacheMap;
 import  com.fyntrac.common.config.ReferenceData;
+import com.fyntrac.common.entity.InstrumentActivityState;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.entity.factory.InstrumentAttributeFactory;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.repository.InstrumentAttributeRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
+import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +20,9 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 // import org.bson.Document;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 
@@ -221,6 +226,7 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
                                                          String attributeId,
                                                          Date effectiveDate,
                                                          int periodId,
+                                                         int postingDate,
                                                          Source source,
                                                          Map<String, Object> attributes) {
         return instrumentAttributeFactory.create(
@@ -228,6 +234,7 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
                 attributeId,
                 effectiveDate, // effectiveDate
                 periodId, // periodId
+                postingDate,
                 source,
                 new HashMap<>() // attributes
         );
@@ -273,4 +280,27 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
 
         return null;
     }
+
+    public boolean existsReplay(String instrumentId, String attributeId, Integer effectiveDate) {
+        // Validate input parameters
+        if (instrumentId == null || attributeId == null || effectiveDate == null) {
+            throw new IllegalArgumentException(String.format(
+                    "Invalid parameters[no parameter should be a null]: instrumentId=%s, attributeId=%s, effectiveDate=%d",
+                    instrumentId, attributeId, effectiveDate));
+        }
+
+
+        // Create the query
+        Query query = new Query();
+        query.addCriteria(Criteria.where("instrumentId").is(instrumentId));
+        query.addCriteria(Criteria.where("attributeId").is(attributeId));
+        query.addCriteria(Criteria.where("maxTransactionDate").gt(effectiveDate));
+
+        // Get the MongoTemplate instance
+        MongoTemplate template = this.dataService.getMongoTemplate();
+
+        // Check if the record exists
+        return template.exists(query, InstrumentActivityState.class);
+    }
+
 }
