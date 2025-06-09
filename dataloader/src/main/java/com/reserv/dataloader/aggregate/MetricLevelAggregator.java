@@ -1,20 +1,34 @@
 package com.reserv.dataloader.aggregate;
 
+import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.entity.*;
 import com.fyntrac.common.key.MetricLevelLtdKey;
 import com.fyntrac.common.repository.MemcachedRepository;
+import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.service.ExecutionStateService;
+import com.fyntrac.common.service.aggregation.AggregationService;
+import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
+import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
+import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import com.fyntrac.common.service.SettingsService;
+import org.springframework.data.mongodb.core.query.Criteria;
 
+import org.springframework.data.mongodb.core.query.Query;
+
+import java.math.BigDecimal;
 import java.util.*;
 @Slf4j
 public class MetricLevelAggregator  extends BaseAggregator {
 
     private Set<String> allMetricLevelInstruments;
-    private Set<Integer> newPeriods;
+    private Set<Integer> newPostingDates;
+    private final ExecutionState executionState;
+    private Integer lastActivityPostingDate;
+    private Integer activityPostingDate;
+    private final MetricLevelAggregationService metricLevelAggregationService;
 
     /**
      * Constructor
@@ -27,25 +41,72 @@ public class MetricLevelAggregator  extends BaseAggregator {
             , DataService<MetricLevelLtd> dataService
             , SettingsService settingsService
                                  , ExecutionStateService executionStateService
+                                 , AccountingPeriodService accountingPeriodService
+                                 , AggregationService aggregationService
+                                 , MetricLevelAggregationService metricLevelAggregationService
             , String tenantId) {
         super(memcachedRepository
                 ,dataService
                 ,settingsService
                 , executionStateService
+                , accountingPeriodService
+                , aggregationService
                 , tenantId);
-        newPeriods = new HashSet<>(0);
+        newPostingDates = new HashSet<>(0);
+        this.metricLevelAggregationService =metricLevelAggregationService;
 
         try {
-            allMetricLevelInstruments = this.memcachedRepository.getFromCache(Key.allMetricLevelLtdKeyList(tenantId), Set.class);
+
+            this.executionState = this.getExecutionState();
+
+            lastActivityPostingDate = executionState.getLastActivityPostingDate();
+            activityPostingDate = executionState.getActivityPostingDate();
+
+            if(executionState.getExecutionDate() != null && executionState.getExecutionDate() > executionState.getActivityPostingDate()) {
+                lastActivityPostingDate = executionState.getActivityPostingDate();
+                activityPostingDate = executionState.getExecutionDate();
+
+                if(executionState.getLastExecutionDate() != null && executionState.getLastExecutionDate() > lastActivityPostingDate) {
+                    lastActivityPostingDate = executionState.getLastExecutionDate();
+                }
+            }else if (executionState.getExecutionDate() != null && executionState.getExecutionDate() < executionState.getActivityPostingDate()) {
+                lastActivityPostingDate = executionState.getExecutionDate();
+                activityPostingDate = executionState.getActivityPostingDate();
+
+            }else if(executionState.getLastExecutionDate() !=null && executionState.getLastExecutionDate() > executionState.getLastActivityPostingDate()) {
+                lastActivityPostingDate = executionState.getLastExecutionDate();
+            }
+
+            allMetricLevelInstruments = this.getDistinctMetricNamesByPostingDate(lastActivityPostingDate);
             if(allMetricLevelInstruments == null) {
                 allMetricLevelInstruments = new HashSet<>(0);
             }
+
+
+
         } catch (Exception e) {
             log.error("Failed to load allMetricLevelInstruments from cache", e);
             throw new RuntimeException("Initialization failed", e);
         }
 
 
+    }
+
+    /**
+     * getDistinctMetricNamesByPostingDate from previous postings
+     * @param postingDate
+     * @return
+     */
+    public Set<String> getDistinctMetricNamesByPostingDate(int postingDate) {
+        Query query = new Query(Criteria.where("postingDate").is(postingDate));
+        List<String> metrics = this.dataService.getMongoTemplate().findDistinct(query, "metricName", "MetricLevelLtd", String.class);
+        Set<String> metricSet = new HashSet<>(0);
+        for(String metric : metrics) {
+            MetricLevelLtdKey previousPeriodKey = new MetricLevelLtdKey(this.tenantId, metric.toUpperCase(), postingDate);
+            metricSet.add(previousPeriodKey.getKey());
+
+        }
+        return metricSet;
     }
 
     /**
@@ -63,7 +124,7 @@ public class MetricLevelAggregator  extends BaseAggregator {
         }
 
         try {
-            this.generateCarryOverAggregateEntries();
+            // this.generateCarryOverAggregateEntries();
         } catch (Exception e) {
             log.error("Failed to generate carry over aggregate entries", e);
         }
@@ -79,24 +140,34 @@ public class MetricLevelAggregator  extends BaseAggregator {
 
         Iterator<String> instrumentIteratror = allMetricLevelInstruments.iterator();
         Set<MetricLevelLtd> carryOvers = new HashSet<>(0);
+        Map<Integer, Integer> accountingPeriodMap = new HashMap<>(0);
+
+        for(Integer postingDate : newPostingDates) {
+            Date pDate = DateUtil.convertToDateFromYYYYMMDD(postingDate);
+            int aPeriod = DateUtil.getAccountingPeriodId(pDate);
+            AccountingPeriod accountingPeriod = this.accountingPeriodService.getAccountingPeriod(aPeriod, this.tenantId);
+            accountingPeriodMap.put(postingDate, accountingPeriod.getPeriodId());
+        }
+
         while(instrumentIteratror.hasNext()) {
             String metricLevelLtdKey = instrumentIteratror.next();
             try {
                 if (this.memcachedRepository.ifExists(metricLevelLtdKey)) {
                     MetricLevelLtd metricLevelLtd = this.memcachedRepository.getFromCache(metricLevelLtdKey, MetricLevelLtd.class);
-                    for (Integer activityAccountingPeriodId : newPeriods) {
-                        if (metricLevelLtd != null && activityAccountingPeriodId > metricLevelLtd.getAccountingPeriodId()) {
-                            double beginningBalance = metricLevelLtd.getBalance().getBeginningBalance() + metricLevelLtd.getBalance().getActivity();
+                    for (Integer postingDate : newPostingDates) {
+                        if (metricLevelLtd != null && postingDate > metricLevelLtd.getPostingDate()) {
+                            BigDecimal beginningBalance = metricLevelLtd.getBalance().getBeginningBalance().add(metricLevelLtd.getBalance().getActivity());
                             BaseLtd balance = BaseLtd.builder()
                                     .beginningBalance(beginningBalance)
-                                    .activity(0L).build();
+                                    .activity(BigDecimal.valueOf(0L)).build();
                             MetricLevelLtd currentLtd = MetricLevelLtd.builder()
-                                    .accountingPeriodId(activityAccountingPeriodId)
+                                    .postingDate(postingDate)
+                                    .accountingPeriodId(accountingPeriodMap.get(postingDate))
                                     .metricName(metricLevelLtd.getMetricName())
                                     .balance(balance).build();
                             MetricLevelLtdKey currentPeriodLtdKey = new MetricLevelLtdKey(this.tenantId,
                                     metricLevelLtd.getMetricName().toUpperCase()
-                                    , activityAccountingPeriodId);
+                                    , postingDate);
                             this.memcachedRepository.putInCache(currentPeriodLtdKey.getKey(), currentLtd);
                             carryOvers.add(currentLtd);
                             this.memcachedRepository.delete(metricLevelLtdKey);
@@ -125,43 +196,39 @@ public class MetricLevelAggregator  extends BaseAggregator {
     public void aggregate(TransactionActivity activity) {
         Set<MetricLevelLtd> balances = new HashSet<>(0);
 
-        List<String> metrics = this.getMetrics(activity);
 
-        ExecutionState executionState = this.getExecutionState();
-        if(executionState == null || (metrics == null || metrics.isEmpty())) {
+        if(executionState == null || activity == null) {
             return;
         }
+        List<String> metrics = this.getMetrics(activity);
 
-        AccountingPeriod activityAccountingPeriod = activity.getAccountingPeriod();
-        newPeriods.add(activityAccountingPeriod.getPeriodId());
+        if(metrics == null || metrics.isEmpty()) {
+            TenantContextHolder.setTenant(super.tenantId);
+            this.aggregationService.loadIntoCache();
+            metrics = this.getMetrics(activity);
+        }
 
+        newPostingDates.add(activity.getPostingDate());
         for(String metric : metrics) {
 
             try {
-                MetricLevelLtdKey previousPeriodKey = new MetricLevelLtdKey(this.tenantId, metric.toUpperCase(), executionState.getLastActivityPostingDate());
-                MetricLevelLtdKey currentPeriodKey = new MetricLevelLtdKey(this.tenantId, metric.toUpperCase(), executionState.getActivityPostingDate());
 
-                MetricLevelLtd currentLtd = this.memcachedRepository.getFromCache(currentPeriodKey.getKey(), MetricLevelLtd.class);
-                MetricLevelLtd previousLtd = this.memcachedRepository.getFromCache(previousPeriodKey.getKey(), MetricLevelLtd.class);
-                double beginningBalance = 0.0d;
-                boolean ifPreviousLtdExists = Boolean.FALSE;
+
+
+                MetricLevelLtdKey previousPeriodKey = new MetricLevelLtdKey(this.tenantId, metric.toUpperCase(), lastActivityPostingDate);
+                MetricLevelLtdKey currentPeriodKey = new MetricLevelLtdKey(this.tenantId, metric.toUpperCase(), activityPostingDate);
+
+                MetricLevelLtd currentLtd = this.metricLevelAggregationService.getBalance(this.tenantId, metric.toUpperCase(), activityPostingDate);
+                MetricLevelLtd previousLtd = this.metricLevelAggregationService.getBalance(this.tenantId, metric.toUpperCase(), lastActivityPostingDate);
+
+                BigDecimal beginningBalance = BigDecimal.valueOf(0L);
                 if (previousLtd != null) {
-                    beginningBalance = previousLtd.getBalance().getBeginningBalance() + previousLtd.getBalance().getActivity();
-                    ifPreviousLtdExists = Boolean.TRUE;
+                    beginningBalance = previousLtd.getBalance().getBeginningBalance().add(previousLtd.getBalance().getActivity());
                 }
 
                 if (currentLtd != null) {
-                    if(!ifPreviousLtdExists) {
-                        beginningBalance = +currentLtd.getBalance().getBeginningBalance() + currentLtd.getBalance().getActivity();
-                        currentLtd.getBalance().setBeginningBalance(0);
-                        currentLtd.getBalance().setActivity(beginningBalance + activity.getAmount());
-                        currentLtd.getBalance().setEndingBalance(beginningBalance + activity.getAmount());
-                    }else {
-                        currentLtd.getBalance().setBeginningBalance(beginningBalance);
-                        currentLtd.getBalance().setActivity(currentLtd.getBalance().getActivity() + activity.getAmount());
-                        currentLtd.getBalance().setEndingBalance(beginningBalance + currentLtd.getBalance().getActivity());
-                    }
-
+                        currentLtd.getBalance().setActivity(currentLtd.getBalance().getActivity().add(activity.getAmount()));
+                        currentLtd.getBalance().setEndingBalance(currentLtd.getBalance().getBeginningBalance().add(currentLtd.getBalance().getActivity()));
                     balances.add(currentLtd);
                 } else {
                     BaseLtd balance = BaseLtd.builder()
@@ -180,7 +247,9 @@ public class MetricLevelAggregator  extends BaseAggregator {
                     balances.add(currentLtd);
                 }
             } catch (Exception e) {
-                log.error("Failed to process metric: {}", metric, e);
+                log.error("Failed to process metric: {}", metric, StringUtil.getStackTrace(e));
+            }finally {
+                this.memcachedRepository.putInCache(Key.allMetricLevelLtdKeyList(tenantId), allMetricLevelInstruments);
             }
         }
 

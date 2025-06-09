@@ -3,6 +3,8 @@ package com.reserv.dataloader.batch.writer;
 import  com.fyntrac.common.entity.AccountingPeriod;
 import  com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.InstrumentAttribute;
+import com.fyntrac.common.entity.TransactionActivity;
+import com.fyntrac.common.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.StepExecution;
@@ -34,6 +36,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     private long runId;
     private AccountingPeriodService accountingPeriodService;
     private long batchId;
+    private CacheList<Records.TransactionActivityReplayRecord> transactionActivityReplayRecordCacheList;
 
     public InstrumentAttributeWriter(MongoItemWriter<InstrumentAttribute> delegate,
                                  TenantDataSourceProvider dataSourceProvider,
@@ -60,7 +63,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.batchId = jobParameters.getLong("batchId");
 
     }
-        @Override
+    @Override
     public void write(Chunk<? extends InstrumentAttribute> instrumentAttributes) throws Exception {
         String dataKey = Key.reclassMessageList(this.tenantId, this.runId);
         if(this.memcachedRepository.ifExists(dataKey)) {
@@ -69,7 +72,15 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
             this.reclassMessageRecords = new CacheList<Records.InstrumentAttributeReclassMessageRecord>();
         }
 
-        ReferenceData referenceData = this.memcachedRepository.getFromCache(this.tenantId, com.fyntrac.common.config.ReferenceData.class);
+            String replayDataKey = Key.replayMessageList(this.tenantId, this.runId);
+            if(this.memcachedRepository.ifExists(dataKey)) {
+                this.transactionActivityReplayRecordCacheList = this.memcachedRepository.getFromCache(dataKey, CacheList.class);
+            }else{
+                this.transactionActivityReplayRecordCacheList = new CacheList<Records.TransactionActivityReplayRecord>();
+            }
+
+
+            ReferenceData referenceData = this.memcachedRepository.getFromCache(this.tenantId, com.fyntrac.common.config.ReferenceData.class);
             List<InstrumentAttribute> combinedAttributes = new ArrayList<>(instrumentAttributes.getItems());
 
             if (this.tenantId != null && !this.tenantId.isEmpty()) {
@@ -92,12 +103,25 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 }
                 instrumentAttribute.setBatchId(batchId);
                 this.instrumentAttributeService.addIntoCache(this.tenantId, instrumentAttribute);
+                isReplayActivity(instrumentAttribute);
             }
             delegate.setTemplate(mongoTemplate);
         }
         Chunk<InstrumentAttribute> updatedChunk = this.setEndDate(batchId, combinedAttributes);
         this.memcachedRepository.putInCache(dataKey, reclassMessageRecords);
         delegate.write(updatedChunk);
+        this.memcachedRepository.putInCache(replayDataKey, this.transactionActivityReplayRecordCacheList);
+    }
+
+    private boolean isReplayActivity(InstrumentAttribute instrumentAttribute) {
+        int intEffectiveDate = DateUtil.dateInNumber(instrumentAttribute.getEffectiveDate());
+        boolean isReplayActiity = this.instrumentAttributeService.existsReplay(instrumentAttribute.getInstrumentId(), instrumentAttribute.getAttributeId(),  intEffectiveDate);
+        if(isReplayActiity) {
+            Records.TransactionActivityReplayRecord replayRecord = RecordFactory.createTransactionActivityReplayRecord(instrumentAttribute.getInstrumentId(), instrumentAttribute.getAttributeId(), intEffectiveDate);
+            this.transactionActivityReplayRecordCacheList.add(replayRecord);
+            return Boolean.TRUE;
+        }
+        return Boolean.FALSE;
     }
 
     private Chunk<InstrumentAttribute> setEndDate(long batchId , List<InstrumentAttribute> attributesList) {

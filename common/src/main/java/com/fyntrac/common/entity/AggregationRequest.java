@@ -19,4 +19,5 @@ public class AggregationRequest implements Serializable {
     private boolean isInprogress;
     private String tenantId;
     private AggregationRequestType requestType;
+    private int postingDate;
 }

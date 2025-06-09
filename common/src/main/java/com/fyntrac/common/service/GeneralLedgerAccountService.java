@@ -32,12 +32,12 @@ public class GeneralLedgerAccountService extends CacheBasedService<GeneralLedger
     }
 
     @Override
-    public void save(GeneralLedgerAccountBalanceStage generalLedgerAccountBalanceStage) {
+    public GeneralLedgerAccountBalanceStage save(GeneralLedgerAccountBalanceStage generalLedgerAccountBalanceStage) {
         if(this.tenantId == null) {
             this.dataService.getTenantId();
         }
 
-        this.dataService.save(generalLedgerAccountBalanceStage, tenantId);
+        return this.dataService.save(generalLedgerAccountBalanceStage, tenantId);
     }
 
     public void saveAll(Set<GeneralLedgerAccountBalanceStage> gleAccountsBalance) {

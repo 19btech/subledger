@@ -6,6 +6,7 @@ import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.model.utils.ExcelUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.formula.eval.NotImplementedException;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
@@ -36,7 +37,8 @@ public class ExcelModelProcessor {
                                     , Workbook workbook
                                     , List<Map<String, Object>> iTransactionData
                                     , List<Map<String, Object>> iMetricData
-                                    , List<Map<String, Object>> iInstrumentAttributeData) throws IOException {
+                                    , List<Map<String, Object>> iInstrumentAttributeData
+                                    , List<Map<String, Object>> iExecutionDate) throws IOException {
 
         List<Map<String, Object>> oTransactionData = new ArrayList<>(0);
         List<Map<String, Object>> oInstrumentAttributeData = new ArrayList<>(0);
@@ -47,11 +49,48 @@ public class ExcelModelProcessor {
             writeSheetData(workbook, "i_transaction", iTransactionData);
             writeSheetData(workbook, "i_metric", iMetricData);
             writeSheetData(workbook, "i_instrumentattribute", iInstrumentAttributeData);
-
+            writeSheetData(workbook, "i_executiondate", iExecutionDate);
             // Evaluate formulas (if applicable)
             FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
-            evaluator.evaluateAll();
+            try {
+                // First try bulk evaluation for better performance
+                evaluator.evaluateAll();
+            } catch (NotImplementedException bulkEvalException) {
+                // If bulk evaluation fails, fall back to cell-by-cell evaluation
+                System.err.println("Bulk evaluation failed, falling back to cell-by-cell evaluation");
 
+                for (Sheet sheet : workbook) {
+                    for (Row row : sheet) {
+                        for (Cell cell : row) {
+                            if (cell.getCellType() == CellType.FORMULA) {
+                                try {
+                                    // Evaluate individual cell
+                                    evaluator.evaluateFormulaCell(cell);
+                                } catch (NotImplementedException e) {
+                                    // Handle unsupported formula
+                                    log.error("Unsupported formula in %s!%s: %s%n",
+                                            sheet.getSheetName(),
+                                            cell.getAddress(),
+                                            cell.getCellFormula());
+
+                                    // Set cell to #N/A error value
+                                    cell.setCellErrorValue(FormulaError.NA.getCode());
+                                } catch (Exception e) {
+                                    // Handle other potential evaluation errors
+                                    log.error("Error evaluating formula in %s!%s: %s%n",
+                                            sheet.getSheetName(),
+                                            cell.getAddress(),
+                                            e.getMessage());
+                                    cell.setCellErrorValue(FormulaError.VALUE.getCode());
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Handle other workbook-level evaluation errors
+                System.err.println("Error during workbook evaluation: " + e.getMessage());
+            }
             // Read Output Data
             oTransactionData = readSheetData(workbook, "o_transaction");
             oInstrumentAttributeData = readSheetData(workbook, "o_instrumentattribute");

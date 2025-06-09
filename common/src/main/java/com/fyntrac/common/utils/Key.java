@@ -61,4 +61,6 @@ public class Key {
     public static String generalLedgerAccountTypesKey(String tenantId) {
         return tenantId + "GLE_ACC_TYPE";
     }
+
+    public static String transactionsKey(String tenantId){return String.format("%s-%s", tenantId, "TRANSACTIONS");}
 }

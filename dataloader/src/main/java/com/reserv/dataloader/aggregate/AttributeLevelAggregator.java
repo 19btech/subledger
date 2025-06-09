@@ -1,16 +1,30 @@
 package com.reserv.dataloader.aggregate;
 
+import com.fyntrac.common.config.TenantContextHolder;
+import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.*;
 import com.fyntrac.common.key.AttributeLevelLtdKey;
 import com.fyntrac.common.repository.MemcachedRepository;
+import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.service.ExecutionStateService;
+import com.fyntrac.common.service.SettingsService;
+import com.fyntrac.common.service.aggregation.AggregationService;
+import com.fyntrac.common.service.aggregation.AttributeLevelAggregationService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
-import com.fyntrac.common.service.SettingsService;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.GroupOperation;
+import org.springframework.data.mongodb.core.aggregation.MatchOperation;
+import org.springframework.data.mongodb.core.aggregation.ProjectionOperation;
+import org.springframework.data.mongodb.core.query.Criteria;
 
+import java.math.BigDecimal;
 import java.util.*;
+
+import static org.springframework.data.mongodb.core.aggregation.Aggregation.*;
+
 /**
  * Attribute Level Aggregator
  */
@@ -18,7 +32,11 @@ import java.util.*;
 public class AttributeLevelAggregator extends BaseAggregator {
 
     private Set<String> allAttributeLevelInstruments;
-    private Set<Integer> newPeriods;
+    private Set<Integer> newPostingDates;
+    private final ExecutionState executionState;
+    private Integer lastActivityPostingDate;
+    private Integer activityPostingDate;
+    private final AttributeLevelAggregationService attributeLevelAggregationService;
 
     /**
      * Constructor
@@ -31,16 +49,43 @@ public class AttributeLevelAggregator extends BaseAggregator {
             , DataService<AttributeLevelLtd> dataService
             , SettingsService settingsService
                                     , ExecutionStateService executionStateService
+                                    , AccountingPeriodService accountingPeriodService
+                                    , AggregationService aggregationService
+                                    , AttributeLevelAggregationService attributeLevelAggregationService
             , String tenantId) {
         super(memcachedRepository
                 ,dataService
                 ,settingsService
                 , executionStateService
+                , accountingPeriodService
+                , aggregationService
                 , tenantId);
-        newPeriods = new HashSet<>(0);
+        newPostingDates = new HashSet<>(0);
+        this.attributeLevelAggregationService = attributeLevelAggregationService;
 
         try {
-            allAttributeLevelInstruments = this.memcachedRepository.getFromCache(Key.allAttributeLevelLtdKeyList(tenantId), Set.class);
+            this.executionState = this.getExecutionState();
+
+            lastActivityPostingDate = executionState.getLastActivityPostingDate();
+            activityPostingDate = executionState.getActivityPostingDate();
+
+            if(executionState.getExecutionDate() != null && executionState.getExecutionDate() > executionState.getActivityPostingDate()) {
+                lastActivityPostingDate = executionState.getActivityPostingDate();
+                activityPostingDate = executionState.getExecutionDate();
+
+                if(executionState.getLastExecutionDate() != null && executionState.getLastExecutionDate() > lastActivityPostingDate) {
+                    lastActivityPostingDate = executionState.getLastExecutionDate();
+                }
+            }else if (executionState.getExecutionDate() != null && executionState.getExecutionDate() < executionState.getActivityPostingDate()) {
+                lastActivityPostingDate = executionState.getExecutionDate();
+                activityPostingDate = executionState.getActivityPostingDate();
+
+            }else if(executionState.getLastExecutionDate() !=null && executionState.getLastExecutionDate() > executionState.getLastActivityPostingDate()) {
+                lastActivityPostingDate = executionState.getLastExecutionDate();
+            }
+
+            List<Records.GroupedMetricsByInstrumentAttribute> metrics = getGroupedDistinctMetricNames(lastActivityPostingDate);
+            allAttributeLevelInstruments = this.getDistinctMetricNamesByPostingDate(metrics);
             if(allAttributeLevelInstruments == null) {
                 allAttributeLevelInstruments = new HashSet<>(0);
             }
@@ -51,6 +96,34 @@ public class AttributeLevelAggregator extends BaseAggregator {
 
     }
 
+    /**
+     * getDistinctMetricNamesByPostingDate from previous postings
+     * @param metrics
+     * @return
+     */
+    public Set<String> getDistinctMetricNamesByPostingDate(List<Records.GroupedMetricsByInstrumentAttribute> metrics) {
+        Set<String> metricSet = new HashSet<>(0);
+        for(Records.GroupedMetricsByInstrumentAttribute metric : metrics) {
+            AttributeLevelLtdKey previousPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.metricName(), metric.instrumentId(), metric.attributeId(), lastActivityPostingDate);
+            metricSet.add(previousPeriodKey.getKey());
+
+        }
+        return metricSet;
+    }
+
+    public List<Records.GroupedMetricsByInstrumentAttribute> getGroupedDistinctMetricNames(int postingDate) {
+        MatchOperation matchStage = match(Criteria.where("postingDate").is(postingDate));
+
+        GroupOperation groupStage = group("instrumentId", "attributeId", "metricName")
+                .first("instrumentId").as("instrumentId")
+                .first("attributeId").as("attributeId")
+                .first("metricName").as("metricName");
+        ProjectionOperation projectStage = project("instrumentId", "attributeId", "metricName");
+
+        Aggregation aggregation = newAggregation(matchStage, groupStage, projectStage);
+
+        return this.dataService.getMongoTemplate().aggregate(aggregation, "AttributeLevelLtd", Records.GroupedMetricsByInstrumentAttribute.class).getMappedResults();
+    }
     /**
      * Aggregate Transaction Activities
      * @param activities
@@ -67,7 +140,7 @@ public class AttributeLevelAggregator extends BaseAggregator {
         }
 
         try {
-            this.generateCarryOverAggregateEntries();
+           // this.generateCarryOverAggregateEntries();
         } catch (Exception e) {
             log.error("Failed to generate carry over aggregate entries", e);
         }
@@ -85,19 +158,28 @@ public class AttributeLevelAggregator extends BaseAggregator {
 
         Iterator<String> instrumentIteratror = allAttributeLevelInstruments.iterator();
         Set<AttributeLevelLtd> carryOvers = new HashSet<>(0);
+        Map<Integer, Integer> accountingPeriodMap = new HashMap<>(0);
+
+        for(Integer postingDate : newPostingDates) {
+            Date pDate = DateUtil.convertToDateFromYYYYMMDD(postingDate);
+            int aPeriod = DateUtil.getAccountingPeriodId(pDate);
+            AccountingPeriod accountingPeriod = this.accountingPeriodService.getAccountingPeriod(aPeriod, this.tenantId);
+            accountingPeriodMap.put(postingDate, accountingPeriod.getPeriodId());
+        }
         while(instrumentIteratror.hasNext()) {
             String attributeLevelInstrumentLtdKey = instrumentIteratror.next();
             try {
                 if (this.memcachedRepository.ifExists(attributeLevelInstrumentLtdKey)) {
                     AttributeLevelLtd attributeLevelLtd = this.memcachedRepository.getFromCache(attributeLevelInstrumentLtdKey, AttributeLevelLtd.class);
-                    for (Integer activityAccountingPeriodId : newPeriods) {
-                        if (attributeLevelLtd != null && activityAccountingPeriodId > attributeLevelLtd.getAccountingPeriodId()) {
-                            double beginningBalance = attributeLevelLtd.getBalance().getBeginningBalance() + attributeLevelLtd.getBalance().getActivity();
+                    for (Integer postingDate : newPostingDates) {
+                        if (attributeLevelLtd != null && postingDate > attributeLevelLtd.getPostingDate()) {
+                            BigDecimal beginningBalance = attributeLevelLtd.getBalance().getBeginningBalance().add(attributeLevelLtd.getBalance().getActivity());
                             BaseLtd balance = BaseLtd.builder()
                                     .beginningBalance(beginningBalance)
-                                    .activity(0L).build();
+                                    .activity(BigDecimal.valueOf(0L)).build();
                             AttributeLevelLtd currentLtd = AttributeLevelLtd.builder()
-                                    .accountingPeriodId(activityAccountingPeriodId)
+                                    .postingDate(postingDate)
+                                    .accountingPeriodId(accountingPeriodMap.get(postingDate))
                                     .instrumentId(attributeLevelLtd.getInstrumentId())
                                     .attributeId(attributeLevelLtd.getAttributeId())
                                     .metricName(attributeLevelLtd.getMetricName())
@@ -105,7 +187,7 @@ public class AttributeLevelAggregator extends BaseAggregator {
                             AttributeLevelLtdKey currentPeriodLtdKey = new AttributeLevelLtdKey(this.tenantId,
                                     attributeLevelLtd.getMetricName().toUpperCase(),
                                     attributeLevelLtd.getInstrumentId(),
-                                    attributeLevelLtd.getAttributeId(), activityAccountingPeriodId);
+                                    attributeLevelLtd.getAttributeId(), postingDate);
                             this.memcachedRepository.putInCache(currentPeriodLtdKey.getKey(), currentLtd);
                             carryOvers.add(currentLtd);
                             this.memcachedRepository.delete(attributeLevelInstrumentLtdKey);
@@ -134,39 +216,34 @@ public class AttributeLevelAggregator extends BaseAggregator {
     public void aggregate(TransactionActivity activity) {
         Set<AttributeLevelLtd> balances = new HashSet<>(0);
 
-        List<String> metrics = this.getMetrics(activity);
-        ExecutionState executionState = this.getExecutionState();
-        if(executionState == null || (metrics == null || metrics.isEmpty())) {
+        if(executionState == null || activity == null) {
             return;
         }
+        List<String> metrics = this.getMetrics(activity);
 
-
+        if(metrics == null || metrics.isEmpty()) {
+            TenantContextHolder.setTenant(super.tenantId);
+            this.aggregationService.loadIntoCache();
+            metrics = this.getMetrics(activity);
+        }
+        newPostingDates.add(activity.getPostingDate());
         for(String metric : metrics) {
 
             try {
+
                 AttributeLevelLtdKey previousPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), executionState.getLastActivityPostingDate());
                 AttributeLevelLtdKey currentPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), executionState.getActivityPostingDate());
 
-                AttributeLevelLtd currentLtd = this.memcachedRepository.getFromCache(currentPeriodKey.getKey(), AttributeLevelLtd.class);
-                AttributeLevelLtd previousLtd = this.memcachedRepository.getFromCache(previousPeriodKey.getKey(), AttributeLevelLtd.class);
-                double beginningBalance = 0.0d;
-                boolean ifPreviousLtdExists = Boolean.FALSE;
+                AttributeLevelLtd currentLtd = this.attributeLevelAggregationService.getBalance(this.tenantId, activity.getInstrumentId(), activity.getAttributeId(), metric.toUpperCase(), activityPostingDate);
+                AttributeLevelLtd previousLtd = this.attributeLevelAggregationService.getBalance(this.tenantId, activity.getInstrumentId(), activity.getAttributeId(), metric.toUpperCase(), lastActivityPostingDate);
+                BigDecimal beginningBalance = BigDecimal.valueOf(0L);
                 if (previousLtd != null) {
                     beginningBalance = previousLtd.getBalance().getEndingBalance();
-                    ifPreviousLtdExists = Boolean.TRUE;
                 }
 
                 if (currentLtd != null) {
-                    if(!ifPreviousLtdExists) {
-                        beginningBalance = +currentLtd.getBalance().getBeginningBalance() + currentLtd.getBalance().getActivity();
-                        currentLtd.getBalance().setBeginningBalance(0);
-                        currentLtd.getBalance().setActivity(beginningBalance + activity.getAmount());
-                        currentLtd.getBalance().setEndingBalance(beginningBalance + activity.getAmount());
-                    } else {
-                        currentLtd.getBalance().setBeginningBalance(beginningBalance);
-                        currentLtd.getBalance().setActivity(currentLtd.getBalance().getActivity() + activity.getAmount());
-                        currentLtd.getBalance().setEndingBalance(beginningBalance + currentLtd.getBalance().getActivity());
-                    }
+                        currentLtd.getBalance().setActivity(currentLtd.getBalance().getActivity().add(activity.getAmount()));
+                        currentLtd.getBalance().setEndingBalance(currentLtd.getBalance().getBeginningBalance().add(currentLtd.getBalance().getActivity()));
                     balances.add(currentLtd);
                 } else {
                     BaseLtd balance = BaseLtd.builder()
@@ -188,6 +265,8 @@ public class AttributeLevelAggregator extends BaseAggregator {
                 }
             } catch (Exception e) {
                 log.error("Failed to process metric: {}", metric, e);
+            }{
+                this.memcachedRepository.putInCache(Key.allAttributeLevelLtdKeyList(tenantId), allAttributeLevelInstruments);
             }
         }
 

@@ -7,7 +7,7 @@ CONTAINER_NAME="mongodb"
 DB_NAME="TOne"
 
 # List of collections to drop
-COLLECTIONS=("InstrumentActivityState" "ExecutionState" "Models" "ModelFiles" "GeneralLedgerEntery" "GeneralLedgerAccountBalance" "Batch" "sequences" "GeneralLedgerAccountBalanceStage" "GeneralLedgerEnteryStage" "ReclassValues" "MetricLevelLtd" "AttributeLevelLtd" "InstrumentLevelLtd " "InstrumentAttribute" "TransactionActivity")
+COLLECTIONS=("InstrumentActivityReplayState" "InstrumentActivityState" "ExecutionState" "GeneralLedgerEntery" "GeneralLedgerAccountBalance" "Batch" "sequences" "GeneralLedgerAccountBalanceStage" "GeneralLedgerEnteryStage" "ReclassValues" "MetricLevelLtd" "AttributeLevelLtd" "InstrumentLevelLtd " "InstrumentAttribute" "TransactionActivity")
 
 # MongoDB username and password
 USERNAME="root"

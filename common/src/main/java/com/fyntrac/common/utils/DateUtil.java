@@ -1561,6 +1561,11 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
         return Integer.parseInt(year + formattedMonth);
     }
 
+    public static int getAccountingPeriodId(Integer date) {
+        return getAccountingPeriodId(convertToDateFromYYYYMMDD(date));
+    }
+
+
     public static Date parseDate(String dateString, java.time.format.DateTimeFormatter formatter) throws Throwable{
         try {
             // Step 1: Parse the string into a LocalDate
@@ -1590,7 +1595,7 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
         int day = calendar.get(Calendar.DAY_OF_MONTH);
 
         // Combine year, month, and day into a single integer in the format YYYYMMDD
-        String dateNumber = String.format("%d%d%d", year,month,day);
+        String dateNumber = String.format("%d%02d%02d", year,month,day);
         return Integer.parseInt(dateNumber);
     }
 
@@ -1643,6 +1648,26 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
     public static LocalDateTime convertDateToLocalDateTime(Date date, ZoneId zone) {
         Instant instant = date.toInstant();
         return instant.atZone(zone).toLocalDateTime();
+    }
+
+    /**
+     * Converts a Date object from the default timezone to a Date object in UTC.
+     *
+     * @param date the input Date object to convert
+     * @return Date object in UTC, or null if the input date is null
+     */
+    public static Date convertToUtc(Date date) {
+        if (date == null) {
+            return null; // Return null if the input date is null
+        }
+        // Get the default timezone from the operating system
+        TimeZone defaultTimeZone = TimeZone.getDefault();
+        // Create a Calendar instance with the default timezone
+        Calendar calendar = Calendar.getInstance(defaultTimeZone);
+        calendar.setTime(date);
+        // Convert to UTC
+        calendar.setTimeZone(TimeZone.getTimeZone("UTC"));
+        return calendar.getTime();
     }
 }
 

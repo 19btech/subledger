@@ -1,0 +1,41 @@
+package com.reserv.dataloader.batch.processor;
+
+import com.fyntrac.common.entity.AttributeLevelLtd;
+import com.fyntrac.common.entity.BaseLtd;
+import com.fyntrac.common.entity.InstrumentLevelLtd;
+import com.fyntrac.common.utils.DateUtil;
+import org.springframework.batch.item.ItemProcessor;
+
+import java.math.BigDecimal;
+
+public class PostAggregationInstrumentLevelLtdProcessor implements ItemProcessor<InstrumentLevelLtd, InstrumentLevelLtd> {
+
+    private final Long executionDate;
+
+    public PostAggregationInstrumentLevelLtdProcessor(Long executionDate) {
+        this.executionDate = executionDate;
+    }
+
+    @Override
+    public InstrumentLevelLtd process(InstrumentLevelLtd instrumentLevelLtd) {
+        if (executionDate == null || executionDate == 0L) {
+            throw new IllegalArgumentException("Missing job parameter: executionDate");
+        }
+        final InstrumentLevelLtd ltd = new InstrumentLevelLtd();
+        final BigDecimal endingBalance = instrumentLevelLtd.getBalance().getEndingBalance();
+        final BaseLtd balance = BaseLtd.builder()
+                .beginningBalance(instrumentLevelLtd.getBalance().getEndingBalance())
+                .activity(BigDecimal.valueOf(0L)).endingBalance(endingBalance).build();
+
+        if (instrumentLevelLtd.getPostingDate() < executionDate) {
+            ltd.setPostingDate(executionDate.intValue());
+            ltd.setInstrumentId(instrumentLevelLtd.getInstrumentId());
+            ltd.setAccountingPeriodId(instrumentLevelLtd.getAccountingPeriodId());
+            ltd.setMetricName(instrumentLevelLtd.getMetricName());
+            ltd.setAccountingPeriodId(DateUtil.getAccountingPeriodId(executionDate.intValue()));
+            ltd.setBalance(balance);
+        }
+        return ltd;
+    }
+}
+

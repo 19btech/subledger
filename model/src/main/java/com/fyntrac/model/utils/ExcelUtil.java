@@ -3,15 +3,7 @@ package com.fyntrac.model.utils;
 import com.fyntrac.common.enums.AccountingRules;
 import com.fyntrac.common.exception.ExcelFormulaCellException;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellValue;
-import org.apache.poi.ss.usermodel.DataFormatter;
-import org.apache.poi.ss.usermodel.DateUtil;
-import org.apache.poi.ss.usermodel.FormulaEvaluator;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.ss.usermodel.*;
 import org.bson.types.Binary;
 
 import java.io.BufferedReader;
@@ -452,13 +444,33 @@ public class ExcelUtil {
         cleanSheet(sheet);
         // Step 4: Write JSON Data to Excel Based on Matching Headers
         int rowNum = sheet.getLastRowNum() + 1; // Append new rows
+// Assuming jsonData is a List<Map<String, Object>> and sheet is already defined
         for (Map<String, Object> row : jsonData) {
             Row excelRow = sheet.createRow(rowNum++);
             for (String column : row.keySet()) {
                 String col = column.toUpperCase();
                 if (excelColumnMap.containsKey(col)) {
                     int colIndex = excelColumnMap.get(col);
-                    excelRow.createCell(colIndex).setCellValue(row.get(col).toString());
+                    Object cellValue = row.get(col);
+
+                    if (cellValue instanceof Date) {
+                        // Set the cell value as a Date object
+                        excelRow.createCell(colIndex).setCellValue((Date) cellValue);
+                        // Optionally, you can set a date format for the cell
+                        CellStyle cellStyle = sheet.getWorkbook().createCellStyle();
+                        DataFormat format = sheet.getWorkbook().createDataFormat();
+                        cellStyle.setDataFormat(format.getFormat("MM/dd/yyyy"));
+                        excelRow.getCell(colIndex).setCellStyle(cellStyle);
+                    } else if (cellValue instanceof Number) {
+                        // Set the cell value as a Number
+                        excelRow.createCell(colIndex).setCellValue(((Number) cellValue).doubleValue());
+                    }else if (cellValue == null) {
+                        // Handle null value
+                        excelRow.createCell(colIndex).setCellValue(""); // Set to empty string or use "N/A"
+                    } else {
+                        // Set other types of values as string
+                        excelRow.createCell(colIndex).setCellValue(cellValue.toString());
+                    }
                 }
             }
         }

@@ -10,6 +10,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
@@ -27,7 +28,7 @@ public class Records {
             Date transactionDate,
             String instrumentId,
             String transactionName,
-            double value,
+            BigDecimal value,
             String attributeId,
             int periodId,
             int originalPeriodId
@@ -69,7 +70,7 @@ public class Records {
         private static final long serialVersionUID = -4338320429519961695L;
     }
 
-    public record CommonMessageRecord(String tenantId, Date executionDate, String key)implements Serializable {
+    public record ModelExecutionMessageRecord(String tenantId, Integer executionDate, String key)implements Serializable {
         private static final long serialVersionUID = -1788629874681694218L;
     }
 
@@ -81,7 +82,7 @@ public class Records {
         private static final long serialVersionUID = 58415234907355427L;
     }
 
-    public record MetricRecord(String MetricName, String Instrumentid, String attributeId, int AccountingPeriod, double BeginningBalance, double Activity, double EndingBalance) implements Serializable {
+    public record MetricRecord(String MetricName, String Instrumentid, String attributeId, int AccountingPeriod, BigDecimal BeginningBalance, BigDecimal Activity, BigDecimal EndingBalance) implements Serializable {
         private static final long serialVersionUID = -1801701397561747928L;
     }
 
@@ -103,5 +104,28 @@ public class Records {
 
     public record TransactionActivityReplayRecord(String instrumentId, String attributeId, Integer replayDate) implements Serializable{
         private static final long serialVersionUID = 3735691512748555397L;
+    }
+
+    public record TransactionActivityReversalRecord(String instrumentId, String attributeId, String transactionType, int effectiveDate, BigDecimal totalAmount) implements Serializable{
+        private static final long serialVersionUID = -8661375155752282087L;
+    }
+
+    public record ExecutionDateRecord(Date executionDate, Date	lastExecutionDate, Date	replayDate) implements Serializable{
+        private static final long serialVersionUID = -8940702485412412978L;
+    }
+
+    public record ExecuteAggregationMessageRecord(String tenantId, String aggregationKey, Long aggregationDate) {
+        private static final long serialVersionUID = -588100000724731968L;
+    }
+
+    public record GroupedMetricsByInstrumentAttribute(String instrumentId,
+            String attributeId, // Assuming attributeId is String - adjust if needed
+            String metricName) {
+        private static final long serialVersionUID = 8087138613941001670L;
+    }
+
+    public record GroupedMetricsByInstrument(String instrumentId,
+                                                      String metricName) {
+        private static final long serialVersionUID = -7455631766826985863L;
     }
 }

@@ -24,11 +24,11 @@ public class CommonAggregationService {
         this.metricLevelAggregationService = metricLevelAggregationService;
     }
 
-    public void aggregate(Collection<TransactionActivity> activityCollection) {
+    public void aggregate(Collection<TransactionActivity> activityCollection, int previousPostingDate) {
 
-        this.attributeLevelAggregationService.aggregate(activityCollection);
-        this.instrumentLevelAggregationService.aggregate(activityCollection);
-        this.metricLevelAggregationService.aggregate(activityCollection);
+        this.attributeLevelAggregationService.aggregate(activityCollection, previousPostingDate);
+        this.instrumentLevelAggregationService.aggregate(activityCollection, previousPostingDate);
+        this.metricLevelAggregationService.aggregate(activityCollection, previousPostingDate);
 
     }
 }

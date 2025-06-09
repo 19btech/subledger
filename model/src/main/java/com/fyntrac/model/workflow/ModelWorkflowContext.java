@@ -2,6 +2,7 @@ package com.fyntrac.model.workflow;
 
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.AccountingPeriod;
+import com.fyntrac.common.entity.ExecutionState;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import lombok.Builder;
 import lombok.Data;
@@ -19,10 +20,12 @@ public class ModelWorkflowContext {
     private List<Map<String, Object>> iTransactions;
     private List<Map<String, Object>> iMetrics;
     private List<Map<String, Object>> iInstrumentAttributes;
+    private List<Map<String, Object>> iExecutionDate;
     Records.ModelRecord excelModel;
     private ModelExecutionType executionType;
     private Date executionDate;
     private String instrumentId;
     private String attributeId;
     private AccountingPeriod accountingPeriod;
+    private ExecutionState executionState;
 }

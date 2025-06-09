@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import com.fyntrac.common.dto.record.Records.AccountingPeriodCloseMessageRecord;
 import com.fyntrac.common.entity.Batch;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -56,9 +57,9 @@ public class GeneralLedgerCommonService {
         this.generalLedgerAccountBalanceService = generalLedgerAccountBalanceService;
     }
 
-    public Map<EntryType, SubledgerMapping> getSubledgerMapping(String tenantId, String transactionName, double amount) {
+    public Map<EntryType, SubledgerMapping> getSubledgerMapping(String tenantId, String transactionName, BigDecimal amount) {
 
-        Sign sign = (amount > 0 ? com.fyntrac.common.enums.Sign.POSITIVE :  com.fyntrac.common.enums.Sign.NEGATIVE);
+        Sign sign = (amount.compareTo(BigDecimal.ZERO) > 0 ? com.fyntrac.common.enums.Sign.POSITIVE :  com.fyntrac.common.enums.Sign.NEGATIVE);
 
 
         if (!memcachedRepository.ifExists(Key.allSubledgerMappingList(tenantId))) {
@@ -264,8 +265,8 @@ public class GeneralLedgerCommonService {
                                 .glAccountSubType(balance.getAccountSubtype())
                                 .glAccountType(accountType.getAccountType().name())
                                 .isReclass(0)
-                                .debitAmount(0.0d)
-                                .creditAmount(balance.getAmount() * -1)
+                                .debitAmount(BigDecimal.valueOf(0L))
+                                .creditAmount(balance.getAmount().negate())
                                 .attributes(attributes)
                                 .build();
 
@@ -296,7 +297,7 @@ public class GeneralLedgerCommonService {
                                 .glAccountType(accountType.getAccountType().name())
                                 .isReclass(1)
                                 .debitAmount(balance.getAmount())
-                                .creditAmount(0.0d)
+                                .creditAmount(BigDecimal.valueOf(0L))
                                 .attributes(attributes)
                                 .build();
 

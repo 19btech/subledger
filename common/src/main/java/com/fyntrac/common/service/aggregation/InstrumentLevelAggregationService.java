@@ -16,6 +16,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.Future;
 
@@ -40,13 +41,31 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
      * @param instrumentLevelLtd
      */
     @Override
-    public void save(InstrumentLevelLtd instrumentLevelLtd) {
+    public InstrumentLevelLtd save(InstrumentLevelLtd instrumentLevelLtd) {
         this.dataService.save(instrumentLevelLtd);
-        String key = this.dataService.getTenantId() + instrumentLevelLtd.hashCode();
-        this.memcachedRepository.putInCache(key, instrumentLevelLtd);
 
+        String key = getKey(this.dataService.getTenantId()
+                , instrumentLevelLtd.getPostingDate()
+                , instrumentLevelLtd.getInstrumentId()
+                , instrumentLevelLtd.getMetricName());
+
+        this.memcachedRepository.putInCache(key, instrumentLevelLtd);
+        return instrumentLevelLtd;
     }
 
+    public Collection<InstrumentLevelLtd> save(List<InstrumentLevelLtd> balances) {
+        Collection<InstrumentLevelLtd> ltdBalances = this.dataService.saveAll(balances, InstrumentLevelLtd.class);
+
+        for(InstrumentLevelLtd instrumentLevelLtd : ltdBalances) {
+            String key = getKey(this.dataService.getTenantId()
+                    , instrumentLevelLtd.getPostingDate()
+                    , instrumentLevelLtd.getInstrumentId()
+                    , instrumentLevelLtd.getMetricName());
+            this.memcachedRepository.putInCache(key, instrumentLevelLtd);
+        }
+
+        return ltdBalances;
+    }
     /**
      * fetch all data
      * @return
@@ -115,20 +134,37 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
      *
      * @param instrumentId      The ID of the instrument.
      * @param metric            The metric name.
-     * @param accountingPeriodId The accounting period ID.
+     * @param postingDate The accounting posting date.
      * @return An instance of {@link InstrumentLevelLtd} containing the balance details. Returns {@code null} if not found.
      */
-    public InstrumentLevelLtd getBalance(String instrumentId, String metric, int accountingPeriodId) {
+    public InstrumentLevelLtd getBalance(String instrumentId, String metric, int postingDate) {
         String tenantId = dataService.getTenantId();
-        String key = getKey(tenantId, accountingPeriodId, instrumentId, metric);
+        return this.getBalance(tenantId, instrumentId, metric, postingDate);
+    }
+
+    /**
+     * Retrieves the balance for a specific instrument, attribute, metric, and accounting period.
+     * <p>
+     * First, it attempts to fetch the balance from Memcached. If not found, it queries MongoDB,
+     * caches the result, and then returns the retrieved balance.
+     * </p>
+     *
+     * @param tenantId          Tenant ID
+     * @param instrumentId      The ID of the instrument.
+     * @param metric            The metric name.
+     * @param postingDate The accounting posting date.
+     * @return An instance of {@link InstrumentLevelLtd} containing the balance details. Returns {@code null} if not found.
+     */
+    public InstrumentLevelLtd getBalance(String tenantId, String instrumentId, String metric, int postingDate) {
+        InstrumentLevelLtdKey key = new InstrumentLevelLtdKey(tenantId, metric, instrumentId, postingDate);
         log.info("Fetching balance for Instrument: {},  Metric: {}, Period: {}, Tenant: {}",
-                instrumentId, metric, accountingPeriodId, tenantId);
+                instrumentId, metric, postingDate, tenantId);
 
         try {
             // Check cache first
-            if (memcachedRepository.ifExists(key)) {
+            if (memcachedRepository.ifExists(key.getKey())) {
                 log.debug("Cache hit for key: {}", key);
-                return memcachedRepository.getFromCache(key, InstrumentLevelLtd.class);
+                return memcachedRepository.getFromCache(key.getKey(), InstrumentLevelLtd.class);
             } else {
                 log.debug("Cache miss for key: {}. Fetching from MongoDB...", key);
             }
@@ -139,13 +175,13 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
         // Construct MongoDB query
         Query query = new Query();
         query.addCriteria(Criteria.where("instrumentId").is(instrumentId)
-                .and("accountingPeriodId").is(accountingPeriodId)
+                .and("postingDate").is(postingDate)
                 .and("metricName").is(metric));
 
         // Fetch from MongoDB
         InstrumentLevelLtd ltd = null;
         try {
-            ltd = dataService.findOne(query, InstrumentLevelLtd.class);
+            ltd = dataService.findOne(query, tenantId, InstrumentLevelLtd.class);
             if (ltd != null) {
                 log.info("Successfully retrieved balance from MongoDB for key: {}", key);
             } else {
@@ -153,18 +189,19 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
             }
         } catch (DataAccessException e) {
             log.error("MongoDB query failed for Instrument: {}, Metric: {}, Period: {}",
-                    instrumentId, metric, accountingPeriodId, e);
+                    instrumentId, metric, postingDate, e);
             return null; // Return null to indicate data retrieval failure
         }
 
-        // Cache the fetched result
-        try {
-            memcachedRepository.putInCache(key, ltd, cacheTimeOut);
-            log.debug("Cached balance for key: {} with timeout: {} seconds", key, cacheTimeOut);
-        } catch (Exception e) {
-            log.error("Failed to cache data for key: {}", key, e);
+        if(ltd != null) {
+            // Cache the fetched result
+            try {
+                memcachedRepository.putInCache(key.getKey(), ltd, cacheTimeOut);
+                log.debug("Cached balance for key: {} with timeout: {} seconds", key, cacheTimeOut);
+            } catch (Exception e) {
+                log.error("Failed to cache data for key: {}", key, e);
+            }
         }
-
         return ltd;
     }
 
@@ -178,47 +215,45 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
      * @param activity The transaction activity to process.
      * @return A list of {@link InstrumentLevelLtd} records after aggregation.
      */
-    public List<InstrumentLevelLtd> aggregate(TransactionActivity activity) {
+    public Collection<InstrumentLevelLtd> aggregate(TransactionActivity activity, int postingDate) {
         log.info("Starting aggregation for transaction: {}", activity.getTransactionName());
 
         List<Aggregation> metrics;
         try {
-            metrics = this.aggregationService.getMetrics(activity.getTransactionName());
+            metrics = this.aggregationService.getMetrics(activity.getTransactionName().toUpperCase());
         } catch (Exception e) {
             log.error("Failed to fetch metrics for transaction: {}", activity.getTransactionName(), e);
             return new ArrayList<>();
         }
 
         List<InstrumentLevelLtd> aggregates = new ArrayList<>();
-        metrics.forEach(aggregation -> {
+        for (Aggregation aggregation : metrics) {
             boolean currentPeriodLtdFound = true;
             String key = getKey(this.dataService.getTenantId(), activity.getPeriodId(), activity.getInstrumentId(), aggregation.getMetricName());
 
             InstrumentLevelLtd ltd;
             try {
-                ltd = this.getBalance(activity.getInstrumentId(), aggregation.getMetricName(), activity.getPeriodId());
+                ltd = this.getBalance(activity.getInstrumentId(), aggregation.getMetricName(), activity.getPostingDate());
 
                 if (ltd == null) {
                     log.warn("No balance found for current period. Fetching from previous period.");
-                    ltd = this.getBalance(activity.getInstrumentId(), aggregation.getMetricName(), activity.getAccountingPeriod().getPreviousAccountingPeriodId());
+                    ltd = this.getBalance(activity.getInstrumentId(), aggregation.getMetricName(), postingDate);
                     currentPeriodLtdFound = false;
                 }
             } catch (Exception e) {
                 log.error("Error retrieving balance for Instrument: {}, Attribute: {}, Metric: {}, Period: {}",
                         activity.getInstrumentId(), activity.getAttributeId(), aggregation.getMetricName(), activity.getPeriodId(), e);
-                return;
+                continue; // Use continue to skip to the next iteration
             }
 
-            double activityAmount = ltd.getBalance().getActivity() + activity.getAmount();
-            double endingBalance = activityAmount + ltd.getBalance().getBeginningBalance();
+            BigDecimal activityAmount = ltd.getBalance().getActivity().add(activity.getAmount());
+            BigDecimal endingBalance = ltd.getBalance().getBeginningBalance().add(activityAmount);
 
             if (currentPeriodLtdFound) {
                 // Update existing balance
                 try {
                     ltd.getBalance().setActivity(activityAmount);
                     ltd.getBalance().setEndingBalance(endingBalance);
-                    dataService.save(ltd);
-                    memcachedRepository.putInCache(key, ltd);
                     log.debug("Updated balance for key: {} with new activity: {} and ending balance: {}", key, activityAmount, endingBalance);
                     aggregates.add(ltd);
                 } catch (DataAccessException e) {
@@ -226,9 +261,9 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
                 }
             } else {
                 // Create a new record for current period
-                double beginningBalance = ltd.getBalance().getBeginningBalance();
+                BigDecimal beginningBalance = ltd.getBalance().getEndingBalance();
                 activityAmount = activity.getAmount();
-                endingBalance = beginningBalance + activityAmount;
+                endingBalance = beginningBalance.add(activityAmount);
 
                 BaseLtd balance = BaseLtd.builder()
                         .endingBalance(endingBalance)
@@ -240,22 +275,22 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
                         .accountingPeriodId(activity.getPeriodId())
                         .instrumentId(activity.getInstrumentId())
                         .metricName(aggregation.getMetricName())
+                        .postingDate(activity.getPostingDate())
                         .balance(balance)
                         .build();
 
                 try {
-                    dataService.save(instrumentLevelLtd);
-                    memcachedRepository.putInCache(key, instrumentLevelLtd);
                     log.debug("Created new balance for key: {} with beginning balance: {} and ending balance: {}", key, beginningBalance, endingBalance);
                     aggregates.add(instrumentLevelLtd);
                 } catch (DataAccessException e) {
                     log.error("Failed to save new balance for key: {}", key, e);
                 }
             }
-        });
+        }
 
         log.info("Aggregation completed for transaction: {}", activity.getTransactionName());
-        return aggregates;
+        return this.save(aggregates);
+
     }
 
     /**
@@ -264,13 +299,13 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
      * @param activities A list of transaction activities.
      * @return A list of {@link InstrumentLevelLtd} records after aggregation.
      */
-    public List<InstrumentLevelLtd> aggregate(Collection<TransactionActivity> activities) {
+    public List<InstrumentLevelLtd> aggregate(Collection<TransactionActivity> activities, int previousPostingDate) {
         log.info("Starting batch aggregation for {} transactions", activities.size());
 
         List<InstrumentLevelLtd> aggregates = new ArrayList<>();
         for(TransactionActivity transactionActivity : activities) {
             try {
-                aggregates.addAll(this.aggregate(transactionActivity));
+                aggregates.addAll(this.aggregate(transactionActivity, previousPostingDate));
             } catch (Exception e) {
                 log.error("Error processing transaction: {}", transactionActivity.getTransactionName(), e);
             }
@@ -280,12 +315,12 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
         return aggregates;
     }
 
-    public List<InstrumentLevelLtd> getBalance(String instrumentId, List<String> metrics, int accountingPeriodId) {
+    public List<InstrumentLevelLtd> getBalance(String instrumentId, List<String> metrics, int postingDate) {
         Query query = new Query();
         List<String> metricList = StringUtil.convertUpperCase(metrics);
         // Add criteria to filter by transactionName (list) and transactionDate
         query.addCriteria(Criteria.where("instrumentId").is(instrumentId.toUpperCase())
-                .and("accountingPeriodId").is(accountingPeriodId)
+                .and("postingDate").is(postingDate)
                 .and("metricName").in(metricList));
 
         // Execute the query
@@ -300,8 +335,15 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
      * @param metricName         The metric name.
      * @return A unique cache key for the given parameters.
      */
+
     private String getKey(String tenantId, int accountingPeriodId, String instrumentId, String metricName) {
-        return String.format("%s-%d-%s-%s", tenantId, accountingPeriodId, instrumentId, metricName);
+        String key = String.format("%s-%d-%s-%s",
+                tenantId,
+                accountingPeriodId,
+                instrumentId.toUpperCase(),
+                metricName.toUpperCase());
+        String cleanedKey = StringUtil.removeSpaces(key);
+        return StringUtil.generateSHA256Hash(cleanedKey);
     }
 }
 

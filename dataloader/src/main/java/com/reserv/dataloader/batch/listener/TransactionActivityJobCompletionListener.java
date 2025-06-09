@@ -3,12 +3,14 @@ package com.reserv.dataloader.batch.listener;
 import com.fyntrac.common.cache.collection.CacheList;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.ExecutionState;
-import com.fyntrac.common.service.ExecutionStateService;
+import com.fyntrac.common.service.*;
+import com.fyntrac.common.service.aggregation.AggregationService;
+import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
 import com.reserv.dataloader.pulsar.producer.GeneralLedgerMessageProducer;
 import com.fyntrac.common.repository.MemcachedRepository;
-import com.fyntrac.common.service.DataService;
-import com.fyntrac.common.service.TransactionActivityService;
+import com.reserv.dataloader.service.AggregationExecutionService;
+import com.reserv.dataloader.service.CacheService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.*;
 import org.springframework.batch.core.launch.JobLauncher;
@@ -19,6 +21,7 @@ import com.fyntrac.common.dto.record.RecordFactory;
 
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 
 @Component
 @Slf4j
@@ -56,9 +59,37 @@ public class TransactionActivityJobCompletionListener implements JobExecutionLis
 
     @Autowired
     GeneralLedgerMessageProducer generalLedgerMessageProducer;
+
+    @Autowired
+    AggregationExecutionService aggregationExecutionService;
+    @Autowired
+    AccountingPeriodService accountingPeriodService;
+
+    @Autowired
+    AggregationService aggregationService;
+
+    @Autowired
+    CacheService cacheService;
+
+    @Autowired
+    TransactionService transactionService;
+
     @Override
     public void beforeJob(JobExecution jobExecution) {
         // No-op
+        this.memcachedRepository.flush(0);
+
+        try {
+            this.accountingPeriodService.loadIntoCache();
+            this.aggregationService.loadIntoCache();
+            this.cacheService.loadIntoCache();
+            this.transactionService.loadIntoCache();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            // Optional: log or handle interrupt as needed
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -86,19 +117,34 @@ public class TransactionActivityJobCompletionListener implements JobExecutionLis
                     .append(jobExecution.getStepExecutions().toString());
 
             if (jobExecution.getStatus() == BatchStatus.COMPLETED) {
-                log.info(jobExecutionMessage.toString());
-                Long runId = System.currentTimeMillis();
-                JobParameters jobParameters = new JobParametersBuilder()
-                        .addLong("run.id", runId)
-                        .addString("aggregation-key", com.fyntrac.common.utils.Key.aggregationKey(tenantId, key))
-                        .toJobParameters();
+
+
                 try {
-                    updateExecutionState(tenantId);
-                    jobLauncher.run(attributeAggregationJob, jobParameters);
-                    jobLauncher.run(instrumentAggregationJob, jobParameters);
-                    jobLauncher.run(metricAggregationJob, jobParameters);
+                    log.info(jobExecutionMessage.toString());
+
+                    ExecutionState executionState =  updateExecutionState(tenantId);
+
+                    assert executionState != null;
+
+                    String aggregationKey = com.fyntrac.common.utils.Key.aggregationKey(tenantId, key);
+                    Integer executionDate = executionState.getActivityPostingDate();
+                    Records.ExecuteAggregationMessageRecord aggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenantId, aggregationKey, (long) executionDate);
+
+                    aggregationExecutionService.execute(aggregationMessageRecord);
+
+                    Long runId = System.currentTimeMillis();
+                    JobParameters jobParameters = new JobParametersBuilder()
+                            .addLong("run.id", runId)
+                            .addString("aggregation-key", com.fyntrac.common.utils.Key.aggregationKey(tenantId, key))
+                            .addLong("execution-date", aggregationMessageRecord.aggregationDate())
+                            .toJobParameters();
+
+//                    jobLauncher.run(attributeAggregationJob, jobParameters);
+//                    jobLauncher.run(instrumentAggregationJob, jobParameters);
+//                    jobLauncher.run(metricAggregationJob, jobParameters);
                     jobLauncher.run(updateInstrumentActivitySateJob, jobParameters);
                 } catch (Exception e) {
+                    this.memcachedRepository.flush(5);
                     throw new RuntimeException(e);
                 }finally {
                     Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenantId, com.fyntrac.common.utils.Key.aggregationKey(tenantId, key));
@@ -128,43 +174,46 @@ public class TransactionActivityJobCompletionListener implements JobExecutionLis
         }
     }
 
-    private void updateExecutionState(String tenantId) {
+    private ExecutionState updateExecutionState(String tenantId) {
         // Attempt to update the last accounting period of transaction activity upload
         try {
-            Optional<ExecutionState> optionalExecutionState = this.executionStateService.getExecutionState();
+            // Retrieve the execution state directly (assuming it returns null if not found)
+            ExecutionState executionState = this.executionStateService.getExecutionState();
 
-            // Check if the execution state is present
-            if (optionalExecutionState.isPresent()) {
-                ExecutionState executionState = optionalExecutionState.get();
-
+            // Check if the execution state is not null
+            if (executionState != null) {
                 // Retrieve the latest activity posting date for the given tenant
                 int latestPostingDate = this.transactionActivityService.getLatestActivityPostingDate(tenantId);
 
                 // Update the activity posting date in the execution state
-                if(latestPostingDate > executionState.getActivityPostingDate()) {
+                if (latestPostingDate > executionState.getActivityPostingDate()) {
                     executionState.setLastActivityPostingDate(executionState.getActivityPostingDate());
                     executionState.setActivityPostingDate(latestPostingDate);
                     // Persist the updated execution state
-                    this.executionStateService.update(executionState);
+                    return this.executionStateService.update(executionState);
                 }
             } else {
                 // Retrieve the latest activity posting date for the given tenant
                 int latestPostingDate = this.transactionActivityService.getLatestActivityPostingDate(tenantId);
 
-                // Update the activity posting date in the execution state
-                ExecutionState executionState = ExecutionState.builder()
+                // Create a new execution state since none was found
+                ExecutionState executionStateNew = ExecutionState.builder()
                         .activityPostingDate(latestPostingDate)
                         .lastActivityPostingDate(0)
                         .build();
 
-                // Persist the updated execution state
-                this.executionStateService.update(executionState);
+                // Persist the new execution state
                 log.warn("No execution state found for updating the last transaction activity posting date.");
+                return this.executionStateService.update(executionStateNew);
             }
+            return executionState;
         } catch (NoSuchElementException e) {
             log.error("Execution state not found when trying to update the last transaction activity upload reporting period.", e);
         } catch (Exception e) {
             log.error("Failed to update settings with the last transaction activity upload reporting period for tenantId: {}", tenantId, e);
         }
+
+        return null;
     }
+
 }

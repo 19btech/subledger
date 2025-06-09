@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
@@ -21,8 +22,8 @@ public class ExecutionStateService extends CacheBasedService<ExecutionState>{
     }
 
     @Override
-    public void save(ExecutionState state) {
-
+    public ExecutionState save(ExecutionState state) {
+        return null;
     }
 
     public ExecutionState update(ExecutionState state) {
@@ -32,28 +33,27 @@ public class ExecutionStateService extends CacheBasedService<ExecutionState>{
         return executionState;
     }
 
-    public Optional<ExecutionState> getExecutionState() {
-        // Check cache first
-        ExecutionState cached = (ExecutionState) this.memcachedRepository.getFromCache(key);
-        if (cached != null) {
-            return Optional.of(cached);
-        }
-
-        // Not in cache - fetch from source
+    public ExecutionState getExecutionState() {
+        // Fetch all ExecutionStates
         Collection<ExecutionState> states = this.fetchAll();
-        Optional<ExecutionState> executionState = states.stream().findFirst();
-
-        // Cache if found
-        if (executionState.isPresent()) {
-            this.memcachedRepository.putInCache(key, executionState.get());
+        if (!states.isEmpty()) {
+            ExecutionState executionState = states.iterator().next(); // Get the first ExecutionState
+            this.memcachedRepository.putInCache(this.key, executionState); // Cache the retrieved ExecutionState
+            return executionState; // Return the retrieved ExecutionState
         }
-
-        return executionState;
+        return null;
     }
+
 
     @Override
     public Collection<ExecutionState> fetchAll() {
         return  this.dataService.fetchAllData(ExecutionState.class);
+    }
+
+    public ExecutionState fetchLatest() {
+        return this.dataService.fetchAllData(ExecutionState.class).stream()
+                .findFirst()
+                .orElseThrow(() -> new NoSuchElementException("No ExecutionState found"));
     }
 
     @Override

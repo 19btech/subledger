@@ -2,6 +2,7 @@ package com.fyntrac.model.consumer.message;
 
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.Records;
+import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.model.service.ModelExecutionService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -10,6 +11,8 @@ import org.apache.pulsar.client.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import java.util.Date;
 
 @Service
 @Slf4j
@@ -29,7 +32,7 @@ public class ModelExecutionConsumer {
 
 
     private PulsarClient client;
-    private Consumer<Records.CommonMessageRecord> consumer;
+    private Consumer<Records.ModelExecutionMessageRecord> consumer;
 
     @PostConstruct
     public void init() throws PulsarClientException {
@@ -39,7 +42,7 @@ public class ModelExecutionConsumer {
                 .build();
 
         // Step 2: Create a consumer
-        consumer = client.newConsumer(Schema.JSON(Records.CommonMessageRecord.class))
+        consumer = client.newConsumer(Schema.JSON(Records.ModelExecutionMessageRecord.class))
                 .topic(topic) // Replace with your topic name
                 .subscriptionName(subscription) // Replace with your subscription name
                 .subscriptionType(SubscriptionType.Shared) // Use Shared or Failover subscription
@@ -53,7 +56,7 @@ public class ModelExecutionConsumer {
         while (true) {
             try {
                 // Step 4: Receive the next message
-                Message<Records.CommonMessageRecord> msg = consumer.receive();
+                Message<Records.ModelExecutionMessageRecord> msg = consumer.receive();
 
                 // Step 5: Process the message
                 processMessage(msg);
@@ -63,13 +66,14 @@ public class ModelExecutionConsumer {
         }
     }
 
-    private void processMessage(Message<Records.CommonMessageRecord> msg) throws Throwable {
+    private void processMessage(Message<Records.ModelExecutionMessageRecord> msg) throws Throwable {
         try {
             // Step 6: Set tenant context
             TenantContextHolder.setTenant(msg.getValue().tenantId());
 
             // Step 7: Execute the model
-            modelExecutionService.executeModels(msg.getValue().executionDate(), msg.getValue());
+            Date executionDate = DateUtil.convertToDateFromYYYYMMDD(msg.getValue().executionDate());
+            modelExecutionService.executeModels(executionDate, msg.getValue());
 
             // Step 8: Log success
             log.info("Message processed successfully: {}", msg.getValue());

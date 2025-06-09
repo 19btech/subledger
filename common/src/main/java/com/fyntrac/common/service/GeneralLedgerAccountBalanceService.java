@@ -31,12 +31,12 @@ public class GeneralLedgerAccountBalanceService extends CacheBasedService<Genera
     }
 
     @Override
-    public void save(GeneralLedgerAccountBalance generalLedgerAccountBalance) {
+    public GeneralLedgerAccountBalance save(GeneralLedgerAccountBalance generalLedgerAccountBalance) {
         if(this.tenantId == null) {
             this.dataService.getTenantId();
         }
 
-        this.dataService.save(generalLedgerAccountBalance, tenantId);
+        return this.dataService.save(generalLedgerAccountBalance, tenantId);
     }
 
     public void saveAll(Set<GeneralLedgerAccountBalance> gleAccountsBalance) {

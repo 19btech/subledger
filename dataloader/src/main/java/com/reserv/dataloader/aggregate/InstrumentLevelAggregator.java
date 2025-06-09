@@ -1,21 +1,43 @@
 package com.reserv.dataloader.aggregate;
 
+import com.fyntrac.common.config.TenantContextHolder;
+import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.*;
+import com.fyntrac.common.key.AttributeLevelLtdKey;
 import com.fyntrac.common.key.InstrumentLevelLtdKey;
+import com.fyntrac.common.key.MetricLevelLtdKey;
 import com.fyntrac.common.repository.MemcachedRepository;
+import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.SettingsService;
+import com.fyntrac.common.service.aggregation.AggregationService;
+import com.fyntrac.common.service.aggregation.InstrumentLevelAggregationService;
+import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.GroupOperation;
+import org.springframework.data.mongodb.core.aggregation.MatchOperation;
+import org.springframework.data.mongodb.core.aggregation.ProjectionOperation;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 
+import java.math.BigDecimal;
 import java.util.*;
+
+import static org.springframework.data.mongodb.core.aggregation.Aggregation.*;
+import static org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation;
+
 @Slf4j
 public class InstrumentLevelAggregator extends BaseAggregator {
 
     private Set<String> allInstrumentLevelInstruments;
-    private Set<Integer> newPeriods;
-
+    private Set<Integer> newPostingDates;
+    private final ExecutionState executionState;
+    private Integer lastActivityPostingDate;
+    private Integer activityPostingDate;
+    private final InstrumentLevelAggregationService instrumentLevelAggregationService;
     /**
      * Constructor
      * @param memcachedRepository
@@ -27,25 +49,79 @@ public class InstrumentLevelAggregator extends BaseAggregator {
             , DataService<InstrumentLevelLtd> dataService
             , SettingsService settingsService
                                      , ExecutionStateService executionStateService
+                                     , AccountingPeriodService accountingPeriodService
+                                     , AggregationService aggregationService
+                                     , InstrumentLevelAggregationService instrumentLevelAggregationService
             , String tenantId) {
         super(memcachedRepository
                 ,dataService
                 ,settingsService
                 , executionStateService
+                , accountingPeriodService
+                , aggregationService
                 , tenantId);
-        newPeriods = new HashSet<>(0);
+        newPostingDates = new HashSet<>(0);
+        this.instrumentLevelAggregationService = instrumentLevelAggregationService;
 
         try {
-            allInstrumentLevelInstruments = this.memcachedRepository.getFromCache(Key.allInstrumentLevelLtdKeyList(tenantId), Set.class);
+            this.executionState = this.getExecutionState();
+
+            lastActivityPostingDate = executionState.getLastActivityPostingDate();
+            activityPostingDate = executionState.getActivityPostingDate();
+            if(executionState.getExecutionDate() != null && executionState.getExecutionDate() > executionState.getActivityPostingDate()) {
+                lastActivityPostingDate = executionState.getActivityPostingDate();
+                activityPostingDate = executionState.getExecutionDate();
+
+                if(executionState.getLastExecutionDate() != null && executionState.getLastExecutionDate() > lastActivityPostingDate) {
+                    lastActivityPostingDate = executionState.getLastExecutionDate();
+                }
+            }else if (executionState.getExecutionDate() != null && executionState.getExecutionDate() < executionState.getActivityPostingDate()) {
+                lastActivityPostingDate = executionState.getExecutionDate();
+                activityPostingDate = executionState.getActivityPostingDate();
+
+            }else if(executionState.getLastExecutionDate() !=null &&  executionState.getLastExecutionDate() !=null && executionState.getLastExecutionDate() > executionState.getLastActivityPostingDate()) {
+                lastActivityPostingDate = executionState.getLastExecutionDate();
+            }
+
+            List<Records.GroupedMetricsByInstrument> metrics = getGroupedDistinctMetricNames(lastActivityPostingDate);
+            allInstrumentLevelInstruments = this.getDistinctMetricNamesByPostingDate(metrics);
             if(allInstrumentLevelInstruments == null) {
                 allInstrumentLevelInstruments = new HashSet<>(0);
             }
+
         } catch (Exception e) {
             log.error("Failed to load allInstrumentLevelInstruments from cache", e);
             throw new RuntimeException("Initialization failed", e);
         }
     }
 
+    /**
+     * getDistinctMetricNamesByPostingDate from previous postings
+     * @param metrics
+     * @return
+     */
+    public Set<String> getDistinctMetricNamesByPostingDate(List<Records.GroupedMetricsByInstrument> metrics) {
+        Set<String> metricSet = new HashSet<>(0);
+        for(Records.GroupedMetricsByInstrument metric : metrics) {
+            InstrumentLevelLtdKey previousPeriodKey = new InstrumentLevelLtdKey(this.tenantId, metric.metricName(), metric.instrumentId(), lastActivityPostingDate);
+            metricSet.add(previousPeriodKey.getKey());
+
+        }
+        return metricSet;
+    }
+
+    public List<Records.GroupedMetricsByInstrument> getGroupedDistinctMetricNames(int postingDate) {
+        MatchOperation matchStage = match(Criteria.where("postingDate").is(postingDate));
+
+        GroupOperation groupStage = group("instrumentId",  "metricName")
+                .first("instrumentId").as("instrumentId")
+                .first("metricName").as("metricName");
+        ProjectionOperation projectStage = project("instrumentId",  "metricName");
+
+        Aggregation aggregation = newAggregation(matchStage, groupStage, projectStage);
+
+        return this.dataService.getMongoTemplate().aggregate(aggregation, "InstrumentLevelLtd", Records.GroupedMetricsByInstrument.class).getMappedResults();
+    }
     /**
      * Aggregate Transaction Activities
      * @param activities
@@ -61,7 +137,7 @@ public class InstrumentLevelAggregator extends BaseAggregator {
         }
 
         try {
-            this.generateCarryOverAggregateEntries();
+            // this.generateCarryOverAggregateEntries();
         } catch (Exception e) {
             log.error("Failed to generate carry over aggregate entries", e);
         }
@@ -77,25 +153,36 @@ public class InstrumentLevelAggregator extends BaseAggregator {
 
         Iterator<String> instrumentIteratror = allInstrumentLevelInstruments.iterator();
         Set<InstrumentLevelLtd> carryOvers = new HashSet<>(0);
+
+        Map<Integer, Integer> accountingPeriodMap = new HashMap<>(0);
+
+        for(Integer postingDate : newPostingDates) {
+            Date pDate = DateUtil.convertToDateFromYYYYMMDD(postingDate);
+            int aPeriod = DateUtil.getAccountingPeriodId(pDate);
+            AccountingPeriod accountingPeriod = this.accountingPeriodService.getAccountingPeriod(aPeriod, this.tenantId);
+            accountingPeriodMap.put(postingDate, accountingPeriod.getPeriodId());
+        }
+
         while(instrumentIteratror.hasNext()) {
             String instrumentLevelInstrumentLtdKey = instrumentIteratror.next();
             try {
                 if (this.memcachedRepository.ifExists(instrumentLevelInstrumentLtdKey)) {
                     InstrumentLevelLtd instrumentLevelLtd = this.memcachedRepository.getFromCache(instrumentLevelInstrumentLtdKey, InstrumentLevelLtd.class);
-                    for (Integer activityAccountingPeriodId : newPeriods) {
-                        if (instrumentLevelLtd != null && activityAccountingPeriodId > instrumentLevelLtd.getAccountingPeriodId()) {
-                            double beginningBalance = instrumentLevelLtd.getBalance().getBeginningBalance() + instrumentLevelLtd.getBalance().getActivity();
+                    for (Integer postingDate : newPostingDates) {
+                        if (instrumentLevelLtd != null && postingDate > instrumentLevelLtd.getPostingDate()) {
+                            BigDecimal beginningBalance = instrumentLevelLtd.getBalance().getBeginningBalance().add(instrumentLevelLtd.getBalance().getActivity());
                             BaseLtd balance = BaseLtd.builder()
                                     .beginningBalance(beginningBalance)
-                                    .activity(0L).build();
+                                    .activity(BigDecimal.valueOf(0L)).build();
                             InstrumentLevelLtd currentLtd = InstrumentLevelLtd.builder()
-                                    .accountingPeriodId(activityAccountingPeriodId)
+                                    .postingDate(postingDate)
+                                    .accountingPeriodId(accountingPeriodMap.get(postingDate))
                                     .instrumentId(instrumentLevelLtd.getInstrumentId())
                                     .metricName(instrumentLevelLtd.getMetricName())
                                     .balance(balance).build();
                             InstrumentLevelLtdKey currentPeriodLtdKey = new InstrumentLevelLtdKey(this.tenantId,
                                     instrumentLevelLtd.getMetricName().toUpperCase(),
-                                    instrumentLevelLtd.getInstrumentId(), activityAccountingPeriodId);
+                                    instrumentLevelLtd.getInstrumentId(), postingDate);
                             this.memcachedRepository.putInCache(currentPeriodLtdKey.getKey(), currentLtd);
                             carryOvers.add(currentLtd);
                             this.memcachedRepository.delete(instrumentLevelInstrumentLtdKey);
@@ -124,43 +211,38 @@ public class InstrumentLevelAggregator extends BaseAggregator {
     public void aggregate(TransactionActivity activity) {
         Set<InstrumentLevelLtd> balances = new HashSet<>(0);
 
-        List<String> metrics = this.getMetrics(activity);
-
-        ExecutionState executionState = this.getExecutionState();
-        if(executionState == null || (metrics == null || metrics.isEmpty())) {
+        if(executionState == null || activity == null) {
             return;
         }
+        List<String> metrics = this.getMetrics(activity);
 
-        AccountingPeriod activityAccountingPeriod = activity.getAccountingPeriod();
-        newPeriods.add(activityAccountingPeriod.getPeriodId());
+
+        if(metrics == null || metrics.isEmpty()) {
+            TenantContextHolder.setTenant(super.tenantId);
+            this.aggregationService.loadIntoCache();
+            metrics = this.getMetrics(activity);
+        }
+
+        newPostingDates.add(activity.getPostingDate());
 
         for(String metric : metrics) {
 
             try {
-                InstrumentLevelLtdKey previousPeriodKey = new InstrumentLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), executionState.getLastActivityPostingDate());
-                InstrumentLevelLtdKey currentPeriodKey = new InstrumentLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), executionState.getActivityPostingDate());
 
-                InstrumentLevelLtd currentLtd = this.memcachedRepository.getFromCache(currentPeriodKey.getKey(), InstrumentLevelLtd.class);
-                InstrumentLevelLtd previousLtd = this.memcachedRepository.getFromCache(previousPeriodKey.getKey(), InstrumentLevelLtd.class);
-                double beginningBalance = 0.0d;
-                boolean ifPreviousLtdExists = Boolean.FALSE;
+
+                InstrumentLevelLtdKey previousPeriodKey = new InstrumentLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), lastActivityPostingDate);
+                InstrumentLevelLtdKey currentPeriodKey = new InstrumentLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activityPostingDate);
+
+                InstrumentLevelLtd currentLtd = this.instrumentLevelAggregationService.getBalance(this.tenantId, activity.getInstrumentId(), metric.toUpperCase(), activityPostingDate);
+                InstrumentLevelLtd previousLtd = this.instrumentLevelAggregationService.getBalance(this.tenantId, activity.getInstrumentId(), metric.toUpperCase(), lastActivityPostingDate);
+                BigDecimal beginningBalance = BigDecimal.valueOf(0L);
                 if (previousLtd != null) {
                     beginningBalance = previousLtd.getBalance().getEndingBalance();
-                    ifPreviousLtdExists = Boolean.TRUE;
                 }
 
                 if (currentLtd != null) {
-                    if(!ifPreviousLtdExists) {
-                        beginningBalance = +currentLtd.getBalance().getBeginningBalance() + currentLtd.getBalance().getActivity();
-                        currentLtd.getBalance().setBeginningBalance(0);
-                        currentLtd.getBalance().setActivity(beginningBalance + activity.getAmount());
-                        currentLtd.getBalance().setEndingBalance(beginningBalance + activity.getAmount());
-                    }else {
-                        currentLtd.getBalance().setBeginningBalance(beginningBalance);
-                        currentLtd.getBalance().setActivity(currentLtd.getBalance().getActivity() + activity.getAmount());
-                        currentLtd.getBalance().setEndingBalance(beginningBalance + currentLtd.getBalance().getActivity());
-                    }
-
+                        currentLtd.getBalance().setActivity(currentLtd.getBalance().getActivity().add(activity.getAmount()));
+                        currentLtd.getBalance().setEndingBalance(currentLtd.getBalance().getBeginningBalance().add(currentLtd.getBalance().getActivity()));
                     balances.add(currentLtd);
                 } else {
                     BaseLtd balance = BaseLtd.builder()
@@ -181,6 +263,8 @@ public class InstrumentLevelAggregator extends BaseAggregator {
                 }
             } catch (Exception e) {
                 log.error("Failed to process metric: {}", metric, e);
+            }finally {
+                this.memcachedRepository.putInCache(Key.allInstrumentLevelLtdKeyList(tenantId), allInstrumentLevelInstruments);
             }
         }
 

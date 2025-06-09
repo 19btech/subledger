@@ -70,22 +70,30 @@ public class ActivityUploadService {
         Long runid = System.currentTimeMillis();
         try {
             Batch activityBatch = this.createBatch();
-            JobParameters instrumentAttributeJobParameter = createInstrumentAttributeJob(filePath, activityBatch);
-            filePath = activityMap.get(AccountingRules.TRANSACTIONACTIVITY);
-            JobParameters transactionActivityJobParameter = createTransactionActivityJob(filePath, activityBatch);
+            if(filePath !=null) {
+                JobParameters instrumentAttributeJobParameter = createInstrumentAttributeJob(filePath, activityBatch);
+                filePath = activityMap.get(AccountingRules.TRANSACTIONACTIVITY);
+                JobParameters transactionActivityJobParameter = createTransactionActivityJob(filePath, activityBatch);
 
-            JobExecution instrumentAttributeExecution = jobLauncher.run(instrumentAttributeUploadJob, instrumentAttributeJobParameter);
-            runid = instrumentAttributeJobParameter.getLong("run.id");
-            this.logActivity(instrumentAttributeExecution, FileUploadActivityType.INSTRUMENT_ATTRIBUTE);
-            if (instrumentAttributeExecution.getStatus() == BatchStatus.COMPLETED) {
-                // Job A was successful, now launch Job B
-                log.info("Job instrumentAttributeUploadJob completed successfully. Starting Job transactionActivityUploadJob.");
+                JobExecution instrumentAttributeExecution = jobLauncher.run(instrumentAttributeUploadJob, instrumentAttributeJobParameter);
+                runid = instrumentAttributeJobParameter.getLong("run.id");
+                this.logActivity(instrumentAttributeExecution, FileUploadActivityType.INSTRUMENT_ATTRIBUTE);
+                if (instrumentAttributeExecution.getStatus() == BatchStatus.COMPLETED) {
+                    // Job A was successful, now launch Job B
+                    log.info("Job instrumentAttributeUploadJob completed successfully. Starting Job transactionActivityUploadJob.");
+                    runid = transactionActivityJobParameter.getLong("run.id");
+                    JobExecution transactionActivityExecution = jobLauncher.run(transactionActivityUploadJob, transactionActivityJobParameter);
+                    this.logActivity(transactionActivityExecution, FileUploadActivityType.TRANSACTION_ACTIVITY);
+                } else {
+                    // If Job instrumentAttributeUploadJob fails, handle failure and don't run Job transactionActivityExecution
+                    log.info("Job instrumentAttributeUploadJob failed. Job transactionActivityExecution will not be executed.");
+                }
+            }else{
+                filePath = activityMap.get(AccountingRules.TRANSACTIONACTIVITY);
+                JobParameters transactionActivityJobParameter = createTransactionActivityJob(filePath, activityBatch);
                 runid = transactionActivityJobParameter.getLong("run.id");
                 JobExecution transactionActivityExecution = jobLauncher.run(transactionActivityUploadJob, transactionActivityJobParameter);
                 this.logActivity(transactionActivityExecution, FileUploadActivityType.TRANSACTION_ACTIVITY);
-            } else {
-                // If Job instrumentAttributeUploadJob fails, handle failure and don't run Job transactionActivityExecution
-                log.info("Job instrumentAttributeUploadJob failed. Job transactionActivityExecution will not be executed.");
             }
         }catch (Exception e ){
             String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);

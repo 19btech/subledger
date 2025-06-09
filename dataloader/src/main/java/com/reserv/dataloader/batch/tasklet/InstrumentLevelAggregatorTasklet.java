@@ -1,6 +1,9 @@
 package com.reserv.dataloader.batch.tasklet;
 
+import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.ExecutionStateService;
+import com.fyntrac.common.service.aggregation.AggregationService;
+import com.fyntrac.common.service.aggregation.InstrumentLevelAggregationService;
 import com.reserv.dataloader.aggregate.InstrumentLevelAggregator;
 import  com.fyntrac.common.enums.AggregationRequestType;
 import com.fyntrac.common.entity.AggregationRequest;
@@ -21,17 +24,23 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 public class InstrumentLevelAggregatorTasklet extends BaseAggregatorTasklet implements Tasklet {
-
+    private final InstrumentLevelAggregationService instrumentLevelAggregationService;
     public InstrumentLevelAggregatorTasklet(MemcachedRepository memcachedRepository
             , DataService dataService
             , SettingsService settingsService
                                             , ExecutionStateService executionStateService
+                                            , AccountingPeriodService accountingPeriodService
+                                            , AggregationService aggregationService
+                                            , InstrumentLevelAggregationService instrumentLevelAggregationService
             , String tenantId) {
         super(memcachedRepository
                 , dataService
                 , settingsService
                 ,executionStateService
+                , accountingPeriodService
+                , aggregationService
                 , tenantId);
+        this.instrumentLevelAggregationService = instrumentLevelAggregationService;
     }
 
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) throws Exception {
@@ -62,11 +71,11 @@ public class InstrumentLevelAggregatorTasklet extends BaseAggregatorTasklet impl
 
         List<List<String>>chunks = chunkList(transactionActivities.get(), CHUNK_SIZE);
 
-        ExecutorService executor = Executors.newFixedThreadPool(chunks.size());
+        ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 
         List<Future<List<String>>> futures = new ArrayList<>();
         for (List<String> chunk : chunks) {
-            futures.add(executor.submit(new AggregationTask(new InstrumentLevelAggregator(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService,this.tenantId)
+            futures.add(executor.submit(new AggregationTask(new InstrumentLevelAggregator(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService, this.accountingPeriodService, this.aggregationService,this.instrumentLevelAggregationService,this.tenantId)
                     ,chunk)));
         }
         executor.shutdown();

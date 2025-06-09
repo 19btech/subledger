@@ -130,8 +130,8 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
     }
 
     @Override
-    public void save(InstrumentAttribute ia) {
-        this.dataService.save(ia);
+    public InstrumentAttribute save(InstrumentAttribute ia) {
+        return this.dataService.save(ia);
     }
 
     @Override

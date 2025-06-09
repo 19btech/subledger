@@ -1,13 +1,17 @@
 package com.reserv.dataloader.aggregate;
 
 import com.fyntrac.common.config.ReferenceData;
+import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.entity.*;
 import com.fyntrac.common.repository.MemcachedRepository;
+import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.service.ExecutionStateService;
+import com.fyntrac.common.service.aggregation.AggregationService;
 import com.fyntrac.common.utils.Key;
 import com.fyntrac.common.cache.collection.CacheMap;
 import com.fyntrac.common.service.SettingsService;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -25,25 +29,30 @@ public abstract class BaseAggregator implements Aggregator {
     protected final String tenantId;
     protected List<String> ltdObjectCleanupList = null;
     protected final ExecutionStateService executionStateService;
-    protected final Optional<ExecutionState> executionState;
+    @Getter
+    protected final ExecutionState executionState;
+    protected final AccountingPeriodService accountingPeriodService;
+    protected final AggregationService aggregationService;
     public BaseAggregator(MemcachedRepository memcachedRepository
             ,DataService<?> dataService
             , SettingsService settingsService
                           , ExecutionStateService executionStateService
+                          , AccountingPeriodService accountingPeriodService
+                          , AggregationService aggregationService
             , String tenantId) {
         this.memcachedRepository = memcachedRepository;
         this.dataService = dataService;
         this.settingsService = settingsService;
         this.tenantId = tenantId;
+        TenantContextHolder.setTenant(tenantId);
+        this.dataService.setTenantId(tenantId);
         this.referenceData = this.memcachedRepository.getFromCache(this.tenantId, ReferenceData.class);
         this.dataService.setTenantId(tenantId);
         this.executionStateService= executionStateService;
         ltdObjectCleanupList = new ArrayList<>(0);
         this.executionState = this.executionStateService.getExecutionState();
-    }
-
-    public ExecutionState getExecutionState() {
-        return this.executionState.orElse(null);
+        this.accountingPeriodService = accountingPeriodService;
+        this.aggregationService = aggregationService;
     }
 
     public void aggregate(List<String> activities) {

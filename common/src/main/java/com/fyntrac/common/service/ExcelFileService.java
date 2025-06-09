@@ -4,7 +4,9 @@ import com.fyntrac.common.entity.ModelFile;
 import com.fyntrac.common.exception.ExcelSheetNotFoundException;
 import com.fyntrac.common.exception.HeaderNotFoundException;
 import com.fyntrac.common.exception.MismatchException;
+import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.formula.eval.NotImplementedException;
 import org.apache.poi.ss.usermodel.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -73,6 +75,7 @@ public class ExcelFileService {
         }
         log.info("Header: {}", header.toString());
 
+        try{
         // Read all values from column A (index 0)
         for (int i = 1; i <= sheet.getLastRowNum(); i++) { // Start from 1 to skip header
             Row row = sheet.getRow(i);
@@ -113,12 +116,16 @@ public class ExcelFileService {
                 }
             }
         }
+    }catch(NotImplementedException exp) {
+        log.error(StringUtil.getStackTrace(exp));
+        //persist error // to do
+    }
 
         return values;
     }
 
     private static Set<String> getMetricDocumentFields() {
-        String headers = "\"MetricName\",\"Instrumentid\",\"AttributeId\",\"AccountingPeriod\",\"BeginningBalance\",\"Activity\",\"EndingBalance\"";
+        String headers = "\"MetricName\",\"PostingDate\",\"Instrumentid\",\"AttributeId\",\"AccountingPeriod\",\"BeginningBalance\",\"Activity\",\"EndingBalance\"";
 
         // Convert to Set<String>
         Set<String> headerSet = Arrays.stream(headers.split(","))
@@ -192,6 +199,8 @@ public class ExcelFileService {
         Set<String> excelHeaderSet = excelHeaders.stream()
                 .map(String::toLowerCase) // Normalize to lowercase
                 .collect(Collectors.toSet());
+
+        excelHeaderSet.removeIf(String::isEmpty);
 
         Set<String> mongoFieldSet = mongoFields.stream()
                 .map(String::toLowerCase) // Normalize to lowercase

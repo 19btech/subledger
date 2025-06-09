@@ -16,6 +16,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -42,11 +43,27 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
      * @param metricLevelLtd
      */
     @Override
-    public void save(MetricLevelLtd metricLevelLtd) {
+    public MetricLevelLtd save(MetricLevelLtd metricLevelLtd) {
         this.dataService.save(metricLevelLtd);
-        String key = this.dataService.getTenantId() + metricLevelLtd.hashCode();
-        this.memcachedRepository.putInCache(key, metricLevelLtd);
 
+        String key = getKey(this.dataService.getTenantId()
+                , metricLevelLtd.getPostingDate()
+                , metricLevelLtd.getMetricName());
+
+        this.memcachedRepository.putInCache(key, metricLevelLtd);
+        return metricLevelLtd;
+    }
+
+    public Collection<MetricLevelLtd> save(List<MetricLevelLtd> balances) {
+       Collection<MetricLevelLtd> savedBalances = this.dataService.saveAll(balances, MetricLevelLtd.class);
+
+        for(MetricLevelLtd metricLevelLtd : savedBalances) {
+            String key = getKey(this.dataService.getTenantId()
+                    , metricLevelLtd.getPostingDate()
+                    , metricLevelLtd.getMetricName());
+            this.memcachedRepository.putInCache(key, metricLevelLtd);
+        }
+        return savedBalances;
     }
 
     /**
@@ -66,45 +83,45 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
 
     }
 
-    /**
-     * Load data into cache
-     * @param accountingPeriod
-     * @param tenantId
-     */
-    public void loadIntoCache(int accountingPeriod, String tenantId) {
-        int chunkSize = 10000;
-        int pageNumber = 0;
-        boolean hasMore = true;
-        Set<String> instrumentList = new HashSet<>();
-        while (hasMore) {
-            Query query = new Query().limit(chunkSize).skip(pageNumber * chunkSize);
-            query.addCriteria(Criteria.where("periodId").gte(accountingPeriod));
-            query.with(Sort.by(Sort.Direction.DESC, "periodId"));
-            List<MetricLevelLtd> chunk = dataService.fetchData(query, MetricLevelLtd.class);
-            if (chunk.isEmpty()) {
-                hasMore = false;
-            } else {
-                for (MetricLevelLtd metricLevelLtd : chunk) {
-                    MetricLevelLtdKey key = new MetricLevelLtdKey(tenantId, metricLevelLtd.getMetricName(), accountingPeriod);
-
-
-                    if(!memcachedRepository.ifExists(key.getKey())) {
-                        if(metricLevelLtd.getAccountingPeriodId() == accountingPeriod) {
-                            memcachedRepository.putInCache(key.getKey(), metricLevelLtd, this.cacheTimeOut);
-                        }else {
-                            MetricLevelLtd mlLtd1 = MetricLevelLtd.builder()
-                                    .accountingPeriodId(accountingPeriod)
-                                    .metricName(metricLevelLtd.getMetricName())
-                                    .balance(metricLevelLtd.getBalance()).build();
-                            memcachedRepository.putInCache(key.getKey(), mlLtd1, this.cacheTimeOut);
-                        }
-                    }
-                }
-                pageNumber++;
-            }
-        }
-        this.memcachedRepository.putInCache(Key.allMetricLevelLtdKeyList(tenantId), instrumentList);
-    }
+//    /**
+//     * Load data into cache
+//     * @param postingDate
+//     * @param tenantId
+//     */
+//    public void loadIntoCache(int postingDate, String tenantId) {
+//        int chunkSize = 10000;
+//        int pageNumber = 0;
+//        boolean hasMore = true;
+//        Set<String> instrumentList = new HashSet<>();
+//        while (hasMore) {
+//            Query query = new Query().limit(chunkSize).skip(pageNumber * chunkSize);
+//            query.addCriteria(Criteria.where("postingDate").gte(postingDate));
+//            query.with(Sort.by(Sort.Direction.DESC, "postingDate"));
+//            List<MetricLevelLtd> chunk = dataService.fetchData(query, MetricLevelLtd.class);
+//            if (chunk.isEmpty()) {
+//                hasMore = false;
+//            } else {
+//                for (MetricLevelLtd metricLevelLtd : chunk) {
+//                    MetricLevelLtdKey key = new MetricLevelLtdKey(tenantId, metricLevelLtd.getMetricName(), postingDate);
+//
+//
+//                    if(!memcachedRepository.ifExists(key.getKey())) {
+//                        if(metricLevelLtd.getPostingDate() == postingDate) {
+//                            memcachedRepository.putInCache(key.getKey(), metricLevelLtd, this.cacheTimeOut);
+//                        }else {
+//                            MetricLevelLtd mlLtd1 = MetricLevelLtd.builder()
+//                                    .postingDate(postingDate)
+//                                    .metricName(metricLevelLtd.getMetricName())
+//                                    .balance(metricLevelLtd.getBalance()).build();
+//                            memcachedRepository.putInCache(key.getKey(), mlLtd1, this.cacheTimeOut);
+//                        }
+//                    }
+//                }
+//                pageNumber++;
+//            }
+//        }
+//        this.memcachedRepository.putInCache(Key.allMetricLevelLtdKeyList(tenantId), instrumentList);
+//    }
 
     /**
      * Retrieves the balance for a specific instrument, attribute, metric, and accounting period.
@@ -114,20 +131,36 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
      * </p>
      *
      * @param metric            The metric name.
-     * @param accountingPeriodId The accounting period ID.
+     * @param postingDate postingDate.
      * @return An instance of {@link MetricLevelLtd} containing the balance details. Returns {@code null} if not found.
      */
-    public MetricLevelLtd getBalance( String metric, int accountingPeriodId) {
+    public MetricLevelLtd getBalance( String metric, int postingDate) {
         String tenantId = dataService.getTenantId();
-        String key = getKey(tenantId, accountingPeriodId, metric);
+       return  this.getBalance(tenantId, metric, postingDate);
+    }
+
+    /**
+     * Retrieves the balance for a specific instrument, attribute, metric, and accounting period.
+     * <p>
+     * First, it attempts to fetch the balance from Memcached. If not found, it queries MongoDB,
+     * caches the result, and then returns the retrieved balance.
+     * </p>
+     *
+     * @param tenantId          Tenant ID
+     * @param metric            The metric name.
+     * @param postingDate postingDate.
+     * @return An instance of {@link MetricLevelLtd} containing the balance details. Returns {@code null} if not found.
+     */
+    public MetricLevelLtd getBalance( String tenantId, String metric, int postingDate) {
+        MetricLevelLtdKey key = new MetricLevelLtdKey(tenantId, metric, postingDate);
         log.info("Fetching balance for   Metric: {}, Period: {}, Tenant: {}",
-                metric, accountingPeriodId, tenantId);
+                metric, postingDate, tenantId);
 
         try {
             // Check cache first
-            if (memcachedRepository.ifExists(key)) {
+            if (memcachedRepository.ifExists(key.getKey())) {
                 log.debug("Cache hit for key: {}", key);
-                return memcachedRepository.getFromCache(key, MetricLevelLtd.class);
+                return memcachedRepository.getFromCache(key.getKey(), MetricLevelLtd.class);
             } else {
                 log.debug("Cache miss for key: {}. Fetching from MongoDB...", key);
             }
@@ -137,32 +170,33 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
 
         // Construct MongoDB query
         Query query = new Query();
-        query.addCriteria(Criteria.where("accountingPeriodId").is(accountingPeriodId)
+        query.addCriteria(Criteria.where("postingDate").is(postingDate)
                 .and("metricName").is(metric));
 
         // Fetch from MongoDB
         MetricLevelLtd ltd = null;
         try {
-            ltd = dataService.findOne(query, MetricLevelLtd.class);
+            ltd = dataService.findOne(query, tenantId, MetricLevelLtd.class);
             if (ltd != null) {
                 log.info("Successfully retrieved balance from MongoDB for key: {}", key);
             } else {
                 log.warn("No balance found in MongoDB for key: {}", key);
             }
         } catch (DataAccessException e) {
-            log.error("MongoDB query failed for  Metric: {}, Period: {}",
-                     metric, accountingPeriodId, e);
+            log.error("MongoDB query failed for  Metric: {}, PostingDate: {}",
+                    metric, postingDate, e);
             return null; // Return null to indicate data retrieval failure
         }
 
-        // Cache the fetched result
-        try {
-            memcachedRepository.putInCache(key, ltd, cacheTimeOut);
-            log.debug("Cached balance for key: {} with timeout: {} seconds", key, cacheTimeOut);
-        } catch (Exception e) {
-            log.error("Failed to cache data for key: {}", key, e);
+        if(ltd != null) {
+            // Cache the fetched result
+            try {
+                memcachedRepository.putInCache(key.getKey(), ltd, cacheTimeOut);
+                log.debug("Cached balance for key: {} with timeout: {} seconds", key, cacheTimeOut);
+            } catch (Exception e) {
+                log.error("Failed to cache data for key: {}", key, e);
+            }
         }
-
         return ltd;
     }
 
@@ -176,47 +210,45 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
      * @param activity The transaction activity to process.
      * @return A list of {@link MetricLevelLtd} records after aggregation.
      */
-    public List<MetricLevelLtd> aggregate(TransactionActivity activity) {
+    public Collection<MetricLevelLtd> aggregate(TransactionActivity activity, int postingDate) {
         log.info("Starting aggregation for transaction: {}", activity.getTransactionName());
 
         List<Aggregation> metrics;
         try {
-            metrics = this.aggregationService.getMetrics(activity.getTransactionName());
+            metrics = this.aggregationService.getMetrics(activity.getTransactionName().toUpperCase());
         } catch (Exception e) {
             log.error("Failed to fetch metrics for transaction: {}", activity.getTransactionName(), e);
             return new ArrayList<>();
         }
 
         List<MetricLevelLtd> aggregates = new ArrayList<>();
-        metrics.forEach(aggregation -> {
+        for (Aggregation aggregation : metrics) {
             boolean currentPeriodLtdFound = true;
             String key = getKey(this.dataService.getTenantId(), activity.getPeriodId(), aggregation.getMetricName());
 
             MetricLevelLtd ltd;
             try {
-                ltd = this.getBalance(aggregation.getMetricName(), activity.getPeriodId());
+                ltd = this.getBalance(aggregation.getMetricName(), activity.getPostingDate());
 
                 if (ltd == null) {
                     log.warn("No balance found for current period. Fetching from previous period.");
-                    ltd = this.getBalance(aggregation.getMetricName(), activity.getAccountingPeriod().getPreviousAccountingPeriodId());
+                    ltd = this.getBalance(aggregation.getMetricName(), postingDate);
                     currentPeriodLtdFound = false;
                 }
             } catch (Exception e) {
                 log.error("Error retrieving balance for Instrument: {}, Attribute: {}, Metric: {}, Period: {}",
                         activity.getInstrumentId(), activity.getAttributeId(), aggregation.getMetricName(), activity.getPeriodId(), e);
-                return;
+                continue; // Use continue to skip to the next iteration
             }
 
-            double activityAmount = ltd.getBalance().getActivity() + activity.getAmount();
-            double endingBalance = activityAmount + ltd.getBalance().getBeginningBalance();
+            BigDecimal activityAmount = ltd.getBalance().getActivity().add(activity.getAmount());
+            BigDecimal endingBalance = activityAmount.add(ltd.getBalance().getBeginningBalance());
 
             if (currentPeriodLtdFound) {
                 // Update existing balance
                 try {
                     ltd.getBalance().setActivity(activityAmount);
                     ltd.getBalance().setEndingBalance(endingBalance);
-                    dataService.save(ltd);
-                    memcachedRepository.putInCache(key, ltd);
                     log.debug("Updated balance for key: {} with new activity: {} and ending balance: {}", key, activityAmount, endingBalance);
                     aggregates.add(ltd);
                 } catch (DataAccessException e) {
@@ -224,9 +256,9 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
                 }
             } else {
                 // Create a new record for current period
-                double beginningBalance = ltd.getBalance().getBeginningBalance();
+                BigDecimal beginningBalance = ltd.getBalance().getEndingBalance();
                 activityAmount = activity.getAmount();
-                endingBalance = beginningBalance + activityAmount;
+                endingBalance = beginningBalance.add(activityAmount);
 
                 BaseLtd balance = BaseLtd.builder()
                         .endingBalance(endingBalance)
@@ -237,22 +269,20 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
                 MetricLevelLtd metricLevelLtd = MetricLevelLtd.builder()
                         .accountingPeriodId(activity.getPeriodId())
                         .metricName(aggregation.getMetricName())
+                        .postingDate(activity.getPostingDate())
                         .balance(balance)
                         .build();
 
                 try {
-                    dataService.save(metricLevelLtd);
-                    memcachedRepository.putInCache(key, metricLevelLtd);
                     log.debug("Created new balance for key: {} with beginning balance: {} and ending balance: {}", key, beginningBalance, endingBalance);
                     aggregates.add(metricLevelLtd);
                 } catch (DataAccessException e) {
                     log.error("Failed to save new balance for key: {}", key, e);
                 }
             }
-        });
-
+        }
         log.info("Aggregation completed for transaction: {}", activity.getTransactionName());
-        return aggregates;
+        return this.save(aggregates);
     }
 
     /**
@@ -261,13 +291,13 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
      * @param activities A list of transaction activities.
      * @return A list of {@link MetricLevelLtd} records after aggregation.
      */
-    public List<MetricLevelLtd> aggregate(Collection<TransactionActivity> activities) {
+    public List<MetricLevelLtd> aggregate(Collection<TransactionActivity> activities, int postingDate) {
         log.info("Starting batch aggregation for {} transactions", activities.size());
 
         List<MetricLevelLtd> aggregates = new ArrayList<>();
         for(TransactionActivity transactionActivity : activities) {
             try {
-                aggregates.addAll(this.aggregate(transactionActivity));
+                aggregates.addAll(this.aggregate(transactionActivity, postingDate));
             } catch (Exception e) {
                 log.error("Error processing transaction: {}", transactionActivity.getTransactionName(), e);
             }
@@ -297,6 +327,12 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
      * @return A unique cache key for the given parameters.
      */
     private String getKey(String tenantId, int accountingPeriodId, String metricName) {
-        return String.format("%s-%d-%s", tenantId, accountingPeriodId, metricName);
+        String key = String.format("%s-%d-%s",
+                tenantId,
+                accountingPeriodId,
+                metricName.toUpperCase());
+        String cleanedKey = StringUtil.removeSpaces(key);
+        return StringUtil.generateSHA256Hash(cleanedKey);
     }
+
 }

@@ -8,8 +8,11 @@ import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodDataUploadService;
 import com.fyntrac.common.service.ErrorService;
+import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.TransactionActivityService;
+import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.model.exception.LoadExcelModelExecption;
+import com.fyntrac.model.pulsar.producer.AggregationMessageProducer;
 import com.fyntrac.model.pulsar.producer.GeneralLedgerMessageProducer;
 import com.fyntrac.model.workflow.ExcelModelExecutor;
 import com.fyntrac.model.workflow.ModelExecutionType;
@@ -19,6 +22,7 @@ import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
@@ -26,6 +30,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 
 import com.fyntrac.model.utils.ExcelUtil;
 import org.springframework.stereotype.Service;
@@ -42,6 +47,8 @@ public class ModelExecutionService {
     private final ErrorService errorService;
     private final CommonAggregationService commonAggregationService;
     private final GeneralLedgerMessageProducer generalLedgerMessageProducer;
+    private final ExecutionStateService executionStateService;
+    private final AggregationMessageProducer aggregationMessageProducer;
 
     public ModelExecutionService(ModelDataService modelDataService
     , MemcachedRepository memcachedRepository
@@ -50,7 +57,9 @@ public class ModelExecutionService {
     , TransactionActivityService transactionActivityService
     , ErrorService errorService
     , CommonAggregationService commonAggregationService
-    , GeneralLedgerMessageProducer generalLedgerMessageProducer) {
+    , GeneralLedgerMessageProducer generalLedgerMessageProducer
+    , ExecutionStateService executionStateService
+    , AggregationMessageProducer aggregationMessageProducer) {
         this.modelDataService = modelDataService;
         this.memcachedRepository = memcachedRepository;
         this.accountingPeriodService = accountingPeriodService;
@@ -59,9 +68,11 @@ public class ModelExecutionService {
         this.errorService = errorService;
         this.commonAggregationService = commonAggregationService;
         this.generalLedgerMessageProducer = generalLedgerMessageProducer;
+        this.executionStateService = executionStateService;
+        this.aggregationMessageProducer = aggregationMessageProducer;
     }
 
-    public void executeModels(Date executionDate, Records.CommonMessageRecord msg) throws Throwable {
+    public void executeModels(Date executionDate, Records.ModelExecutionMessageRecord msg) throws Throwable {
         try {
             List<Model> models = this.modelDataService.getActiveModels();
             List<Records.ModelRecord> activeModels = new ArrayList<>(0);
@@ -71,14 +82,24 @@ public class ModelExecutionService {
                 activeModels.add(RecordFactory.createModelRecord(model, modelFile));
             }
 
-            this.executeModels(executionDate, msg, activeModels);
+            ExecutionState executionState = this.executionStateService.getExecutionState();
+            this.executeModels(executionDate, msg, activeModels, executionState.getActivityPostingDate());
         }catch (Exception exp){
             log.error(StringUtil.getStackTrace(exp));
             throw exp;
+        }finally{
+            ExecutionState executionState = this.executionStateService.getExecutionState();
+            executionState.setLastExecutionDate(executionState.getExecutionDate());
+            executionState.setExecutionDate(DateUtil.dateInNumber(executionDate));
+            executionStateService.update(executionState);
+
         }
     }
 
-    public void executeModels(Date executionDate, Records.CommonMessageRecord msg, List<Records.ModelRecord> activeModels) throws Throwable {
+    public void executeModels(Date executionDate
+            , Records.ModelExecutionMessageRecord msg
+            , List<Records.ModelRecord> activeModels
+    , int previousPostingDate) throws Throwable {
         // Step 1: Validate inputs
         String key = msg.key();
         if (executionDate == null || key == null || activeModels == null || activeModels.isEmpty()) {
@@ -99,6 +120,7 @@ public class ModelExecutionService {
             throw new IllegalStateException("Accounting period not found for period ID: " + acctPeriod);
         }
 
+        ExecutionState executionState = this.executionStateService.getExecutionState();
         // Step 3: Virtual Thread Pool
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             String tenantId=msg.tenantId();
@@ -112,7 +134,7 @@ public class ModelExecutionService {
                         // Set the tenant context for this virtual thread
                         TenantContextHolder.runWithTenant(tenantId, () -> {
                             try {
-                                this.processInstrument(executionDate, accountingPeriod, ia, activeModels);
+                                this.processInstrument(executionDate, accountingPeriod, ia, activeModels, executionState.getActivityPostingDate());
                             } catch (Throwable e) {
                                 throw new RuntimeException(e);
                             }
@@ -148,8 +170,14 @@ public class ModelExecutionService {
         }
     }
 
-    private void processInstrument(Date executionDate, AccountingPeriod accountingPeriod, InstrumentAttribute instrument, List<Records.ModelRecord> activeModels) throws Throwable {
+    private void processInstrument(Date executionDate,
+                                   AccountingPeriod accountingPeriod
+            , InstrumentAttribute instrument
+            , List<Records.ModelRecord> activeModels
+            , int previousPostingDate) throws Throwable {
         log.info("Processing " + instrument + " on Thread: " + Thread.currentThread().getName());
+
+
 
         // Iterate through each model
         for (Records.ModelRecord model : activeModels) {
@@ -167,22 +195,45 @@ public class ModelExecutionService {
 
                 // Execute the model
                 Records.ModelOutputData modelOutputData = this.excelModelExecutor.execute(context);
+                    // Save transaction activities
+                    Set<TransactionActivity> transactions = transactionActivityService.generateTransactions(
+                            modelOutputData.transactionActivityList(),
+                            instrument,
+                            accountingPeriod,
+                            executionDate,
+                            Source.MODEL,
+                            model.model().getId()
+                    );
+                    // Filter out TransactionActivity where amount is zero
+                    Set<TransactionActivity> filteredTransactions = transactions.stream()
+                            .filter(transaction -> transaction.getAmount().compareTo(BigDecimal.ZERO) != 0)
+                            .collect(Collectors.toSet());
+                    transactionActivities = this.transactionActivityService.save(filteredTransactions);
 
-                // Save transaction activities
-                Set<TransactionActivity> transactions = transactionActivityService.generateTransactions(
-                        modelOutputData.transactionActivityList(),
-                        instrument,
-                        accountingPeriod,
-                        executionDate,
-                        Source.MODEL,
-                        model.model().getId()
-                );
+                    // Now send message to generate GL
+                    // Now send message to Aggregate transactions
+                    // this.commonAggregationService.aggregate(transactionActivities, previousPostingDate);
+                    LocalDateTime dateTime = LocalDateTime.now();
+                    int timestamp = (int) (dateTime.toEpochSecond(ZoneOffset.UTC));
+                    String tenantId = this.transactionActivityService.getDataService().getTenantId();
+                    String key = String.format("%s-%s", tenantId, "TA");
 
-                transactionActivities = this.transactionActivityService.save(transactions);
+                    String transactionActivityKey = String.format("%s-%d", tenantId, timestamp);
 
-                // Now send message to generate GL
-                // Now send message to Aggregate transactions
-                this.commonAggregationService.aggregate(transactions);
+                    TransactionActivityList activityList = new TransactionActivityList();
+                    if (transactionActivities != null) {
+                        transactionActivities.forEach(transactionActivity -> {
+                                    String activityKey = String.format("%s-%d", key, transactionActivity.hashCode());
+
+                                    activityList.add(activityKey);
+                                    this.memcachedRepository.putInCache(activityKey, transactionActivity);
+                                }
+                        );
+                    }
+
+                    this.memcachedRepository.putInCache(transactionActivityKey, activityList);
+                    Records.ExecuteAggregationMessageRecord aggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenantId, transactionActivityKey, (long) DateUtil.dateInNumber(executionDate));
+                    aggregationMessageProducer.executeAggregation(aggregationMessageRecord);
 
             } catch (Exception e) {
                 // Log the exception and continue processing the next model
@@ -199,24 +250,30 @@ public class ModelExecutionService {
                 this.errorService.save(error);
                 throw e;
             }finally {
-                LocalDateTime dateTime = LocalDateTime.now();
-                int timestamp = (int) (dateTime.toEpochSecond(ZoneOffset.UTC));
-                String tenantId = this.transactionActivityService.getDataService().getTenantId();
-                String key = String.format("%s-%d", tenantId, timestamp);
-                TransactionActivityList activityList = new TransactionActivityList();
 
-                if(transactionActivities != null) {
-                    transactionActivities.forEach(transactionActivity -> {
-                                String activityKey = String.format("%s-%d", key, transactionActivity.hashCode());
-                                activityList.add(activityKey);
-                            }
-                            );
-                }
+                    LocalDateTime dateTime = LocalDateTime.now();
+                    int timestamp = (int) (dateTime.toEpochSecond(ZoneOffset.UTC));
+                    String tenantId = this.transactionActivityService.getDataService().getTenantId();
+                    String key = String.format("%s-%d", tenantId, timestamp);
 
-                String transactionActivityKey = String.format("%s-%d", key, timestamp);
-                this.memcachedRepository.putInCache(transactionActivityKey, activityList);
-                Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(this.transactionActivityService.getDataService().getTenantId(), transactionActivityKey);
-                generalLedgerMessageProducer.bookTempGL(glRec);
+                    String transactionActivityKey = String.format("%s-%d", key, timestamp);
+
+                    TransactionActivityList activityList = new TransactionActivityList();
+                    if (transactionActivities != null) {
+                        transactionActivities.forEach(transactionActivity -> {
+                                    String activityKey = String.format("%s-%d", key, transactionActivity.hashCode());
+
+                                    activityList.add(activityKey);
+                                    this.memcachedRepository.putInCache(activityKey, transactionActivity);
+                                }
+                        );
+                    }
+
+                    this.memcachedRepository.putInCache(transactionActivityKey, activityList);
+
+
+                    Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(this.transactionActivityService.getDataService().getTenantId(), transactionActivityKey);
+                    generalLedgerMessageProducer.bookTempGL(glRec);
             }
         }
     }

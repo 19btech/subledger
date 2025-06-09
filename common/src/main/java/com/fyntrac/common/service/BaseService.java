@@ -23,7 +23,7 @@ public abstract class BaseService<T> {
         this.memcachedRepository = memcachedRepository;
     }
 
-    public abstract void save(T t);
+    public abstract T save(T t);
 
     public abstract Collection<T> fetchAll();
 

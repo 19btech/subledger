@@ -15,6 +15,7 @@ import com.fyntrac.common.enums.EntryType;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.service.GeneralLedgerAccountService;
+import com.fyntrac.common.utils.StringUtil;
 import com.fyntrac.gl.service.BaseGeneralLedgerService;
 import com.fyntrac.gl.service.DatasourceService;
 import com.fyntrac.gl.service.GeneralLedgerCommonService;
@@ -26,6 +27,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -163,33 +165,35 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
                         continue;
                     }
 
-                    Map<EntryType, SubledgerMapping> mapping = this.glCommonService.getSubledgerMapping(tenantId, transactionActivity.getTransactionName(), transactionActivity.getAmount());
+                    Map<EntryType, SubledgerMapping> mapping = this.glCommonService.getSubledgerMapping(tenantId, StringUtil.removeSpaces(transactionActivity.getTransactionName()), transactionActivity.getAmount());
                     for (Map.Entry<EntryType, SubledgerMapping> entry : mapping.entrySet()) {
                         try {
                             SubledgerMapping slMapping = entry.getValue();
                             if (slMapping == null) {
-                                log.error("SubledgerMapping is null for entryType: {}", entry.getKey());
-                                throw new RuntimeException("SubledgerMapping is null for entryType: " + entry.getKey());
+                                log.error(String.format("Skipping GL booking for [%s] SubledgerMapping is null for entryType: [%s]", transactionActivity.toString(), entry.getKey()));
+                                continue;
                             }
                             AccountTypes accountType = this.glCommonService.getAccountType(tenantId, slMapping.getAccountSubType());
                             String accountSubType = slMapping.getAccountSubType();
                             Map<String, Object> attributes = transactionActivity.getAttributes();
                             ChartOfAccount chartOfAccount = this.glCommonService.getChartOfAccount(tenantId, accountSubType, attributes);
 
-                            double debitAmount = 0.0d;
-                            double creditAmount = 0.0d;
-                            int sign = (transactionActivity.getAmount() > 0) ? -1 : 1;
+                            BigDecimal debitAmount = BigDecimal.valueOf(0L);
+                            BigDecimal creditAmount = BigDecimal.valueOf(0L);
+                            int sign = (transactionActivity.getAmount().compareTo(BigDecimal.ZERO) > 0) ? -1 : 1;
                             if (slMapping.getEntryType() == EntryType.DEBIT) {
                                 debitAmount = transactionActivity.getAmount();
                             } else if (slMapping.getEntryType() == EntryType.CREDIT) {
-                                creditAmount = sign * transactionActivity.getAmount();
+                                double signedValue = transactionActivity.getAmount().doubleValue();
+                                signedValue = signedValue * sign;
+                                creditAmount = BigDecimal.valueOf(signedValue);
                             }
 
                             GeneralLedgerEnteryStage gleStage = GeneralLedgerEnteryStage.builder()
                                     .attributeId(transactionActivity.getAttributeId())
                                     .instrumentId(transactionActivity.getInstrumentId())
                                     .transactionName(transactionActivity.getTransactionName())
-                                    .transactionDate(transactionActivity.getTransactionDate())
+                                    .postingDate(transactionActivity.getPostingDate())
                                     .periodId(transactionActivity.getPeriodId())
                                     .glAccountNumber(chartOfAccount.getAccountNumber())
                                     .glAccountName(chartOfAccount.getAccountName())
@@ -233,6 +237,7 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
                     log.error("Error processing transaction activity key: {}", transactionActivityKey, e);
                     throw new RuntimeException("Error processing transaction activity", e);
                 }
+
             }
 
             this.dataService.saveAll(gleList, tenantId, com.fyntrac.common.entity.GeneralLedgerEnteryStage.class);

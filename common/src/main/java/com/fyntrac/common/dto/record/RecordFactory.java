@@ -8,6 +8,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.stereotype.Component;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
@@ -87,8 +88,8 @@ public class RecordFactory {
         return createRecord(() -> new Records.AccountingPeriodCloseMessageRecord(tenant, batches));
     }
 
-    public static Records.CommonMessageRecord createCommonMessage(String tenant,Date executionDate, String key){
-        return createRecord(() -> new Records.CommonMessageRecord(tenant,executionDate, key));
+    public static Records.ModelExecutionMessageRecord createModelExecutionMessage(String tenant,Integer executionDate, String key){
+        return createRecord(() -> new Records.ModelExecutionMessageRecord(tenant,executionDate, key));
     }
 
     public static Records.ModelRecord createModelRecord(Model model, ModelFile modelFile){
@@ -99,7 +100,7 @@ public class RecordFactory {
         return createRecord(() -> new Records.ExcelModelRecord(model, excelModel));
     }
 
-    public static Records.MetricRecord createMetricRecord(String metricName, String instrumentid, String attributeId, int accountingPeriod, double beginningBalance, double activity, double endingBalance) {
+    public static Records.MetricRecord createMetricRecord(String metricName, String instrumentid, String attributeId, int accountingPeriod, BigDecimal beginningBalance, BigDecimal activity, BigDecimal endingBalance) {
         return createRecord(() -> new Records.MetricRecord(metricName, instrumentid, attributeId, accountingPeriod, beginningBalance, activity, endingBalance));
     }
 
@@ -155,4 +156,11 @@ public class RecordFactory {
      return createRecord(() -> new Records.TransactionActivityReplayRecord(instrumentId, attributeId, replayDate));
     }
 
+    public  static Records.ExecutionDateRecord createExcutionDateRecord(Date executionDate, Date	lastExecutionDate, Date	replayDate) {
+        return createRecord(() -> new Records.ExecutionDateRecord(executionDate, lastExecutionDate, replayDate));
+    }
+
+    public static Records.ExecuteAggregationMessageRecord createExecutionAggregationRecord(String tenantId, String aggregationKey, Long aggregationDate) {
+        return createRecord(() -> new Records.ExecuteAggregationMessageRecord(tenantId, aggregationKey, aggregationDate));
+    }
 }

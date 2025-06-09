@@ -9,9 +9,12 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import java.io.Serial;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.Map;
 import org.springframework.data.annotation.Id;
+
+import javax.validation.constraints.NotNull;
 import java.util.Objects;
 
 /**
@@ -36,12 +39,14 @@ public class GeneralLedgerEnteryStage implements Serializable {
     private String glAccountName;
     private String glAccountType;
     private String glAccountSubType;
-    private double debitAmount;
-    private double creditAmount;
+    private BigDecimal debitAmount;
+    private BigDecimal creditAmount;
     private int isReclass;
     @Indexed
     private long batchId;
-    private Date transactionDate;
+    @NotNull
+    @Indexed
+    private Integer postingDate;
 
     @Field("attributes")
     private Map<String, Object> attributes;
@@ -59,7 +64,7 @@ public class GeneralLedgerEnteryStage implements Serializable {
                 .append("\"attributeId\":\"").append(attributeId).append("\",")
                 .append("\"instrumentId\":\"").append(instrumentId).append("\",")
                 .append("\"transactionName\":\"").append(transactionName).append("\",")
-                .append("\"transactionDate\":\"").append(transactionDate).append("\",")
+                .append("\"postingDate\":\"").append(postingDate).append("\",")
                 .append("\"periodId\":").append(periodId).append(",")
                 .append("\"glAccountNumber\":\"").append(glAccountNumber).append("\",")
                 .append("\"glAccountName\":\"").append(glAccountName).append("\",")
@@ -81,7 +86,7 @@ public class GeneralLedgerEnteryStage implements Serializable {
      */
     @Override
     public int hashCode() {
-        return Objects.hash(id, attributeId, instrumentId, transactionName, transactionDate, periodId,
+        return Objects.hash(id, attributeId, instrumentId, transactionName, postingDate, periodId,
                 glAccountNumber, glAccountName, glAccountType, glAccountSubType,
                 debitAmount, creditAmount, isReclass, attributes);
     }
@@ -95,17 +100,16 @@ public class GeneralLedgerEnteryStage implements Serializable {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof GeneralLedgerEnteryStage)) return false;
-        GeneralLedgerEnteryStage that = (GeneralLedgerEnteryStage) o;
+        if (!(o instanceof GeneralLedgerEnteryStage that)) return false;
         return periodId == that.periodId &&
-                Double.compare(that.debitAmount, debitAmount) == 0 &&
-                Double.compare(that.creditAmount, creditAmount) == 0 &&
+                that.debitAmount.compareTo(debitAmount) == 0 &&
+                that.creditAmount.compareTo(creditAmount) == 0 &&
                 isReclass == that.isReclass &&
                 Objects.equals(id, that.id) &&
                 Objects.equals(attributeId, that.attributeId) &&
                 Objects.equals(instrumentId, that.instrumentId) &&
                 Objects.equals(transactionName, that.transactionName) &&
-                Objects.equals(transactionDate, that.transactionDate) &&
+                Objects.equals(postingDate, that.postingDate) &&
                 Objects.equals(glAccountNumber, that.glAccountNumber) &&
                 Objects.equals(glAccountName, that.glAccountName) &&
                 Objects.equals(glAccountType, that.glAccountType) &&

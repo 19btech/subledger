@@ -8,12 +8,17 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.io.Serial;
+import java.io.Serializable;
+
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
 @Document(collection = "Transactions")
-public class Transactions {
+public class Transactions implements Serializable {
+    @Serial
+    private static final long serialVersionUID = 2263839061710911114L;
     @Id
     private String id;
     @Indexed(unique=true)

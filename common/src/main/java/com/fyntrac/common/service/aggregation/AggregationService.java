@@ -4,6 +4,9 @@ import com.fyntrac.common.cache.collection.CacheList;
 import com.fyntrac.common.cache.collection.CacheMap;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.Aggregation;
+import com.fyntrac.common.entity.AttributeLevelLtd;
+import com.fyntrac.common.entity.InstrumentLevelLtd;
+import com.fyntrac.common.entity.MetricLevelLtd;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.CacheBasedService;
 import com.fyntrac.common.service.DataService;
@@ -11,6 +14,10 @@ import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.aggregation.GroupOperation;
+import org.springframework.data.mongodb.core.aggregation.MatchOperation;
+import org.springframework.data.mongodb.core.aggregation.ProjectionOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
@@ -29,7 +36,7 @@ public class AggregationService  extends CacheBasedService<Aggregation> {
     }
 
     @Override
-    public void save(Aggregation aggregation) {
+    public Aggregation save(Aggregation aggregation) {
         this.dataService.save(aggregation);
         String key = this.dataService.getTenantId() + aggregation.getTransactionName();
         List<String> metricList = null;
@@ -40,6 +47,7 @@ public class AggregationService  extends CacheBasedService<Aggregation> {
         }
         metricList.add(aggregation.getMetricName());
         this.memcachedRepository.putInCache(key, metricList);
+        return aggregation;
     }
 
     @Override
@@ -130,6 +138,76 @@ public class AggregationService  extends CacheBasedService<Aggregation> {
         }
 
         return metricList;
+    }
+
+    /**
+     * Retrieves unique combinations of metricName, instrumentId, and attributeId
+     * from the attributeLevelLtd collection for postingDate >= fromPostingDate.
+     * Only combinations that appear exactly once are returned.
+     *
+     * @param fromPostingDate the lower bound for postingDate filter (inclusive)
+     * @return List of Documents each containing metricName, instrumentId, attributeId
+     */
+    public List<AttributeLevelLtd> getCarryOverAttributeLevelBalances(int fromPostingDate) {
+        MatchOperation match = org.springframework.data.mongodb.core.aggregation.Aggregation.match(
+                Criteria.where("postingDate").gte(fromPostingDate)
+        );
+        GroupOperation group = org.springframework.data.mongodb.core.aggregation.Aggregation.group("metricName", "instrumentId", "attributeId")
+                .count().as("count");
+        MatchOperation onlyUnique = org.springframework.data.mongodb.core.aggregation.Aggregation.match(Criteria.where("count").is(1));
+        ProjectionOperation project = org.springframework.data.mongodb.core.aggregation.Aggregation.project()
+                .and("_id.metricName").as("metricName")
+                .and("_id.instrumentId").as("instrumentId")
+                .and("_id.attributeId").as("attributeId");
+        org.springframework.data.mongodb.core.aggregation.Aggregation agg = org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation(match, group, onlyUnique, project);
+        AggregationResults<AttributeLevelLtd> results = this.dataService.getMongoTemplate().aggregate(agg, "AttributeLevelLtd", AttributeLevelLtd.class);
+        return results.getMappedResults();
+    }
+
+    /**
+     * Retrieves unique combinations of metricName, instrumentId, and attributeId
+     * from the attributeLevelLtd collection for postingDate >= fromPostingDate.
+     * Only combinations that appear exactly once are returned.
+     *
+     * @param fromPostingDate the lower bound for postingDate filter (inclusive)
+     * @return List of Documents each containing metricName, instrumentId, attributeId
+     */
+    public List<InstrumentLevelLtd> getCarryOverInstrumentLevelBalances(int fromPostingDate) {
+        MatchOperation match = org.springframework.data.mongodb.core.aggregation.Aggregation.match(
+                Criteria.where("postingDate").gte(fromPostingDate)
+        );
+        GroupOperation group = org.springframework.data.mongodb.core.aggregation.Aggregation.group("metricName", "instrumentId")
+                .count().as("count");
+        MatchOperation onlyUnique = org.springframework.data.mongodb.core.aggregation.Aggregation.match(Criteria.where("count").is(1));
+        ProjectionOperation project = org.springframework.data.mongodb.core.aggregation.Aggregation.project()
+                .and("_id.metricName").as("metricName")
+                .and("_id.instrumentId").as("instrumentId");
+
+        org.springframework.data.mongodb.core.aggregation.Aggregation agg = org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation(match, group, onlyUnique, project);
+        AggregationResults<InstrumentLevelLtd> results = this.dataService.getMongoTemplate().aggregate(agg, "InstrumentLevelLtd", InstrumentLevelLtd.class);
+        return results.getMappedResults();
+    }
+
+    /**
+     * Retrieves unique combinations of metricName, instrumentId, and attributeId
+     * from the attributeLevelLtd collection for postingDate >= fromPostingDate.
+     * Only combinations that appear exactly once are returned.
+     *
+     * @param fromPostingDate the lower bound for postingDate filter (inclusive)
+     * @return List of Documents each containing metricName, instrumentId, attributeId
+     */
+    public List<MetricLevelLtd> getCarryOverMetricLevelBalances(int fromPostingDate) {
+        MatchOperation match = org.springframework.data.mongodb.core.aggregation.Aggregation.match(
+                Criteria.where("postingDate").gte(fromPostingDate)
+        );
+        GroupOperation group = org.springframework.data.mongodb.core.aggregation.Aggregation.group("metricName")
+                .count().as("count");
+        MatchOperation onlyUnique = org.springframework.data.mongodb.core.aggregation.Aggregation.match(Criteria.where("count").is(1));
+        ProjectionOperation project = org.springframework.data.mongodb.core.aggregation.Aggregation.project()
+                .and("_id.metricName").as("metricName");
+        org.springframework.data.mongodb.core.aggregation.Aggregation agg = org.springframework.data.mongodb.core.aggregation.Aggregation.newAggregation(match, group, onlyUnique, project);
+        AggregationResults<MetricLevelLtd> results = this.dataService.getMongoTemplate().aggregate(agg, "MetricLevelLtd", MetricLevelLtd.class);
+        return results.getMappedResults();
     }
 
     /**

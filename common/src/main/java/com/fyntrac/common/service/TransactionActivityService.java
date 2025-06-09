@@ -6,19 +6,20 @@ import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
+import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.*;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
-import org.springframework.data.mongodb.core.aggregation.AggregationResults;
-import org.springframework.data.mongodb.core.aggregation.GroupOperation;
-import org.springframework.data.mongodb.core.aggregation.ProjectionOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
+import org.bson.Document;
 
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -26,7 +27,7 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class TransactionActivityService extends CacheBasedService<TransactionActivity> {
-    private AttributeService attributeService;
+    private final AttributeService attributeService;
     @Value("${fyntrac.chunk.size}")
     private int chunkSize;
 
@@ -39,8 +40,8 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
     }
 
     @Override
-    public void save(TransactionActivity activity) {
-        this.dataService.save(activity);
+    public TransactionActivity save(TransactionActivity activity) {
+        return this.dataService.save(activity);
     }
 
 
@@ -120,21 +121,15 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
         return null;
     }
 
-    public List<TransactionActivity> fetchTransactions(List<String> transactionNames, String instrumentId, String attributeId, Date transactionDate) {
-        // Define the date format
-        Date endDate;
-
-        // Parse the input date string
-        // Set the end date to the start of the next day
-        endDate = new Date(transactionDate.getTime() + (1000 * 60 * 60 * 24)); // Add 1 day
-
+    public List<TransactionActivity> fetchTransactions(List<String> transactionNames, String instrumentId, String attributeId, Date transactionDate ) {
         // Create the query
         Query query = new Query();
         query.addCriteria(Criteria.where("instrumentId").is(instrumentId));
         query.addCriteria(Criteria.where("attributeId").is(attributeId));
-        query.addCriteria(Criteria.where("transactionName").in(transactionNames));
-        query.addCriteria(Criteria.where("transactionDate").gte(transactionDate).lt(endDate)); // Use range
-
+        query.addCriteria(Criteria.where("transactionName").in(StringUtil.removeSpaces(transactionNames)));
+        query.addCriteria(Criteria.where("postingDate").is(DateUtil.dateInNumber(transactionDate)));// Use range
+        // Add sorting by effectiveDate in descending order
+        query.with(Sort.by(Sort.Order.desc("effectiveDate")));
         // Execute the query
         return this.dataService.fetchData(query, TransactionActivity.class);
     }
@@ -167,11 +162,12 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
         Set<TransactionActivity>  transactionActivities = transactions.stream()
                 .map(transactionActivityMap -> this.save(transactionActivityMap, accountingPeriod))
                 .collect(Collectors.toCollection(HashSet::new));
-
         transactionActivities.forEach(transactionActivity -> {
             transactionActivity.setAccountingPeriod(accountingPeriod);
             transactionActivity.setOriginalPeriodId(accountingPeriod.getPeriodId());
             transactionActivity.setTransactionDate(DateUtil.stripTime(transactionDate));
+            transactionActivity.setEffectiveDate(DateUtil.dateInNumber(transactionDate));
+            transactionActivity.setPostingDate(transactionActivity.getEffectiveDate());
             if(transactionActivity.getAttributeId() == null || transactionActivity.getAttributeId().isBlank()) {
                 transactionActivity.setAttributeId(instrumentAttribute.getAttributeId());
             }
@@ -223,17 +219,17 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
                 try {
                     // Convert the amount to a String and parse it as a double
                     String amountStr = amountObj.toString(); // Ensure it's a String
-                    double parsedAmount = Double.parseDouble(amountStr);
+                    BigDecimal parsedAmount = BigDecimal.valueOf(Double.valueOf(amountStr));
                     builder.amount(parsedAmount); // Set the amount if parsing succeeds
                 } catch (NumberFormatException e) {
                     // Handle the case where the amount is not a valid number
                     log.error("Invalid number format for 'amount': " + amountObj);
-                    builder.amount(0.0d); // Set a default value (e.g., 0.0)
+                    builder.amount(BigDecimal.valueOf(0.0)); // Set a default value (e.g., 0.0)
                 }
             } else {
                 // Handle the case where the amount is null
                 log.error("Amount is null.");
-                builder.amount(0.0d); // Set a default value (e.g., 0.0)
+                builder.amount(BigDecimal.valueOf(0.0d)); // Set a default value (e.g., 0.0)
             }
         }
         if (map.containsKey("attributeId")) {
@@ -258,7 +254,7 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
                 } catch (NumberFormatException e) {
                     // Handle the case where the amount is not a valid number
                     log.error("Invalid number format for 'instrumentAttributeVersionId': " + instrumentAttributeVersionIdObj);
-                    builder.amount(0.0d); // Set a default value (e.g., 0.0)
+                    builder.amount(BigDecimal.valueOf(0.0d)); // Set a default value (e.g., 0.0)
                 }
             } else {
                 // Handle the case where the amount is null
@@ -278,7 +274,7 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
                 } catch (NumberFormatException e) {
                     // Handle the case where the amount is not a valid number
                     log.error("Invalid number format for 'batchId': " + batchIdObj);
-                    builder.amount(0.0d); // Set a default value (e.g., 0.0)
+                    builder.amount(BigDecimal.valueOf(0.0d)); // Set a default value (e.g., 0.0)
                 }
             } else {
                 // Handle the case where the amount is null
@@ -342,6 +338,44 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
 
             processedRecords += maxDates.size();
         }
+
+    }
+
+
+    public Integer getMaxPostingDate() {
+        GroupOperation groupOperation = Aggregation.group().max("postingDate").as("maxPostingDate");
+
+        Aggregation aggregation = Aggregation.newAggregation(groupOperation);
+
+        AggregationResults<Document> results = this.dataService.getMongoTemplate().aggregate(
+                aggregation,
+                "TransactionActivity", // Collection name
+                Document.class
+        );
+
+        Document result = results.getUniqueMappedResult();
+
+        return result != null ? result.getInteger("maxPostingDate") : null;
+    }
+
+    public Integer getPreviousMaxPostingDate(Long postingDate) {
+        MatchOperation matchOperation = Aggregation.match(Criteria.where("postingDate").lt(postingDate));
+
+        GroupOperation groupOperation = Aggregation.group().max("postingDate").as("maxPostingDate");
+
+        Aggregation aggregation = Aggregation.newAggregation(
+                matchOperation,
+                groupOperation
+        );
+
+        AggregationResults<Document> results = this.dataService.getMongoTemplate().aggregate(
+                aggregation,
+                "TransactionActivity", // your collection name
+                Document.class
+        );
+
+        Document result = results.getUniqueMappedResult();
+        return result != null ? result.getInteger("maxPostingDate") : null;
     }
 
 

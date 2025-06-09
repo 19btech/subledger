@@ -59,9 +59,9 @@ public class ModelUploadService {
         //check if transactions are valid
         //if valid continue else fail validation and throw exception
         return (validateTransactions(model, DataloaderExcelFileService.TRANSACTION_SHEET_NAME)
-                && validateTransactions(model, DataloaderExcelFileService.OUTPUT_TRANSACTION_SHEET_NAME)
+                // && validateTransactions(model, DataloaderExcelFileService.OUTPUT_TRANSACTION_SHEET_NAME)
                 && validateMetrics(model)
-                && validateExecutionDate(model)
+                // && validateExecutionDate(model)
                 && validateInstrumentAttributeVersionType(model, DataloaderExcelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME)
                 && excelFileService.validateInstrumentAttributeColumns(model, DataloaderExcelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME)
                 && excelFileService.validateTransactionActivityColumns(model, DataloaderExcelFileService.TRANSACTION_SHEET_NAME)

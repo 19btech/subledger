@@ -52,8 +52,8 @@ public class AttributeService extends CacheBasedService<Attributes>{
     }
 
     @Override
-    public void save(Attributes attributes) {
-        this.dataService.save(attributes);
+    public Attributes save(Attributes attributes) {
+        return this.dataService.save(attributes);
 
     }
 

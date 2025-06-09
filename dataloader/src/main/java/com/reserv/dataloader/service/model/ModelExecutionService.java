@@ -76,7 +76,7 @@ public class ModelExecutionService {
         String tenantId = TenantContextHolder.getTenant();
         String key = "Model" + tenantId + hashCode;
         this.memcachedRepository.putInCache(key, cacheList);
-        this.modelExecutionProducer.sendModelExecutionMessage(RecordFactory.createCommonMessage(tenantId, executionDate, key));
+        this.modelExecutionProducer.sendModelExecutionMessage(RecordFactory.createModelExecutionMessage(tenantId, DateUtil.dateInNumber(executionDate), key));
         // Collect into CacheList
 
     }

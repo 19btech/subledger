@@ -8,6 +8,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import java.io.Serial;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.Map;
 import org.springframework.data.annotation.Id;
@@ -36,8 +37,8 @@ public class GeneralLedgerEntery implements Serializable {
     private String glAccountName;
     private String glAccountType;
     private String glAccountSubType;
-    private double debitAmount;
-    private double creditAmount;
+    private BigDecimal debitAmount;
+    private BigDecimal creditAmount;
     private int isReclass;
 
     @Field("attributes")
@@ -94,8 +95,8 @@ public class GeneralLedgerEntery implements Serializable {
         if (!(o instanceof GeneralLedgerEntery)) return false;
         GeneralLedgerEntery that = (GeneralLedgerEntery) o;
         return periodId == that.periodId &&
-                Double.compare(that.debitAmount, debitAmount) == 0 &&
-                Double.compare(that.creditAmount, creditAmount) == 0 &&
+                that.debitAmount.compareTo(debitAmount) == 0 &&
+                that.creditAmount.compareTo(creditAmount) == 0 &&
                 isReclass == that.isReclass &&
                 Objects.equals(id, that.id) &&
                 Objects.equals(attributeId, that.attributeId) &&

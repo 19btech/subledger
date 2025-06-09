@@ -2,6 +2,8 @@ package com.fyntrac.common.utils;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -60,5 +62,36 @@ public class StringUtil {
         return  list.stream()
                 .map(String::toUpperCase) // Convert each string to uppercase
                 .collect(Collectors.toList()); // Collect the results into a new list
+    }
+
+    public static List<String> removeSpaces(List<String> list) {
+        return list.stream()
+                .map(s -> s.trim()
+                        .replaceAll("[\\u2013\\u2014]", "-") // Replace en/em dashes with hyphen
+                        .replaceAll("\\s+", " ")            // Normalize whitespace
+                        .toUpperCase())
+                .collect(Collectors.toList());
+    }
+
+    public static String removeSpaces(String str) {
+        return str.replaceAll("[\\u2013\\u2014]", "-") // Replace en/em dashes with hyphen
+                        .replaceAll("\\s+", " ")            // Normalize whitespace
+                        .toUpperCase();
+    }
+
+    public static String generateSHA256Hash(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes());
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) hexString.append('0');
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

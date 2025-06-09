@@ -16,7 +16,7 @@ public class ModelExecutionProducer {
     @Value("${spring.pulsar.producer.topic-execute-model}")
     private String topic;
 
-    public void sendModelExecutionMessage(Records.CommonMessageRecord messageRecord) {
+    public void sendModelExecutionMessage(Records.ModelExecutionMessageRecord messageRecord) {
         var msgId = pulsarTemplate.send(topic,messageRecord);
         log.info("EventPublisher::publishRawMessage publish topic {} {}, {}", topic, messageRecord.tenantId(), messageRecord.key());
         log.info("EventPublisher::publishRawMessage MessageId {}", msgId);

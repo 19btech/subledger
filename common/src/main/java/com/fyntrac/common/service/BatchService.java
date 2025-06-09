@@ -31,8 +31,8 @@ public class BatchService extends  CacheBasedService<Batch>{
     }
 
     @Override
-    public void save(Batch batch) {
-        this.dataService.save(batch);
+    public Batch save(Batch batch) {
+        return this.dataService.save(batch);
     }
 
     @Override

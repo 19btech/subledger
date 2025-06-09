@@ -29,15 +29,15 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
 
     private final BatchService batchService;
     @Autowired
-    public AccountingPeriodService(DataService dataService
+    public AccountingPeriodService(DataService<AccountingPeriod> dataService
             ,MemcachedRepository memcachedRepository, BatchService batchService) {
         super(dataService, memcachedRepository);
         this.batchService = batchService;
     }
 
     @Override
-    public void save(AccountingPeriod accountingPeriod) {
-        this.dataService.save(accountingPeriod);
+    public AccountingPeriod save(AccountingPeriod accountingPeriod) {
+        return this.dataService.save(accountingPeriod);
     }
 
 
@@ -132,6 +132,8 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
         query.addCriteria(Criteria.where("periodId").is(periodId));
         return this.dataService.findOne(query, tenantId, AccountingPeriod.class);
     }
+
+
     private CacheMap<AccountingPeriod> getAccountingPeriodsMap() {
         Collection<AccountingPeriod> accountingPeriods = getAccountingPeriods();
         CacheMap<AccountingPeriod> accountingPeriodMap = new CacheMap<>();

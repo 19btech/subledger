@@ -76,6 +76,11 @@ public class DataService<T> {
         return this.saveAll(entities, tenant, klass);
     }
 
+    public <T> Collection<T> saveAll(List<T> entities, Class<T> klass) {
+        String tenant = tenantContextHolder.getTenant();
+        return this.saveAll(new HashSet<>(entities), tenant, klass);
+    }
+
     public <T> Collection<T> saveAll(Set<T> entities,String tenantId, Class<T> klass) {
         MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenantId);
         if (mongoTemplate != null) {
@@ -111,7 +116,7 @@ public class DataService<T> {
     }
 
     public List<T> fetchAllData(Class<T> documentClass) {
-        String tenant = tenantContextHolder.getTenant();
+        String tenant = TenantContextHolder.getTenant();
         MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
         return mongoTemplate.findAll(documentClass);
     }

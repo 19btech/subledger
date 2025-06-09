@@ -1,6 +1,7 @@
 package com.fyntrac.common.entity;
 
 import com.fyntrac.common.enums.Source;
+import com.fyntrac.common.utils.DateUtil;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -12,11 +13,14 @@ import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.Map;
 import java.util.Objects;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.FieldType;
+import org.springframework.format.annotation.NumberFormat;
 
 import javax.validation.constraints.NotNull;
 
@@ -33,10 +37,12 @@ public class TransactionActivity implements Serializable {
     @Id
     private String id;
     @Indexed
+    @Field(targetType = FieldType.DATE_TIME)
     private Date transactionDate;
     private String instrumentId;
     private String transactionName;
-    private double amount;
+    @NumberFormat(pattern = "#.####")
+    private BigDecimal amount;
     private String attributeId;
     private int originalPeriodId;
     private long instrumentAttributeVersionId;
@@ -51,6 +57,14 @@ public class TransactionActivity implements Serializable {
     private Integer effectiveDate;
     @Field("attributes")
     private Map<String, Object> attributes;
+
+    /**
+     * get Transaction Date
+     * @return
+     */
+    public Date getTransactionDate(){
+        return DateUtil.convertToDateFromYYYYMMDD(this.effectiveDate);
+    }
 
     @Override
     public String toString() {
@@ -97,7 +111,7 @@ public class TransactionActivity implements Serializable {
         if (!(o instanceof TransactionActivity)) return false;
         TransactionActivity that = (TransactionActivity) o;
         return this.accountingPeriod.getPeriodId() == that.accountingPeriod.getPeriodId() &&
-                Double.compare(that.amount, amount) == 0 &&
+                that.amount.compareTo(amount) == 0 &&
                 originalPeriodId == that.originalPeriodId &&
                 instrumentAttributeVersionId == that.instrumentAttributeVersionId &&
                 Objects.equals(id, that.id) &&
