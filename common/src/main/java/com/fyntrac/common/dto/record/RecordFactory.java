@@ -1,6 +1,7 @@
 package com.fyntrac.common.dto.record;
 
 import com.fyntrac.common.entity.*;
+import com.fyntrac.common.enums.TestStep;
 import com.fyntrac.common.enums.UploadStatus;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.data.mongodb.core.index.Indexed;
@@ -162,5 +163,9 @@ public class RecordFactory {
 
     public static Records.ExecuteAggregationMessageRecord createExecutionAggregationRecord(String tenantId, String aggregationKey, Long aggregationDate) {
         return createRecord(() -> new Records.ExecuteAggregationMessageRecord(tenantId, aggregationKey, aggregationDate));
+    }
+
+    public static Records.ExcelTestStepRecord createExcelTestStepRecord(TestStep step, String type, String input) {
+        return createRecord(() -> new Records.ExcelTestStepRecord(step, type, input));
     }
 }

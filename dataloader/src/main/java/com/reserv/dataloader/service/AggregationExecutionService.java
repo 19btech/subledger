@@ -1,6 +1,7 @@
 package com.reserv.dataloader.service;
 
 import com.fyntrac.common.dto.record.Records;
+import com.fyntrac.common.entity.ExecutionState;
 import com.fyntrac.common.service.TransactionActivityService;
 import io.jsonwebtoken.lang.Assert;
 import lombok.extern.slf4j.Slf4j;
@@ -40,15 +41,24 @@ public class AggregationExecutionService {
     @Autowired
     TransactionActivityService transactionActivityService;
 
-    public void execute(Records.ExecuteAggregationMessageRecord msg)
+    public void execute(Records.ExecuteAggregationMessageRecord msg, ExecutionState executionState)
             throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException,
             JobParametersInvalidException, JobRestartException {
 
         Long runId = System.currentTimeMillis();
+
+
+        int lastExecutionDate = executionState.getLastExecutionDate() == null ? 0 : executionState.getLastExecutionDate();
+        int activityPostingDate = executionState.getActivityPostingDate() == null ? 0 : executionState.getActivityPostingDate();
+        int lastActivityPostingDate = executionState.getLastActivityPostingDate() == null ? 0 : executionState.getLastActivityPostingDate();
+
+        Integer previousMaxPostingDate = this.transactionActivityService.getPreviousMaxPostingDate(msg.aggregationDate());
+        previousMaxPostingDate = previousMaxPostingDate == null ? 0 : previousMaxPostingDate;
         JobParameters jobParameters = new JobParametersBuilder()
                 .addLong("run.id", runId)
                 .addString("aggregation-key", msg.aggregationKey())
                 .addLong("execution-date", msg.aggregationDate())
+                .addLong("previousMaxPostingDate", (long) previousMaxPostingDate)
                 .toJobParameters();
 
         // Run the first 3 jobs sequentially
@@ -59,8 +69,8 @@ public class AggregationExecutionService {
                 JobExecution metricJobExecution = jobLauncher.run(metricAggregationJob, jobParameters);
                 if (!metricJobExecution.getStatus().isUnsuccessful()) {
 
-                    Integer aggregationCarryOverDate = this.transactionActivityService.getPreviousMaxPostingDate(msg.aggregationDate());
-                    if (aggregationCarryOverDate != null && aggregationCarryOverDate > 0) {
+
+                    if (previousMaxPostingDate != null && previousMaxPostingDate > 0) {
 
 
                         long postingDate = msg.aggregationDate();
@@ -68,7 +78,7 @@ public class AggregationExecutionService {
                                 .addLong("run.id", System.currentTimeMillis())
                                 .addString("aggregation -key", msg.aggregationKey())
                                 .addLong("executionDate", postingDate)
-                                .addLong("fromDate", (long) aggregationCarryOverDate)
+                                .addLong("fromDate", (long) previousMaxPostingDate)
                                 .toJobParameters();
 
                         // ✅ All 3 jobs succeeded — now run the final job

@@ -28,17 +28,17 @@ public abstract class BaseAggregator implements Aggregator {
     protected  final SettingsService settingsService;
     protected final String tenantId;
     protected List<String> ltdObjectCleanupList = null;
-    protected final ExecutionStateService executionStateService;
     @Getter
-    protected final ExecutionState executionState;
     protected final AccountingPeriodService accountingPeriodService;
     protected final AggregationService aggregationService;
+    protected final AggregationRequest aggregationRequest;
+
     public BaseAggregator(MemcachedRepository memcachedRepository
             ,DataService<?> dataService
             , SettingsService settingsService
-                          , ExecutionStateService executionStateService
                           , AccountingPeriodService accountingPeriodService
                           , AggregationService aggregationService
+                          , AggregationRequest aggregationRequest
             , String tenantId) {
         this.memcachedRepository = memcachedRepository;
         this.dataService = dataService;
@@ -48,11 +48,10 @@ public abstract class BaseAggregator implements Aggregator {
         this.dataService.setTenantId(tenantId);
         this.referenceData = this.memcachedRepository.getFromCache(this.tenantId, ReferenceData.class);
         this.dataService.setTenantId(tenantId);
-        this.executionStateService= executionStateService;
         ltdObjectCleanupList = new ArrayList<>(0);
-        this.executionState = this.executionStateService.getExecutionState();
         this.accountingPeriodService = accountingPeriodService;
         this.aggregationService = aggregationService;
+        this.aggregationRequest = aggregationRequest;
     }
 
     public void aggregate(List<String> activities) {

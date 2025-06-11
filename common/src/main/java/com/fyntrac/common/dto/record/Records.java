@@ -4,6 +4,7 @@ import com.fyntrac.common.entity.Batch;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.entity.Model;
 import com.fyntrac.common.entity.ModelFile;
+import com.fyntrac.common.enums.TestStep;
 import com.fyntrac.common.enums.UploadStatus;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.data.mongodb.core.index.Indexed;
@@ -127,5 +128,9 @@ public class Records {
     public record GroupedMetricsByInstrument(String instrumentId,
                                                       String metricName) {
         private static final long serialVersionUID = -7455631766826985863L;
+    }
+
+    public record ExcelTestStepRecord(TestStep step, String typ, String input){
+        private static final long serialVersionUID = -4174200146849813549L;
     }
 }

@@ -25,7 +25,6 @@ public class MetricLevelAggregator  extends BaseAggregator {
 
     private Set<String> allMetricLevelInstruments;
     private Set<Integer> newPostingDates;
-    private final ExecutionState executionState;
     private Integer lastActivityPostingDate;
     private Integer activityPostingDate;
     private final MetricLevelAggregationService metricLevelAggregationService;
@@ -40,42 +39,26 @@ public class MetricLevelAggregator  extends BaseAggregator {
     public MetricLevelAggregator(MemcachedRepository memcachedRepository
             , DataService<MetricLevelLtd> dataService
             , SettingsService settingsService
-                                 , ExecutionStateService executionStateService
                                  , AccountingPeriodService accountingPeriodService
                                  , AggregationService aggregationService
                                  , MetricLevelAggregationService metricLevelAggregationService
+                                 , AggregationRequest aggregationRequest
             , String tenantId) {
         super(memcachedRepository
                 ,dataService
                 ,settingsService
-                , executionStateService
                 , accountingPeriodService
                 , aggregationService
+                , aggregationRequest
                 , tenantId);
         newPostingDates = new HashSet<>(0);
         this.metricLevelAggregationService =metricLevelAggregationService;
 
         try {
 
-            this.executionState = this.getExecutionState();
 
-            lastActivityPostingDate = executionState.getLastActivityPostingDate();
-            activityPostingDate = executionState.getActivityPostingDate();
-
-            if(executionState.getExecutionDate() != null && executionState.getExecutionDate() > executionState.getActivityPostingDate()) {
-                lastActivityPostingDate = executionState.getActivityPostingDate();
-                activityPostingDate = executionState.getExecutionDate();
-
-                if(executionState.getLastExecutionDate() != null && executionState.getLastExecutionDate() > lastActivityPostingDate) {
-                    lastActivityPostingDate = executionState.getLastExecutionDate();
-                }
-            }else if (executionState.getExecutionDate() != null && executionState.getExecutionDate() < executionState.getActivityPostingDate()) {
-                lastActivityPostingDate = executionState.getExecutionDate();
-                activityPostingDate = executionState.getActivityPostingDate();
-
-            }else if(executionState.getLastExecutionDate() !=null && executionState.getLastExecutionDate() > executionState.getLastActivityPostingDate()) {
-                lastActivityPostingDate = executionState.getLastExecutionDate();
-            }
+            lastActivityPostingDate = this.aggregationRequest.getLastPostingDate();
+            activityPostingDate = this.aggregationRequest.getPostingDate();
 
             allMetricLevelInstruments = this.getDistinctMetricNamesByPostingDate(lastActivityPostingDate);
             if(allMetricLevelInstruments == null) {
@@ -197,7 +180,7 @@ public class MetricLevelAggregator  extends BaseAggregator {
         Set<MetricLevelLtd> balances = new HashSet<>(0);
 
 
-        if(executionState == null || activity == null) {
+        if(this.aggregationRequest == null || activity == null) {
             return;
         }
         List<String> metrics = this.getMetrics(activity);

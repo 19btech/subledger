@@ -47,7 +47,7 @@ public class ModelController {
     // Upload endpoint
     @PostMapping("/upload")
     @Transactional
-    public ResponseEntity<String> uploadFile(@RequestParam("files") MultipartFile file,
+    public ResponseEntity<?> uploadFile(@RequestParam("files") MultipartFile file,
                                              @RequestParam("modelName") String modelName,
                                              @RequestParam("modelOrderId") String modelOrderId) {
         try {
@@ -61,7 +61,7 @@ public class ModelController {
                 modelConfig.setCurrentVersion(Boolean.TRUE);
                 modelConfig.setLastOpenVersion(Boolean.FALSE);
                 modelConfig.setFirstVersion(Boolean.FALSE);
-                this.modelService.save(modelName
+                Model model = this.modelService.save(modelName
                         , modelOrderId
                         , fileId
                         , Boolean.FALSE
@@ -69,7 +69,7 @@ public class ModelController {
                         , new Date()
                         , "Fyntrac"
                         , modelConfig);
-                return ResponseEntity.ok("File uploaded successfully, ID: " + fileId);
+                return ResponseEntity.ok(model);
             }else{
                 return ResponseEntity.badRequest().body("Model Name already exists [" + modelName + "]");
             }
@@ -96,10 +96,10 @@ public class ModelController {
     }
 
     @PostMapping("/configure")
-    public ResponseEntity<String> configure(@RequestBody Model m) {
+    public ResponseEntity<?> configure(@RequestBody Model m) {
         try {
-            modelService.save(m);
-            return ResponseEntity.ok("Model saved successfully, ID: " + m.getId());
+            Model model = modelService.save(m);
+            return ResponseEntity.ok(model);
         }catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (Exception e) {

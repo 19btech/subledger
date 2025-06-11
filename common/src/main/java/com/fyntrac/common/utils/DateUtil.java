@@ -102,12 +102,11 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
      * @param date The date to format.
      * @return The formatted date in the form MM/dd/yyyy.
      */
-    public static String format(Date date, String pattern) {
-        DateTimeFormatter format =
-                pattern.equals(DATE_FORMAT) ? defaultFormat
-                        : DateTimeFormat.forPattern(pattern);
 
-        return format.print(new DateTime(date));
+
+    public static String format(Date date, String pattern) {
+        return LocalDateTime.ofInstant(date.toInstant(), ZoneId.systemDefault())
+                .format(java.time.format.DateTimeFormatter.ofPattern(pattern));
     }
 
     /**

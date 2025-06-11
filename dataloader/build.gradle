@@ -89,7 +89,22 @@ dependencies {
 }
 
 tasks.named('test') {
+	if (project.hasProperty('test.skip') && project.property('test.skip') == 'true') {
+		// Include only DataloaderApplicationTests and exclude all others
+		include '**/DataloaderApplicationTests.class'
+	}
 	useJUnitPlatform()
+
+	if (project.hasProperty('testData')) {
+		systemProperty 'testData', project.testData
+	}
+
+	// Enable debug when system property is passed
+	if (project.hasProperty('debugTest')) {
+		jvmArgs "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005"
+	}
+
+
 }
 
 tasks.register('pushDockerImage') {

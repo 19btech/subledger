@@ -141,6 +141,10 @@ public class DataService<T> {
 
     public void truncateDatabase() {
         String tenant = tenantContextHolder.getTenant();
+        this.truncateDatabase(tenant);
+    }
+
+    public void truncateDatabase(String tenant) {
         MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
         Set<String> collectionNames = mongoTemplate.getCollectionNames();
         for (String collectionName : collectionNames) {

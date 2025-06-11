@@ -129,8 +129,7 @@ public class TransactionActivityJobCompletionListener implements JobExecutionLis
                     String aggregationKey = com.fyntrac.common.utils.Key.aggregationKey(tenantId, key);
                     Integer executionDate = executionState.getActivityPostingDate();
                     Records.ExecuteAggregationMessageRecord aggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenantId, aggregationKey, (long) executionDate);
-
-                    aggregationExecutionService.execute(aggregationMessageRecord);
+                    aggregationExecutionService.execute(aggregationMessageRecord, executionState);
 
                     Long runId = System.currentTimeMillis();
                     JobParameters jobParameters = new JobParametersBuilder()

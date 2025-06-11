@@ -48,7 +48,7 @@ public class ModelExecutionService {
         // Page request for chunk size
         int pageNumber = 0;
         boolean hasMoreData = true;
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy"); // Define the format
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy"); // Define the format
 
         Date executionDate = DateUtil.parseDate(date, formatter);
         // Loop to fetch and process in chunks

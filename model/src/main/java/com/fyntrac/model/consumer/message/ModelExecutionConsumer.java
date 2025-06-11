@@ -2,6 +2,8 @@ package com.fyntrac.model.consumer.message;
 
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.Records;
+import com.fyntrac.common.entity.ExecutionState;
+import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.model.service.ModelExecutionService;
 import jakarta.annotation.PostConstruct;
@@ -31,9 +33,10 @@ public class ModelExecutionConsumer {
     private ModelExecutionService modelExecutionService;
 
 
+
     private PulsarClient client;
     private Consumer<Records.ModelExecutionMessageRecord> consumer;
-
+    private Date executionDate;
     @PostConstruct
     public void init() throws PulsarClientException {
         // Step 1: Create a Pulsar client
@@ -72,7 +75,7 @@ public class ModelExecutionConsumer {
             TenantContextHolder.setTenant(msg.getValue().tenantId());
 
             // Step 7: Execute the model
-            Date executionDate = DateUtil.convertToDateFromYYYYMMDD(msg.getValue().executionDate());
+            executionDate = DateUtil.convertToDateFromYYYYMMDD(msg.getValue().executionDate());
             modelExecutionService.executeModels(executionDate, msg.getValue());
 
             // Step 8: Log success

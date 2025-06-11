@@ -51,11 +51,15 @@ public class AttributeLevelAggregatorTasklet extends BaseAggregatorTasklet imple
         }
 
         String key = contribution.getStepExecution().getJobParameters().getString(this.KEY);
+        int executionDate = contribution.getStepExecution().getJobParameters().getLong("execution-date").intValue();
+        int previousMaxPostingDate = contribution.getStepExecution().getJobParameters().getLong("previousMaxPostingDate").intValue();
         AggregationRequest aggregationRequest = AggregationRequest.builder()
                 .isAggregationComplete(Boolean.FALSE)
                 .isInprogress(Boolean.FALSE)
                 .tenantId(this.dataService.getTenantId())
                 .requestType(AggregationRequestType.ATTRIBUTE_LEVEL_AGG)
+                .lastPostingDate(previousMaxPostingDate)
+                .postingDate(executionDate)
                 .key(key).build();
 
             // Read TransactionActivity objects from Memcached
@@ -78,7 +82,7 @@ public class AttributeLevelAggregatorTasklet extends BaseAggregatorTasklet imple
 
         List<Future<List<String>>> futures = new ArrayList<>();
         for (List<String> chunk : chunks) {
-            AttributeLevelAggregator aggregator = new AttributeLevelAggregator(this.memcachedRepository, this.dataService,  this.settingsService,this.executionStateService, this.accountingPeriodService, this.aggregationService, this.attributeLevelAggregationService,this.tenantId);
+            AttributeLevelAggregator aggregator = new AttributeLevelAggregator(this.memcachedRepository, this.dataService,  this.settingsService, this.accountingPeriodService, this.aggregationService, this.attributeLevelAggregationService,aggregationRequest,this.tenantId);
             futures.add(executor.submit(new AggregationTask(aggregator
                     ,chunk)));
         }

@@ -20,4 +20,5 @@ public class AggregationRequest implements Serializable {
     private String tenantId;
     private AggregationRequestType requestType;
     private int postingDate;
+    private int lastPostingDate;
 }

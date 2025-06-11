@@ -2,6 +2,8 @@ package com.reserv.dataloader.pulsar.consumer;
 
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.Records;
+import com.fyntrac.common.entity.ExecutionState;
+import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.utils.DateUtil;
 import com.reserv.dataloader.service.AggregationExecutionService;
 import jakarta.annotation.PostConstruct;
@@ -39,6 +41,8 @@ public class ExecuteAggregationConsumer {
     @Autowired
     private JobLauncher jobLauncher;
 
+    @Autowired
+    ExecutionStateService executionStateService;
 
     private PulsarClient client;
     private Consumer<Records.ExecuteAggregationMessageRecord> consumer;
@@ -82,7 +86,19 @@ public class ExecuteAggregationConsumer {
             TenantContextHolder.setTenant(msg.getValue().tenantId());
 
             // Step 7: Execute the model
-            aggregationExecutionService.execute(msg.getValue());
+            Records.ExecuteAggregationMessageRecord msgRec = msg.getValue();
+
+
+            ExecutionState executionState = this.executionStateService.getExecutionState();
+
+            executionState.setLastExecutionDate(executionState.getLastExecutionDate());
+            if(executionState.getExecutionDate() != null
+                    && msgRec.aggregationDate() > executionState.getExecutionDate()) {
+                executionState.setLastExecutionDate(executionState.getExecutionDate());
+            }
+            executionState.setExecutionDate(msgRec.aggregationDate().intValue());
+
+            aggregationExecutionService.execute(msg.getValue(), executionState);
 
             /**
              * update instrument state for last effective date to set the replay mark

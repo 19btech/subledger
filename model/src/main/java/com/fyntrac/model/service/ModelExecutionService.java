@@ -84,14 +84,18 @@ public class ModelExecutionService {
 
             ExecutionState executionState = this.executionStateService.getExecutionState();
             this.executeModels(executionDate, msg, activeModels, executionState.getActivityPostingDate());
+            executionState.setLastExecutionDate(executionState.getExecutionDate());
+            executionState.setExecutionDate(DateUtil.dateInNumber(executionDate));
+            executionStateService.update(executionState);
+
         }catch (Exception exp){
             log.error(StringUtil.getStackTrace(exp));
             throw exp;
         }finally{
-            ExecutionState executionState = this.executionStateService.getExecutionState();
-            executionState.setLastExecutionDate(executionState.getExecutionDate());
-            executionState.setExecutionDate(DateUtil.dateInNumber(executionDate));
-            executionStateService.update(executionState);
+//            ExecutionState executionState = this.executionStateService.getExecutionState();
+//            executionState.setLastExecutionDate(executionState.getExecutionDate());
+//            executionState.setExecutionDate(DateUtil.dateInNumber(executionDate));
+//            executionStateService.update(executionState);
 
         }
     }

@@ -33,7 +33,6 @@ public class AttributeLevelAggregator extends BaseAggregator {
 
     private Set<String> allAttributeLevelInstruments;
     private Set<Integer> newPostingDates;
-    private final ExecutionState executionState;
     private Integer lastActivityPostingDate;
     private Integer activityPostingDate;
     private final AttributeLevelAggregationService attributeLevelAggregationService;
@@ -48,41 +47,27 @@ public class AttributeLevelAggregator extends BaseAggregator {
     public AttributeLevelAggregator(MemcachedRepository memcachedRepository
             , DataService<AttributeLevelLtd> dataService
             , SettingsService settingsService
-                                    , ExecutionStateService executionStateService
                                     , AccountingPeriodService accountingPeriodService
                                     , AggregationService aggregationService
                                     , AttributeLevelAggregationService attributeLevelAggregationService
+                                    , AggregationRequest aggregationRequest
             , String tenantId) {
         super(memcachedRepository
                 ,dataService
                 ,settingsService
-                , executionStateService
                 , accountingPeriodService
                 , aggregationService
+                , aggregationRequest
                 , tenantId);
         newPostingDates = new HashSet<>(0);
         this.attributeLevelAggregationService = attributeLevelAggregationService;
 
         try {
-            this.executionState = this.getExecutionState();
 
-            lastActivityPostingDate = executionState.getLastActivityPostingDate();
-            activityPostingDate = executionState.getActivityPostingDate();
+            lastActivityPostingDate = this.aggregationRequest.getLastPostingDate();
+            activityPostingDate = this.aggregationRequest.getPostingDate();
 
-            if(executionState.getExecutionDate() != null && executionState.getExecutionDate() > executionState.getActivityPostingDate()) {
-                lastActivityPostingDate = executionState.getActivityPostingDate();
-                activityPostingDate = executionState.getExecutionDate();
 
-                if(executionState.getLastExecutionDate() != null && executionState.getLastExecutionDate() > lastActivityPostingDate) {
-                    lastActivityPostingDate = executionState.getLastExecutionDate();
-                }
-            }else if (executionState.getExecutionDate() != null && executionState.getExecutionDate() < executionState.getActivityPostingDate()) {
-                lastActivityPostingDate = executionState.getExecutionDate();
-                activityPostingDate = executionState.getActivityPostingDate();
-
-            }else if(executionState.getLastExecutionDate() !=null && executionState.getLastExecutionDate() > executionState.getLastActivityPostingDate()) {
-                lastActivityPostingDate = executionState.getLastExecutionDate();
-            }
 
             List<Records.GroupedMetricsByInstrumentAttribute> metrics = getGroupedDistinctMetricNames(lastActivityPostingDate);
             allAttributeLevelInstruments = this.getDistinctMetricNamesByPostingDate(metrics);
@@ -216,7 +201,7 @@ public class AttributeLevelAggregator extends BaseAggregator {
     public void aggregate(TransactionActivity activity) {
         Set<AttributeLevelLtd> balances = new HashSet<>(0);
 
-        if(executionState == null || activity == null) {
+        if(this.aggregationRequest == null || activity == null) {
             return;
         }
         List<String> metrics = this.getMetrics(activity);
@@ -231,8 +216,8 @@ public class AttributeLevelAggregator extends BaseAggregator {
 
             try {
 
-                AttributeLevelLtdKey previousPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), executionState.getLastActivityPostingDate());
-                AttributeLevelLtdKey currentPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), executionState.getActivityPostingDate());
+                AttributeLevelLtdKey previousPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), this.aggregationRequest.getLastPostingDate());
+                AttributeLevelLtdKey currentPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), this.aggregationRequest.getPostingDate());
 
                 AttributeLevelLtd currentLtd = this.attributeLevelAggregationService.getBalance(this.tenantId, activity.getInstrumentId(), activity.getAttributeId(), metric.toUpperCase(), activityPostingDate);
                 AttributeLevelLtd previousLtd = this.attributeLevelAggregationService.getBalance(this.tenantId, activity.getInstrumentId(), activity.getAttributeId(), metric.toUpperCase(), lastActivityPostingDate);
