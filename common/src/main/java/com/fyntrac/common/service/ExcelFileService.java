@@ -1,9 +1,13 @@
 package com.fyntrac.common.service;
 
+import com.fyntrac.common.dto.record.RecordFactory;
+import com.fyntrac.common.dto.record.Records;
+import com.fyntrac.common.entity.Attributes;
 import com.fyntrac.common.entity.ModelFile;
 import com.fyntrac.common.exception.ExcelSheetNotFoundException;
 import com.fyntrac.common.exception.HeaderNotFoundException;
 import com.fyntrac.common.exception.MismatchException;
+import com.fyntrac.common.utils.ExcelUtil;
 import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.formula.eval.NotImplementedException;
@@ -14,8 +18,12 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
+
+import static com.fyntrac.common.utils.ExcelUtil.getCellStringValue;
+
 @Service
 @Slf4j
 public class ExcelFileService {
@@ -34,10 +42,14 @@ public class ExcelFileService {
     protected static final List<String> ALLOWED_EXTENSIONS = List.of("xls", "xlsx");
 
     protected final DataService<ModelFile> dataService;
+    protected final DataService<Attributes> attributesDataService;
+
 
     @Autowired
-    public ExcelFileService(DataService<ModelFile> dataService) {
+    public ExcelFileService(DataService<ModelFile> dataService
+    , DataService<Attributes> attributesDataService) {
         this.dataService = dataService;
+        this.attributesDataService = attributesDataService;
     }
 
 
@@ -135,6 +147,17 @@ public class ExcelFileService {
         return headerSet;
     }
 
+    private static Set<String> getTransactionActivityFields() {
+        String headers = "\"TransactionName\",\"PostingDate\",\"Instrumentid\",\"AttributeId\",\"TransactionDate\",\"Amount\"";
+
+        // Convert to Set<String>
+        Set<String> headerSet = Arrays.stream(headers.split(","))
+                .map(header -> header.replace("\"", "").trim()) // Remove quotes and trim
+                .collect(Collectors.toSet());
+
+        return headerSet;
+    }
+
 
     public Set<String> getColumnNamesFromDocument(String documentName) {
         Set<String> columns = new HashSet<>();
@@ -221,14 +244,26 @@ public class ExcelFileService {
     public boolean compareExcelWithMongo(Workbook workbook, String sheetName, String collectionName) throws Exception {
         List<String> excelHeaders = getExcelHeaders(workbook, sheetName);
         Set<String> mongoFields = getColumnNamesFromDocument(collectionName);
+        if(collectionName.equalsIgnoreCase("TransactionActivity")){
+            mongoFields.addAll(ExcelFileService.getTransactionActivityFields());
+        }
         return areHeadersSubsetOfDocumentFields(mongoFields, excelHeaders, sheetName);
     }
 
     public boolean validateInstrumentAttributeColumns(Workbook workbook, String sheetName) throws Exception {
 
+        Collection<Attributes> fields = this.attributesDataService.fetchAllData(Attributes.class);
+        Set<String> mongoFields = new HashSet<>(0);
         List<String> excelHeaders = getExcelHeaders(workbook, sheetName);
-        Set<String> mongoFields = getColumnNamesFromDocument("InstrumentAttribute");
+        for(Attributes attribute : fields) {
+            mongoFields.add(String.format("%s.%s","ATTRIBUTES",attribute.getAttributeName()));
+        }
         mongoFields.add("Type");
+        mongoFields.add("PostingDate");
+        mongoFields.add("EffectiveDate");
+        mongoFields.add("InstrumentId");
+        mongoFields.add("AttributeID");
+
         return areHeadersSubsetOfDocumentFields(mongoFields, excelHeaders, sheetName);
     }
 
@@ -241,4 +276,65 @@ public class ExcelFileService {
         Set<String> mongoFields = getMetricDocumentFields();
         return areHeadersSubsetOfDocumentFields(mongoFields, excelHeaders, METRIC_SHEET_NAME);
     }
+
+    /**
+     * Reads the first sheet of the provided Workbook and extracts all rows' MetricName and AttributeId by given headers.
+     *
+     * @param workbook           The Apache POI Workbook instance (XLSX or XLS)
+     * @param metricNameHeader   The header name for the MetricName column
+     * @param attributeIdHeader  The header name for the AttributeId column
+     * @return List of MetricAttributeRow ordered by row number; empty list if headers not found or no data rows
+     * @throws IOException If workbook processing fails (rare for this method)
+     */
+    public List<Records.MetricAttributeRow> readSheetByHeaders(Workbook workbook,String sheetName, String metricNameHeader, String attributeIdHeader) throws IOException {
+        List<Records.MetricAttributeRow> resultList = new ArrayList<>();
+
+        Sheet sheet = this.getSheet(workbook, sheetName); // First sheet
+
+        if (sheet == null) {
+            return resultList; // Empty list if no sheet
+        }
+
+        Row headerRow = sheet.getRow(0);
+        if (headerRow == null) {
+            return resultList; // Empty if no header row
+        }
+
+        int metricNameCol = -1;
+        int attributeIdCol = -1;
+
+        // Identify column indices for the headers (case-insensitive)
+        for (Cell cell : headerRow) {
+            if (cell.getCellType() == CellType.STRING) {
+                String header = cell.getStringCellValue().trim();
+                if (header.equalsIgnoreCase(metricNameHeader)) {
+                    metricNameCol = cell.getColumnIndex();
+                } else if (header.equalsIgnoreCase(attributeIdHeader)) {
+                    attributeIdCol = cell.getColumnIndex();
+                }
+            }
+        }
+
+        if (metricNameCol == -1 || attributeIdCol == -1) {
+            // Headers not found, return empty list
+            return resultList;
+        }
+
+        int lastRow = sheet.getLastRowNum();
+        for (int rowIndex = 1; rowIndex <= lastRow; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                continue; // skip empty row
+            }
+
+            String metricNameValue = ExcelUtil.getCellStringValue(row.getCell(metricNameCol));
+            String attributeIdValue = ExcelUtil.getCellStringValue(row.getCell(attributeIdCol));
+
+            resultList.add(RecordFactory.createMetricAttributeRow(rowIndex + 1, metricNameValue, attributeIdValue));
+        }
+
+        return resultList;
+    }
+
+
 }

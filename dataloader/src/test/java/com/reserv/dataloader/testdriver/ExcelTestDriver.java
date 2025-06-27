@@ -106,36 +106,50 @@ public class ExcelTestDriver {
         for(Records.ExcelTestStepRecord step : steps) {
             executeStep(step);
         }
+
+        // Add 10-second delay
+        try {
+            Thread.sleep(100_000); // 10,000 milliseconds = 10 seconds
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); // Restore interrupt status
+            throw new RuntimeException("Thread was interrupted during sleep", e);
+        }
     }
 
     private void executeStep(Records.ExcelTestStepRecord step) throws Throwable {
+        try {
             TestStep testStep = step.step();
-            if(testStep == TestStep.LOAD_REF_DATA) {
+            if (testStep == TestStep.LOAD_REF_DATA) {
                 loadData(step.input());
-            }else if(testStep == TestStep.ACTIVITY_UPLOAD) {
+            } else if (testStep == TestStep.ACTIVITY_UPLOAD) {
                 //Upload Activity method
                 loadData(step.input());
-            }else if(testStep == TestStep.MODEL_UPLOAD) {
+            } else if (testStep == TestStep.MODEL_UPLOAD) {
                 Model model = uploadModel(step.input());
-                model.getModelConfig().setAggregationLevel(AggregationLevel.INSTRUMENT);
+                model.getModelConfig().setAggregationLevel(AggregationLevel.ATTRIBUTE);
                 model.getModelConfig().setCurrentVersion(Boolean.TRUE);
                 model.setModelStatus(ModelStatus.ACTIVE);
                 configureModel(model);
-            }else if (testStep == TestStep.MODEL_CONFIGURATION) {
+            } else if (testStep == TestStep.MODEL_CONFIGURATION) {
 
-            }else if(testStep == TestStep.MODEL_EXECUTION) {
+            } else if (testStep == TestStep.MODEL_EXECUTION) {
                 //Model execution
                 String executionDate = step.input();
                 executeModel(executionDate);
 
                 // Add 10-second delay
                 try {
-                    Thread.sleep(7_000); // 10,000 milliseconds = 10 seconds
+                    Thread.sleep(20_000); // 10,000 milliseconds = 10 seconds
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt(); // Restore interrupt status
                     throw new RuntimeException("Thread was interrupted during sleep", e);
                 }
             }
+        }catch (Exception e){
+            throw e;
+        }
+
+
     }
 
     private InputStream readFile(String fileName) throws IOException{
@@ -155,7 +169,7 @@ public class ExcelTestDriver {
         InputStream[] streams = new InputStream[1];
         String[] fileNames = new String[1];
         streams[0] = fileStream;
-        fileNames[0] = "refdata.xlsx";
+        fileNames[0] = "dataFile.xlsx";
         uploadFiles(streams, fileNames);
     }
 

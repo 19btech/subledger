@@ -15,7 +15,6 @@ import java.util.Objects;
 @CompoundIndex(def = "{'instrumentId': 1, 'attributeId': 1, 'maxTransactionDate': 1}", name = "Instrument_Activity_State_Index")
 public class InstrumentActivityState {
     private String instrumentId;
-    private String attributeId;
     private Integer maxTransactionDate; // Adjust type as needed
 
     // Getters and Setters
@@ -25,14 +24,13 @@ public class InstrumentActivityState {
     public String toString() {
         return "InstrumentActivityState{" +
                 "instrumentId='" + instrumentId + '\'' +
-                ", attributeId='" + attributeId + '\'' +
                 ", maxTransactionDate=" + maxTransactionDate +
                 '}';
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(instrumentId, attributeId, "InstrumentActivityState");
+        return Objects.hash(instrumentId, "InstrumentActivityState");
     }
 
     @Override
@@ -40,7 +38,6 @@ public class InstrumentActivityState {
         if (this == o) return true;
         if (!(o instanceof InstrumentActivityState that)) return false;
         return Objects.equals(instrumentId, that.instrumentId) &&
-                Objects.equals(attributeId, that.attributeId) &&
                 Objects.equals(maxTransactionDate, that.maxTransactionDate);
     }
 }

@@ -9,6 +9,22 @@ import java.util.stream.Collectors;
 
 public class StringUtil {
 
+    public static String toCamelCase(String input) {
+        if (input == null || input.isEmpty()) return input;
+
+        String[] parts = input.toLowerCase().split("[\\s_\\-]+"); // splits on space, underscore, dash
+        StringBuilder camelCase = new StringBuilder(parts[0]);
+
+        for (int i = 1; i < parts.length; i++) {
+            if (!parts[i].isEmpty()) {
+                camelCase.append(Character.toUpperCase(parts[i].charAt(0)))
+                        .append(parts[i].substring(1));
+            }
+        }
+
+        return camelCase.toString();
+    }
+
     public static int parseBoolean(String value) {
         return ("true".equalsIgnoreCase(value) ||
                 "1".equals(value) ||

@@ -1,5 +1,6 @@
 package com.reserv.dataloader.batch.tasklet;
 
+import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.entity.AggregationRequest;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodService;
@@ -9,6 +10,7 @@ import com.fyntrac.common.service.aggregation.AggregationService;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.fyntrac.common.service.SettingsService;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,7 +22,8 @@ public abstract class BaseAggregatorTasklet  {
     protected final DataService dataService;
     protected  final SettingsService settingsService;
     protected final String tenantId;
-    protected static final int CHUNK_SIZE = 10000;
+    @Value("${fyntrac.chunk.size}")
+    protected int CHUNK_SIZE;
     protected static final int THREAD_POOL_SIZE = 10;
     @Autowired
     protected JobParameters jobParametersAccessor;
@@ -28,12 +31,14 @@ public abstract class BaseAggregatorTasklet  {
     protected final ExecutionStateService executionStateService;
     protected final AccountingPeriodService accountingPeriodService;
     protected final AggregationService aggregationService;
+    protected final TransactionActivityQueue transactionActivityQueue;
     public BaseAggregatorTasklet(MemcachedRepository memcachedRepository
             , DataService dataService
                                  , SettingsService settingsService
                                  , ExecutionStateService executionStateService
                                  , AccountingPeriodService accountingPeriodService
                                  , AggregationService aggregationService
+                                 , TransactionActivityQueue transactionActivityQueue
             , String tenantId) {
         this.memcachedRepository = memcachedRepository;
         this.dataService = dataService;
@@ -42,6 +47,7 @@ public abstract class BaseAggregatorTasklet  {
         this.executionStateService = executionStateService;
         this.accountingPeriodService = accountingPeriodService;
         this.aggregationService = aggregationService;
+        this.transactionActivityQueue = transactionActivityQueue;
     }
 
     protected List<List<String>> chunkList(List<String> list, int chunkSize) {

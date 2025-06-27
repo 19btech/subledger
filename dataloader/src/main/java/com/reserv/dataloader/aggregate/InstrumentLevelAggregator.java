@@ -51,14 +51,16 @@ public class InstrumentLevelAggregator extends BaseAggregator {
                                      , AggregationService aggregationService
                                      , InstrumentLevelAggregationService instrumentLevelAggregationService
                                      , AggregationRequest aggregationRequest
-            , String tenantId) {
+            , String tenantId
+    , long jobId) {
         super(memcachedRepository
                 ,dataService
                 ,settingsService
                 , accountingPeriodService
                 , aggregationService
                 , aggregationRequest
-                , tenantId);
+                , tenantId
+        , jobId);
         newPostingDates = new HashSet<>(0);
         this.instrumentLevelAggregationService = instrumentLevelAggregationService;
 
@@ -110,13 +112,12 @@ public class InstrumentLevelAggregator extends BaseAggregator {
      * Aggregate Transaction Activities
      * @param activities
      */
-    public void aggregate(List<String> activities) {
-        for(String transactionActivityKey : activities) {
+    public void aggregate(List<TransactionActivity> activities) {
+        for(TransactionActivity transactionActivity : activities) {
             try {
-                TransactionActivity transactionActivity = this.memcachedRepository.getFromCache(transactionActivityKey, TransactionActivity.class);
                 this.aggregate(transactionActivity);
             } catch (Exception e) {
-                log.error("Failed to process transactionActivityKey: {}", transactionActivityKey, e);
+                log.error("Failed to process transactionActivity: {}", transactionActivity.toString(), e);
             }
         }
 
@@ -214,8 +215,8 @@ public class InstrumentLevelAggregator extends BaseAggregator {
             try {
 
 
-                InstrumentLevelLtdKey previousPeriodKey = new InstrumentLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), lastActivityPostingDate);
-                InstrumentLevelLtdKey currentPeriodKey = new InstrumentLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activityPostingDate);
+                InstrumentLevelLtdKey previousPeriodKey = new InstrumentLevelLtdKey(String.format("tenantId:%s:jobId:%d",this.tenantId, this.jobId), metric.toUpperCase(), activity.getInstrumentId(), lastActivityPostingDate);
+                InstrumentLevelLtdKey currentPeriodKey = new InstrumentLevelLtdKey(String.format("tenantId:%s:jobId:%d",this.tenantId, this.jobId), metric.toUpperCase(), activity.getInstrumentId(), activityPostingDate);
 
                 InstrumentLevelLtd currentLtd = this.instrumentLevelAggregationService.getBalance(this.tenantId, activity.getInstrumentId(), metric.toUpperCase(), activityPostingDate);
                 InstrumentLevelLtd previousLtd = this.instrumentLevelAggregationService.getBalance(this.tenantId, activity.getInstrumentId(), metric.toUpperCase(), lastActivityPostingDate);
@@ -251,46 +252,46 @@ public class InstrumentLevelAggregator extends BaseAggregator {
                 this.memcachedRepository.putInCache(Key.allInstrumentLevelLtdKeyList(tenantId), allInstrumentLevelInstruments);
             }
         }
-
-        Set<InstrumentLevelLtd> updateable = new HashSet<>(0);
-        Set<InstrumentLevelLtd> insertable = new HashSet<>(0);
-        for(InstrumentLevelLtd instrumentLevelLtd : balances) {
-
-            if(instrumentLevelLtd.getId() != null) {
-                updateable.add(instrumentLevelLtd);
-            }else{
-                insertable.add(instrumentLevelLtd);
-            }
-        }
-
-        try {
-            for (InstrumentLevelLtd ltd : this.dataService.saveAll(insertable, this.tenantId, InstrumentLevelLtd.class)) {
-                String k = ltd.getKey(this.tenantId);
-                if (this.memcachedRepository.ifExists(k)) {
-                    this.memcachedRepository.replaceInCache(k, ltd);
-                } else {
-                    this.memcachedRepository.putInCache(k, ltd);
-                    this.ltdObjectCleanupList.add(k);
-                }
-            }
-        }catch(Exception e){
-            log.error("Failed to process metric: {}", insertable, e);
-        }
-
-        try {
-            for (InstrumentLevelLtd ltd : updateable) {
-                this.dataService.saveObject(ltd, this.tenantId);
-                String k = ltd.getKey(this.tenantId);
-                if (this.memcachedRepository.ifExists(k)) {
-                    this.memcachedRepository.replaceInCache(k, ltd);
-                } else {
-                    this.memcachedRepository.putInCache(k, ltd);
-                    this.ltdObjectCleanupList.add(k);
-                }
-            }
-        }catch(Exception e) {
-            log.error("Failed to process metric: {}", updateable, e);
-        }
+        this.dataService.bulkSave(balances, this.tenantId, InstrumentLevelLtd.class);
+//        Set<InstrumentLevelLtd> updateable = new HashSet<>(0);
+//        Set<InstrumentLevelLtd> insertable = new HashSet<>(0);
+//        for(InstrumentLevelLtd instrumentLevelLtd : balances) {
+//
+//            if(instrumentLevelLtd.getId() != null) {
+//                updateable.add(instrumentLevelLtd);
+//            }else{
+//                insertable.add(instrumentLevelLtd);
+//            }
+//        }
+//
+//        try {
+//            for (InstrumentLevelLtd ltd : this.dataService.saveAll(insertable, this.tenantId, InstrumentLevelLtd.class)) {
+//                String k = ltd.getKey(this.tenantId);
+//                if (this.memcachedRepository.ifExists(k)) {
+//                    this.memcachedRepository.replaceInCache(k, ltd);
+//                } else {
+//                    this.memcachedRepository.putInCache(k, ltd);
+//                    this.ltdObjectCleanupList.add(k);
+//                }
+//            }
+//        }catch(Exception e){
+//            log.error("Failed to process metric: {}", insertable, e);
+//        }
+//
+//        try {
+//            for (InstrumentLevelLtd ltd : updateable) {
+//                this.dataService.saveObject(ltd, this.tenantId);
+//                String k = ltd.getKey(this.tenantId);
+//                if (this.memcachedRepository.ifExists(k)) {
+//                    this.memcachedRepository.replaceInCache(k, ltd);
+//                } else {
+//                    this.memcachedRepository.putInCache(k, ltd);
+//                    this.ltdObjectCleanupList.add(k);
+//                }
+//            }
+//        }catch(Exception e) {
+//            log.error("Failed to process metric: {}", updateable, e);
+//        }
     }
 }
 

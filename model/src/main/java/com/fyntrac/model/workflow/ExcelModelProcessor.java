@@ -4,11 +4,14 @@ import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.InstrumentAttribute;
+import com.fyntrac.common.entity.TransactionActivity;
+import com.fyntrac.common.utils.StringUtil;
 import com.fyntrac.model.utils.ExcelUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.formula.eval.NotImplementedException;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.pulsar.shade.com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -31,7 +34,7 @@ public class ExcelModelProcessor {
             // processExcel("", workbook, iTransactionData, iAggregationData, iInstrumentAttributeData);
         }
     }
-    public static Records.ModelOutputData processExcel(InstrumentAttribute instrumentAttribute
+    public static Records.ModelOutputData processExcel(String intrumentId, List<Records.InstrumentAttributeModelRecord> instrumentAttribute
                                     , Date executionDate
                                     , AccountingPeriod accountingPeriod
                                     , Workbook workbook
@@ -46,11 +49,15 @@ public class ExcelModelProcessor {
         if (workbook != null) {
 
             // Write Input Data
-            writeSheetData(workbook, "i_transaction", iTransactionData);
-            writeSheetData(workbook, "i_metric", iMetricData);
-            writeSheetData(workbook, "i_instrumentattribute", iInstrumentAttributeData);
+            // writeSheetData(workbook, "i_transaction", iTransactionData);
+            ExcelUtil.fillExcelSheetByAttributeIdAndTransactionTypeOrOrder(iTransactionData, workbook, "i_transaction");
+            // ExcelUtil.fillExcelWithTransactionData(workbook,iTransactionData,"i_transaction");
+            // writeSheetData(workbook, "i_metric", iMetricData);
+            ExcelUtil.fillExcelSheetByAttributeIdAndMetricNameOrOrder(iMetricData, workbook, "i_metric");
+            //writeSheetData(workbook, "i_instrumentattribute", iInstrumentAttributeData);
+            ExcelUtil.fillExcelSheetByAttributeIdOrOrder(iInstrumentAttributeData, workbook, "i_instrumentattribute");
             writeSheetData(workbook, "i_executiondate", iExecutionDate);
-            // Evaluate formulas (if applicable)
+              // Evaluate formulas (if applicable)
             FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
             try {
                 // First try bulk evaluation for better performance
@@ -95,9 +102,8 @@ public class ExcelModelProcessor {
             oTransactionData = readSheetData(workbook, "o_transaction");
             oInstrumentAttributeData = readSheetData(workbook, "o_instrumentattribute");
 
-
             // Save the modified file
-            String fileName = "processed_output" + instrumentAttribute.getInstrumentId() + ".xlsx";
+            String fileName = "processed_output" + intrumentId + ".xlsx";
             try (FileOutputStream fos = new FileOutputStream(fileName)) {
                 workbook.write(fos);
             }
@@ -108,6 +114,7 @@ public class ExcelModelProcessor {
     }
 
     private static void writeSheetData(Workbook workbook, String sheetName, List<Map<String, Object>> data) throws IOException {
+        // ExcelUtil.mapJsonToExcel(data, workbook, sheetName);
         ExcelUtil.mapJsonToExcel(data, workbook, sheetName);
     }
 
@@ -133,7 +140,8 @@ public class ExcelModelProcessor {
             Map<String, Object> rowData = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
             for (int j = 0; j < columnCount; j++) {
                 Cell cell = row.getCell(j, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
-                rowData.put(headerRow.getCell(j).getStringCellValue(), getCellValue(cell, evaluator));
+                String fieldName = headerRow.getCell(j).getStringCellValue();
+                rowData.put(fieldName.toUpperCase(), getCellValue(cell, evaluator));
             }
             dataList.add(rowData);
         }
@@ -148,27 +156,61 @@ public class ExcelModelProcessor {
 
         return switch (cell.getCellType()) {
             case STRING -> cell.getStringCellValue();
-            case NUMERIC -> (DateUtil.isCellDateFormatted(cell) ? getDateValue(cell) : cell.getNumericCellValue());
+            case NUMERIC -> {
+                if (DateUtil.isCellDateFormatted(cell)) {
+                    String formatString = cell.getCellStyle().getDataFormatString();
+
+                    // Normalize format string to lowercase for comparison
+                    if (formatString != null) {
+                        String normalizedFormat = formatString.toLowerCase();
+
+                        if (normalizedFormat.contains("m/dd/yyyy")) {
+                            // Return date as formatted string instead of Date object or numeric
+                            Date date = cell.getDateCellValue();
+                            String formattedDate = new SimpleDateFormat(formatString).format(date);
+                            yield formattedDate;
+                        }
+                    }
+
+                    // Default: return as java.util.Date object
+                    yield getDateValue(cell);
+                } else {
+                    yield cell.getNumericCellValue();
+                }
+            }
             case BOOLEAN -> cell.getBooleanCellValue();
-            case FORMULA -> evaluateFormulaCell(cell, evaluator); // Evaluate the formula
+            case FORMULA -> evaluateFormulaCell(cell, evaluator);
             default -> "";
         };
     }
 
+
     private static Object evaluateFormulaCell(Cell cell, FormulaEvaluator evaluator) {
         if (evaluator == null) {
-            return cell.getCellFormula(); // Fallback to formula string if evaluator is not provided
+            return cell.getCellFormula(); // Fallback to formula string
         }
 
-        CellValue cellValue = evaluator.evaluate(cell); // Evaluate the formula
+        // Evaluate the formula result
+        CellValue cellValue = evaluator.evaluate(cell);
+        if (cellValue == null) {
+            return ""; // In case evaluation failed
+        }
+
+        // Check if the result is a date (still treated as NUMERIC in Excel)
+        if (cellValue.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
+            Date date = cell.getDateCellValue();
+            return new SimpleDateFormat("MM/dd/yyyy").format(date); // Or return Date object
+        }
+
         return switch (cellValue.getCellType()) {
             case STRING -> cellValue.getStringValue();
             case NUMERIC -> cellValue.getNumberValue();
             case BOOLEAN -> cellValue.getBooleanValue();
-            case ERROR -> "ERROR"; // Handle formula errors
+            case ERROR -> "ERROR"; // Could return cellValue.getErrorValue() if needed
             default -> "";
         };
     }
+
 
     private static String getDateValue(Cell cell) {
         DateFormat df = new SimpleDateFormat("yyyy-MM-dd");

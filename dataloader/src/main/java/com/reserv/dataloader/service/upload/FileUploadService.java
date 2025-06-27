@@ -12,6 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -107,6 +108,10 @@ public class FileUploadService {
                     ExcelFileUtil.isExtensionMatched(file,"xlsx")){
                 FileUtils.deleteDirectory(new File(OUTPUT_FOLDER_PATH));
                 ExcelFileUtil.convertExcelToCSV(file,OUTPUT_FOLDER_PATH, 1L);
+                List<Path> outPutFileList = ExcelFileUtil.listCsvFiles(OUTPUT_FOLDER_PATH, ".csv");
+//                for(Path path : outPutFileList) {
+//                    ExcelFileUtil.removeEmptyHeaderColumns(path);
+//                }
             }
         }
     }

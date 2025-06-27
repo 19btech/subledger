@@ -10,13 +10,14 @@ import lombok.Data;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Data
 @Builder
 public class ModelWorkflowContext {
-    private InstrumentAttribute currentInstrumentAttribute;
-    private InstrumentAttribute lastInstrumentAttribute;
-    private InstrumentAttribute firstInstrumentAttribute;
+    public List<Records.InstrumentAttributeModelRecord> currentInstrumentAttribute;
+    public List<Records.InstrumentAttributeModelRecord> lastInstrumentAttribute;
+    public List<Records.InstrumentAttributeModelRecord> firstInstrumentAttribute;
     private List<Map<String, Object>> iTransactions;
     private List<Map<String, Object>> iMetrics;
     private List<Map<String, Object>> iInstrumentAttributes;
@@ -24,8 +25,9 @@ public class ModelWorkflowContext {
     Records.ModelRecord excelModel;
     private ModelExecutionType executionType;
     private Date executionDate;
-    private String instrumentId;
-    private String attributeId;
     private AccountingPeriod accountingPeriod;
     private ExecutionState executionState;
+    private String instrumentId;
+    private String tenantId;
+    private int lastActivityPostingDate;
 }

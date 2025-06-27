@@ -7,7 +7,6 @@ import com.fyntrac.common.key.AttributeLevelLtdKey;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.DataService;
-import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.SettingsService;
 import com.fyntrac.common.service.aggregation.AggregationService;
 import com.fyntrac.common.service.aggregation.AttributeLevelAggregationService;
@@ -51,14 +50,16 @@ public class AttributeLevelAggregator extends BaseAggregator {
                                     , AggregationService aggregationService
                                     , AttributeLevelAggregationService attributeLevelAggregationService
                                     , AggregationRequest aggregationRequest
-            , String tenantId) {
+            , String tenantId
+    , long jobId) {
         super(memcachedRepository
                 ,dataService
                 ,settingsService
                 , accountingPeriodService
                 , aggregationService
                 , aggregationRequest
-                , tenantId);
+                , tenantId
+        , jobId);
         newPostingDates = new HashSet<>(0);
         this.attributeLevelAggregationService = attributeLevelAggregationService;
 
@@ -113,14 +114,13 @@ public class AttributeLevelAggregator extends BaseAggregator {
      * Aggregate Transaction Activities
      * @param activities
      */
-    public void aggregate(List<String> activities) {
+    public void aggregate(List<TransactionActivity> activities) {
 
-        for(String transactionActivityKey : activities) {
+        for(TransactionActivity transactionActivity : activities) {
             try {
-                TransactionActivity transactionActivity = this.memcachedRepository.getFromCache(transactionActivityKey, TransactionActivity.class);
                 this.aggregate(transactionActivity);
             } catch (Exception e) {
-                log.error("Failed to process transactionActivityKey: {}", transactionActivityKey, e);
+                log.error("Failed to process transactionActivity: {}", transactionActivity.toString(), e);
             }
         }
 
@@ -133,66 +133,6 @@ public class AttributeLevelAggregator extends BaseAggregator {
 
     }
 
-    /**
-     * Generates carryover aggregated LTD entries for missing instrument for accounting period
-     */
-    private void generateCarryOverAggregateEntries() {
-        log.info("Generating carry over aggregate entries");
-        //For remaining instruments that have no activity so we will create
-        //a carry over entry for those instruments
-
-        Iterator<String> instrumentIteratror = allAttributeLevelInstruments.iterator();
-        Set<AttributeLevelLtd> carryOvers = new HashSet<>(0);
-        Map<Integer, Integer> accountingPeriodMap = new HashMap<>(0);
-
-        for(Integer postingDate : newPostingDates) {
-            Date pDate = DateUtil.convertToDateFromYYYYMMDD(postingDate);
-            int aPeriod = DateUtil.getAccountingPeriodId(pDate);
-            AccountingPeriod accountingPeriod = this.accountingPeriodService.getAccountingPeriod(aPeriod, this.tenantId);
-            accountingPeriodMap.put(postingDate, accountingPeriod.getPeriodId());
-        }
-        while(instrumentIteratror.hasNext()) {
-            String attributeLevelInstrumentLtdKey = instrumentIteratror.next();
-            try {
-                if (this.memcachedRepository.ifExists(attributeLevelInstrumentLtdKey)) {
-                    AttributeLevelLtd attributeLevelLtd = this.memcachedRepository.getFromCache(attributeLevelInstrumentLtdKey, AttributeLevelLtd.class);
-                    for (Integer postingDate : newPostingDates) {
-                        if (attributeLevelLtd != null && postingDate > attributeLevelLtd.getPostingDate()) {
-                            BigDecimal beginningBalance = attributeLevelLtd.getBalance().getBeginningBalance().add(attributeLevelLtd.getBalance().getActivity());
-                            BaseLtd balance = BaseLtd.builder()
-                                    .beginningBalance(beginningBalance)
-                                    .activity(BigDecimal.valueOf(0L)).build();
-                            AttributeLevelLtd currentLtd = AttributeLevelLtd.builder()
-                                    .postingDate(postingDate)
-                                    .accountingPeriodId(accountingPeriodMap.get(postingDate))
-                                    .instrumentId(attributeLevelLtd.getInstrumentId())
-                                    .attributeId(attributeLevelLtd.getAttributeId())
-                                    .metricName(attributeLevelLtd.getMetricName())
-                                    .balance(balance).build();
-                            AttributeLevelLtdKey currentPeriodLtdKey = new AttributeLevelLtdKey(this.tenantId,
-                                    attributeLevelLtd.getMetricName().toUpperCase(),
-                                    attributeLevelLtd.getInstrumentId(),
-                                    attributeLevelLtd.getAttributeId(), postingDate);
-                            this.memcachedRepository.putInCache(currentPeriodLtdKey.getKey(), currentLtd);
-                            carryOvers.add(currentLtd);
-                            this.memcachedRepository.delete(attributeLevelInstrumentLtdKey);
-                            this.ltdObjectCleanupList.add(attributeLevelInstrumentLtdKey);
-                        }
-                    }
-                    instrumentIteratror.remove();
-                }
-            } catch (Exception e) {
-                log.error("Failed to generate carry over aggregate entries for key: {}", attributeLevelInstrumentLtdKey, e);
-            }
-        }
-
-        try {
-            this.dataService.saveAll(carryOvers, this.tenantId, AttributeLevelLtd.class);
-        } catch (Exception e) {
-            log.error("Failed to save carry over aggregate entries", e);
-        }
-
-    }
 
     /**
      * Aggregate LTD for transaction activity
@@ -216,8 +156,8 @@ public class AttributeLevelAggregator extends BaseAggregator {
 
             try {
 
-                AttributeLevelLtdKey previousPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), this.aggregationRequest.getLastPostingDate());
-                AttributeLevelLtdKey currentPeriodKey = new AttributeLevelLtdKey(this.tenantId, metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), this.aggregationRequest.getPostingDate());
+                AttributeLevelLtdKey previousPeriodKey = new AttributeLevelLtdKey(String.format("tenantId:%s:jobId:%d",this.tenantId, this.jobId), metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), this.aggregationRequest.getLastPostingDate());
+                AttributeLevelLtdKey currentPeriodKey = new AttributeLevelLtdKey(String.format("tenantId:%s:jobId:%d",this.tenantId, this.jobId), metric.toUpperCase(), activity.getInstrumentId(), activity.getAttributeId(), this.aggregationRequest.getPostingDate());
 
                 AttributeLevelLtd currentLtd = this.attributeLevelAggregationService.getBalance(this.tenantId, activity.getInstrumentId(), activity.getAttributeId(), metric.toUpperCase(), activityPostingDate);
                 AttributeLevelLtd previousLtd = this.attributeLevelAggregationService.getBalance(this.tenantId, activity.getInstrumentId(), activity.getAttributeId(), metric.toUpperCase(), lastActivityPostingDate);
@@ -254,46 +194,46 @@ public class AttributeLevelAggregator extends BaseAggregator {
                 this.memcachedRepository.putInCache(Key.allAttributeLevelLtdKeyList(tenantId), allAttributeLevelInstruments);
             }
         }
-
-        Set<AttributeLevelLtd> updateable = new HashSet<>(0);
-        Set<AttributeLevelLtd> insertable = new HashSet<>(0);
-        for(AttributeLevelLtd attributeLevelLtd : balances) {
-
-            if(attributeLevelLtd.getId() != null) {
-                updateable.add(attributeLevelLtd);
-            }else{
-                insertable.add(attributeLevelLtd);
-            }
-        }
-
-        try {
-            for (AttributeLevelLtd ltd : this.dataService.saveAll(insertable, this.tenantId, AttributeLevelLtd.class)) {
-                String k = ltd.getKey(this.tenantId);
-                if (this.memcachedRepository.ifExists(k)) {
-                    this.memcachedRepository.replaceInCache(k, ltd);
-                } else {
-                    this.memcachedRepository.putInCache(k, ltd);
-                    this.ltdObjectCleanupList.add(k);
-                }
-            }
-        }catch(Exception e){
-            log.error("Failed to process metric: {}", insertable, e);
-        }
-
-        try {
-            for (AttributeLevelLtd ltd : updateable) {
-                this.dataService.saveObject(ltd, this.tenantId);
-                String k = ltd.getKey(this.tenantId);
-                if (this.memcachedRepository.ifExists(k)) {
-                    this.memcachedRepository.replaceInCache(k, ltd);
-                } else {
-                    this.memcachedRepository.putInCache(k, ltd);
-                    this.ltdObjectCleanupList.add(k);
-                }
-            }
-        }catch(Exception e) {
-            log.error("Failed to process metric: {}", updateable, e);
-        }
+        this.dataService.bulkSave(balances, this.tenantId, AttributeLevelLtd.class);
+//        Set<AttributeLevelLtd> updateable = new HashSet<>(0);
+//        Set<AttributeLevelLtd> insertable = new HashSet<>(0);
+//        for(AttributeLevelLtd attributeLevelLtd : balances) {
+//
+//            if(attributeLevelLtd.getId() != null) {
+//                updateable.add(attributeLevelLtd);
+//            }else{
+//                insertable.add(attributeLevelLtd);
+//            }
+//        }
+//
+//        try {
+//            for (AttributeLevelLtd ltd : this.dataService.saveAll(insertable, this.tenantId, AttributeLevelLtd.class)) {
+//                String k = ltd.getKey(this.tenantId);
+//                if (this.memcachedRepository.ifExists(k)) {
+//                    this.memcachedRepository.replaceInCache(k, ltd);
+//                } else {
+//                    this.memcachedRepository.putInCache(k, ltd);
+//                    this.ltdObjectCleanupList.add(k);
+//                }
+//            }
+//        }catch(Exception e){
+//            log.error("Failed to process metric: {}", insertable, e);
+//        }
+//
+//        try {
+//            for (AttributeLevelLtd ltd : updateable) {
+//                this.dataService.saveObject(ltd, this.tenantId);
+//                String k = ltd.getKey(this.tenantId);
+//                if (this.memcachedRepository.ifExists(k)) {
+//                    this.memcachedRepository.replaceInCache(k, ltd);
+//                } else {
+//                    this.memcachedRepository.putInCache(k, ltd);
+//                    this.ltdObjectCleanupList.add(k);
+//                }
+//            }
+//        }catch(Exception e) {
+//            log.error("Failed to process metric: {}", updateable, e);
+//        }
     }
 }
 

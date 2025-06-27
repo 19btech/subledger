@@ -174,24 +174,24 @@ public class AttributeLevelAggregationService extends CacheBasedService<Attribut
         AttributeLevelLtdKey key = new AttributeLevelLtdKey(tenantId, metric.toUpperCase(), instrumentId, attributeId, postingDate);
         log.info("Fetching balance for Instrument: {}, Attribute: {}, Metric: {}, PostingDate: {}, Tenant: {}",
                 instrumentId, attributeId, metric, postingDate, tenantId);
-        try {
-            // Check cache first
-            if (memcachedRepository.ifExists(key.getKey())) {
-                log.debug("Cache hit for key: {}", key);
-                return memcachedRepository.getFromCache(key.getKey(), AttributeLevelLtd.class);
-            } else {
-                log.debug("Cache miss for key: {}. Fetching from MongoDB...", key);
-            }
-        } catch (Exception e) {
-            log.error("Error accessing Memcached for key: {}. Proceeding with MongoDB fetch.", key, e);
-        }
+//        try {
+//            // Check cache first
+//            if (memcachedRepository.ifExists(key.getKey())) {
+//                log.debug("Cache hit for key: {}", key);
+//                return memcachedRepository.getFromCache(key.getKey(), AttributeLevelLtd.class);
+//            } else {
+//                log.debug("Cache miss for key: {}. Fetching from MongoDB...", key);
+//            }
+//        } catch (Exception e) {
+//            log.error("Error accessing Memcached for key: {}. Proceeding with MongoDB fetch.", key, e);
+//        }
 
         // Construct MongoDB query
         Query query = new Query();
-        query.addCriteria(Criteria.where("instrumentId").is(instrumentId)
-                .and("attributeId").is(attributeId)
+        query.addCriteria(Criteria.where("instrumentId").is(instrumentId.toUpperCase())
+                .and("attributeId").is(attributeId.toUpperCase())
                 .and("postingDate").is(postingDate)
-                .and("metricName").is(metric));
+                .and("metricName").is(metric.toUpperCase()));
 
         // Fetch from MongoDB
         AttributeLevelLtd ltd = null;
@@ -331,14 +331,14 @@ public class AttributeLevelAggregationService extends CacheBasedService<Attribut
         return aggregates;
     }
 
-    public List<AttributeLevelLtd> getBalance(String instrumentId, String attributeId, List<String> metrics, int accountingPeriodId) {
+    public List<AttributeLevelLtd> getBalance(String instrumentId, String attributeId, List<String> metrics, int postingDate) {
         Query query = new Query();
-        List<String> metricList = StringUtil.convertUpperCase(metrics);
+        Set<String> metricList = new HashSet<>(StringUtil.convertUpperCase(metrics));
         // Add criteria to filter by transactionName (list) and transactionDate
         query.addCriteria(Criteria.where("instrumentId").is(instrumentId.toUpperCase())
                 .and("attributeId").is(attributeId.toUpperCase())
-                .and("accountingPeriodId").is(accountingPeriodId)
-                .and("metricName").in(metrics));
+                .and("postingDate").is(postingDate)
+                .and("metricName").in(metricList));
 
         // Execute the query
         return this.dataService.fetchData(query, AttributeLevelLtd.class);

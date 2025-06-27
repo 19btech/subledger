@@ -34,6 +34,13 @@ public class AttributeLevelLtd implements Serializable, BaseLevelLtd {
     private Integer postingDate;
     BaseLtd balance;
 
+    public void setMetricName() {
+        setMetricName(null);
+    }
+
+    public void setMetricName(String metricName) {
+        this.metricName = metricName;
+    }
     public String getKey(String tenantId) {
         return new AttributeLevelLtdKey(tenantId,
                 this.getMetricName().toUpperCase(),

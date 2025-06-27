@@ -3,6 +3,10 @@ package com.fyntrac.common.utils;
 import  com.fyntrac.common.enums.AccountingRules;
 import com.fyntrac.common.exception.ExcelFormulaCellException;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVPrinter;
+import org.apache.commons.csv.CSVRecord;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.*;
 import org.bson.types.Binary;
@@ -204,8 +208,64 @@ public class ExcelUtil {
         }
     }
 
+
+    /**
+     * Removes columns with empty headers from a CSV file and overwrites the original file.
+     *
+     * @param inputPath Path to the input CSV file.
+     * @throws IOException If an I/O error occurs.
+     */
+    public static void removeEmptyHeaderColumns(Path inputPath) throws IOException {
+        Path tempFile = Files.createTempFile("cleaned_", ".csv");
+
+        try (
+                BufferedReader reader = Files.newBufferedReader(inputPath);
+                BufferedWriter writer = Files.newBufferedWriter(tempFile)
+        ) {
+            // Read header line
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                throw new IllegalArgumentException("File is empty: " + inputPath);
+            }
+
+            String[] headers = headerLine.split(",");
+            List<Integer> validIndices = new ArrayList<>();
+            List<String> validHeaders = new ArrayList<>();
+
+            for (int i = 0; i < headers.length; i++) {
+                String header = headers[i].trim();
+                if (!header.isEmpty()) {
+                    validIndices.add(i);
+                    validHeaders.add(header);
+                }
+            }
+
+            // Write cleaned header
+            writer.write(String.join(",", validHeaders));
+            writer.newLine();
+
+            // Now read and clean data rows
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] values = line.split(",", -1); // -1 to keep trailing empty strings
+                List<String> validValues = new ArrayList<>();
+
+                for (int i : validIndices) {
+                    validValues.add(i < values.length ? values[i] : "");
+                }
+
+                writer.write(String.join(",", validValues));
+                writer.newLine();
+            }
+        }
+
+        // Replace original file
+        Files.move(tempFile, inputPath, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+
     protected static String getDateValue(Cell cell) {
-        DateFormat df = new SimpleDateFormat("yyyy-MM-dd");
+        DateFormat df = new SimpleDateFormat("M/dd/yyyy");
         Date date = cell.getDateCellValue();
         return  df.format(date);
     }
@@ -236,7 +296,7 @@ public class ExcelUtil {
                     if (DateUtil.isCellDateFormatted(cell)) {
                         Date date = cell.getDateCellValue();
                         // Format the date as needed, e.g., "yyyy-MM-dd"
-                        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+                        SimpleDateFormat dateFormat = new SimpleDateFormat("M/dd/yyyy");
                         data.append("\"" + dateFormat.format(date) + "\"");
                     } else {
                         data.append(cellValue.getNumberValue() + "");
@@ -435,7 +495,7 @@ public class ExcelUtil {
         }
     }
 
-    private static Map<String, Integer> getColumnIndexMap(Row headerRow) {
+    public static Map<String, Integer> getColumnIndexMap(Row headerRow) {
         Map<String, Integer> columnIndexMap = new HashMap<>();
         for (Cell cell : headerRow) {
             columnIndexMap.put(cell.getStringCellValue(), cell.getColumnIndex());
@@ -455,6 +515,43 @@ public class ExcelUtil {
         } catch (IOException e) {
             throw new RuntimeException("Error while converting Binary to Workbook", e);
         }
+    }
+
+    public static String getCellStringValue(Cell cell) {
+        if (cell == null) {
+            return "";
+        }
+
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue().trim();
+            case NUMERIC -> {
+                double d = cell.getNumericCellValue();
+                if (d == (long) d) {
+                    yield String.valueOf((long) d);
+                } else {
+                    yield String.valueOf(d);
+                }
+            }
+            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+            case FORMULA -> {
+                FormulaEvaluator evaluator = cell.getSheet().getWorkbook().getCreationHelper().createFormulaEvaluator();
+                CellValue cellValue = evaluator.evaluate(cell);
+                yield switch (cellValue.getCellType()) {
+                    case STRING -> cellValue.getStringValue().trim();
+                    case NUMERIC -> {
+                        double d = cellValue.getNumberValue();
+                        if (d == (long) d) {
+                            yield String.valueOf((long) d);
+                        } else {
+                            yield String.valueOf(d);
+                        }
+                    }
+                    case BOOLEAN -> String.valueOf(cellValue.getBooleanValue());
+                    default -> "";
+                };
+            }
+            case BLANK, ERROR, _NONE -> "";
+        };
     }
 }
 

@@ -14,6 +14,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import java.io.Serial;
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.text.ParseException;
 import java.util.Date;
 import java.util.Map;
 import java.util.Objects;
@@ -57,13 +58,17 @@ public class TransactionActivity implements Serializable {
     private Integer effectiveDate;
     @Field("attributes")
     private Map<String, Object> attributes;
+    int isReplayable;
 
     /**
-     * get Transaction Date
-     * @return
+     * Get Transaction Date
+     * @return UTC Date or null if effectiveDate is null
      */
-    public Date getTransactionDate(){
-        return DateUtil.convertToDateFromYYYYMMDD(this.effectiveDate);
+    public Date getTransactionDate() throws ParseException {
+        if (this.effectiveDate == null || this.effectiveDate == 0) {
+            return null;
+        }
+        return DateUtil.convertIntDateToUtc(this.effectiveDate);
     }
 
     @Override

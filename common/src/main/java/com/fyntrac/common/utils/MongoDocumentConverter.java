@@ -5,10 +5,10 @@ import org.springframework.boot.json.JsonParser;
 import org.springframework.boot.json.JsonParserFactory;
 
 import java.lang.reflect.Field;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.RecordComponent;
+import java.util.*;
 
 @Slf4j
 public class MongoDocumentConverter {
@@ -36,6 +36,75 @@ public class MongoDocumentConverter {
         }
 
         return resultMap;
+    }
+
+    public static <T> Map<String, Object> convertRecordToFlatMap(T obj) {
+        Map<String, Object> flatMap = new HashMap<>();
+        if (obj != null) {
+            flattenRecordRecursive("", obj, flatMap);
+        }
+        return flatMap;
+    }
+
+    private static void flattenRecordRecursive(String parentKey, Object obj, Map<String, Object> flatMap) {
+        if (obj == null) return;
+
+        Class<?> clazz = obj.getClass();
+
+        // Handle primitives, wrappers, dates directly
+        if (isPrimitiveOrWrapper(obj) || obj instanceof Date) {
+            flatMap.put(parentKey.toUpperCase(), obj);
+            return;
+        }
+
+        // Handle Map
+        if (obj instanceof Map<?, ?> mapObj) {
+            flattenMap(parentKey, mapObj, flatMap);
+            return;
+        }
+
+        // Handle List
+        if (obj instanceof List<?> listObj) {
+            for (int i = 0; i < listObj.size(); i++) {
+                flattenObjectRecursive(parentKey + "[" + i + "]", listObj.get(i), flatMap);
+            }
+            return;
+        }
+
+        // Handle Records
+        if (clazz.isRecord()) {
+            for (RecordComponent component : clazz.getRecordComponents()) {
+                try {
+                    Method accessor = component.getAccessor();
+                    Object value = accessor.invoke(obj);
+                    if (value == null) continue;
+
+                    String key = parentKey.isEmpty() ? component.getName() : parentKey + "." + component.getName();
+                    flattenRecordRecursive(key, value, flatMap);
+
+                } catch (Exception e) {
+                    System.err.println("Failed to access record component: " + component.getName());
+                }
+            }
+            return;
+        }
+
+        // Fallback for POJO
+        for (Field field : clazz.getDeclaredFields()) {
+            if (Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) continue;
+
+            field.setAccessible(true);
+            try {
+                Object value = field.get(obj);
+                if (value == null) continue;
+
+                String key = parentKey.isEmpty() ? field.getName() : parentKey + "." + field.getName();
+                flattenObjectRecursive(key, value, flatMap);
+
+            } catch (IllegalAccessException e) {
+                System.err.println("Skipping inaccessible field: " + field.getName());
+            }
+        }
     }
 
     public static <T> Map<String, Object> convertToFlatMap(T obj) {
@@ -74,6 +143,17 @@ public class MongoDocumentConverter {
                 if (value == null) {
                     continue;
                 } else if (isPrimitiveOrWrapper(value) || value instanceof Date) {
+                    if (value instanceof String || value instanceof Number) {
+                        String str = ((String) value).trim();
+                        if (str.matches("-?\\d+")) {
+                            // Integer number
+                            value = Integer.parseInt(str);
+                        } else if (str.matches("-?\\d*\\.\\d+")) {
+                            // Decimal number
+                            value = Double.parseDouble(str);
+                        }
+                    }
+
                     flatMap.put(key.toUpperCase(), value);
                 } else if (value instanceof Map) {
                     flattenMap(key, (Map<?, ?>) value, flatMap);
@@ -91,9 +171,15 @@ public class MongoDocumentConverter {
         }
     }
 
-    private static boolean isPrimitiveOrWrapper(Object value) {
-        return value instanceof String || value instanceof Number || value instanceof Boolean || value instanceof Character;
+    private static boolean isPrimitiveOrWrapper(Object obj) {
+        Class<?> clazz = obj.getClass();
+        return clazz.isPrimitive()
+                || clazz == Boolean.class || clazz == Byte.class || clazz == Character.class
+                || clazz == Short.class || clazz == Integer.class || clazz == Long.class
+                || clazz == Float.class || clazz == Double.class || clazz == String.class
+                || clazz.isEnum(); // <- add this
     }
+
 
     private static void flattenMap(String parentKey, Map<?, ?> map, Map<String, Object> flatMap) {
         for (Map.Entry<?, ?> entry : map.entrySet()) {
@@ -102,7 +188,7 @@ public class MongoDocumentConverter {
 
             if (value == null) {
                 continue;
-            } else if (isPrimitiveOrWrapper(value) || value instanceof Date) {
+            } else if (isPrimitiveOrWrapper(value) || value instanceof Date || value instanceof Enum) {
                 flatMap.put(key.toUpperCase(), value);
             } else if (value instanceof Map) {
                 flattenMap(key, (Map<?, ?>) value, flatMap);

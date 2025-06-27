@@ -9,16 +9,17 @@ import  com.fyntrac.common.config.TenantContextHolder;
 import  com.fyntrac.common.component.TenantDataSourceProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mongodb.core.BulkOperations;
-import org.springframework.data.mongodb.core.FindAndModifyOptions;
-import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.*;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+import com.mongodb.client.model.ReplaceOptions;
 // MongoDB Document
 import org.bson.Document;
+import java.lang.reflect.Field;
 
 import java.util.*;
 
@@ -100,6 +101,51 @@ public class DataService<T> {
             throw new IllegalArgumentException("Invalid tenantId: " + tenantId);
         }
     }
+
+    public <T> Collection<T> bulkSave(Set<T> entities, String tenantId, Class<T> klass) {
+        MongoTemplate mongoTemplate = this.dataSourceProvider.getDataSource(tenantId);
+        if (mongoTemplate == null) {
+            throw new IllegalArgumentException("Invalid tenantId: " + tenantId);
+        }
+
+        BulkOperations bulkOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, klass);
+
+        for (T entity : entities) {
+            Object id = this.getIdValue(entity);
+
+            Document doc = new Document();
+            mongoTemplate.getConverter().write(entity, doc);
+
+            if (id != null) {
+                // Update if ID exists
+                Query query = new Query(Criteria.where("_id").is(id));
+                Update update = Update.fromDocument(doc);
+                bulkOps.upsert(query, update);
+            } else {
+                // Insert if no ID
+                bulkOps.insert(entity);
+            }
+        }
+
+        bulkOps.execute();
+        return entities;
+    }
+
+
+    private <T> Object getIdValue(T entity) {
+        for (Field field : entity.getClass().getDeclaredFields()) {
+            if (field.isAnnotationPresent(Id.class)) {
+                field.setAccessible(true);
+                try {
+                    return field.get(entity);
+                } catch (IllegalAccessException e) {
+                    throw new RuntimeException("Failed to access @Id field", e);
+                }
+            }
+        }
+        return null;
+    }
+
     public List<T> fetchData(Query query, Class<T> documentClass) {
         String tenant = tenantContextHolder.getTenant();
         return this.fetchData(query, tenant, documentClass);

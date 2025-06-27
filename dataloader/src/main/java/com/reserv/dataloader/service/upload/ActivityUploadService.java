@@ -66,31 +66,38 @@ public class ActivityUploadService {
 
     public void uploadActivity(Map<AccountingRules, String> activityMap) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, ExecutionException, InterruptedException, JobRestartException {
         FileUploadActivityType activityType = FileUploadActivityType.INSTRUMENT_ATTRIBUTE;
-        String filePath = activityMap.get(AccountingRules.INSTRUMENTATTRIBUTE);
+        String instrumentAttributeFilePath = activityMap.get(AccountingRules.INSTRUMENTATTRIBUTE);
+        String transactionActivityFilePath = activityMap.get(AccountingRules.TRANSACTIONACTIVITY);
+        int instrumentAttributeActivity = (instrumentAttributeFilePath!= null && !instrumentAttributeFilePath.isEmpty()) ? 1 : 0;
+        int transactionActivity =  (transactionActivityFilePath!= null && !transactionActivityFilePath.isEmpty()) ? 1 : 0;
+
+
         Long runid = System.currentTimeMillis();
+        Long jobId = runid;
         try {
             Batch activityBatch = this.createBatch();
-            if(filePath !=null) {
-                JobParameters instrumentAttributeJobParameter = createInstrumentAttributeJob(filePath, activityBatch);
-                filePath = activityMap.get(AccountingRules.TRANSACTIONACTIVITY);
-                JobParameters transactionActivityJobParameter = createTransactionActivityJob(filePath, activityBatch);
-
+            if(instrumentAttributeFilePath !=null) {
+                JobParameters instrumentAttributeJobParameter = createInstrumentAttributeJob(instrumentAttributeFilePath, activityBatch, (instrumentAttributeActivity + transactionActivity), jobId);
                 JobExecution instrumentAttributeExecution = jobLauncher.run(instrumentAttributeUploadJob, instrumentAttributeJobParameter);
                 runid = instrumentAttributeJobParameter.getLong("run.id");
                 this.logActivity(instrumentAttributeExecution, FileUploadActivityType.INSTRUMENT_ATTRIBUTE);
                 if (instrumentAttributeExecution.getStatus() == BatchStatus.COMPLETED) {
                     // Job A was successful, now launch Job B
                     log.info("Job instrumentAttributeUploadJob completed successfully. Starting Job transactionActivityUploadJob.");
-                    runid = transactionActivityJobParameter.getLong("run.id");
-                    JobExecution transactionActivityExecution = jobLauncher.run(transactionActivityUploadJob, transactionActivityJobParameter);
-                    this.logActivity(transactionActivityExecution, FileUploadActivityType.TRANSACTION_ACTIVITY);
+                    if(transactionActivityFilePath != null) {
+                        JobParameters transactionActivityJobParameter = createTransactionActivityJob(transactionActivityFilePath, activityBatch, (instrumentAttributeActivity + transactionActivity), jobId);
+
+
+                        runid = transactionActivityJobParameter.getLong("run.id");
+                        JobExecution transactionActivityExecution = jobLauncher.run(transactionActivityUploadJob, transactionActivityJobParameter);
+                        this.logActivity(transactionActivityExecution, FileUploadActivityType.TRANSACTION_ACTIVITY);
+                    }
                 } else {
                     // If Job instrumentAttributeUploadJob fails, handle failure and don't run Job transactionActivityExecution
                     log.info("Job instrumentAttributeUploadJob failed. Job transactionActivityExecution will not be executed.");
                 }
             }else{
-                filePath = activityMap.get(AccountingRules.TRANSACTIONACTIVITY);
-                JobParameters transactionActivityJobParameter = createTransactionActivityJob(filePath, activityBatch);
+                JobParameters transactionActivityJobParameter = createTransactionActivityJob(transactionActivityFilePath, activityBatch, (instrumentAttributeActivity + transactionActivity), jobId);
                 runid = transactionActivityJobParameter.getLong("run.id");
                 JobExecution transactionActivityExecution = jobLauncher.run(transactionActivityUploadJob, transactionActivityJobParameter);
                 this.logActivity(transactionActivityExecution, FileUploadActivityType.TRANSACTION_ACTIVITY);
@@ -98,12 +105,12 @@ public class ActivityUploadService {
         }catch (Exception e ){
             String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
             log.error(stackTrace);
-            logActivityException(runid, DateUtil.getDateTime(), filePath, activityType);
+            logActivityException(runid, DateUtil.getDateTime(), transactionActivityFilePath, activityType);
             throw new ExecutionException(e);
         }
     }
 
-    public JobParameters createInstrumentAttributeJob(String filePath, Batch activityBatch) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+    public JobParameters createInstrumentAttributeJob(String filePath, Batch activityBatch, long activityCount, long jobId) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
         LocalDateTime startingTime = DateUtil.getDateTime();
         long runid = System.currentTimeMillis();
         StringBuilder columnNames = new StringBuilder();
@@ -126,16 +133,28 @@ public class ActivityUploadService {
                 .addLong("run.id", runid)
                 .addString("tenantId", this.dataService.getTenantId())
                 .addLong("batchId", activityBatch.getId())
+                .addLong("activityCount", activityCount)
+                .addLong("jobId", jobId)
                 .toJobParameters();
     }
 
-    public JobParameters createTransactionActivityJob(String filePath, Batch activityBatch) throws ExecutionException, InterruptedException {
+    public JobParameters createTransactionActivityJob(String filePath, Batch activityBatch, long activityCount, long jobId) throws ExecutionException, InterruptedException {
         this.accountingPeriodService.loadIntoCache();
         this.aggregationService.loadIntoCache();
         this.cacheService.loadIntoCache();
         LocalDateTime startingTime = DateUtil.getDateTime();
         long runId = System.currentTimeMillis();
         String key = this.dataService.getTenantId() + "TA" + runId;
+
+        StringBuilder columnNames = new StringBuilder();
+        columnNames.append("ACTIVITYUPLOADID:NUMBER");
+        columnNames.append(",POSTINGDATE:DATE");
+        columnNames.append(",AMOUNT:NUMBER");
+        columnNames.append(",TRANSACTIONDATE:DATE");
+        columnNames.append(",TRANSACTIONNAME:STRING");
+        columnNames.append(",ATTRIBUTEID:STRING");
+        columnNames.append(",INSTRUMENTID:STRING");
+
 
         com.fyntrac.common.entity.AggregationRequest aggregationRequest = com.fyntrac.common.entity.AggregationRequest.builder()
                 .isAggregationComplete(Boolean.FALSE)
@@ -148,11 +167,13 @@ public class ActivityUploadService {
 //        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.COMPLETE_AGG);
         return new JobParametersBuilder()
                 .addString("filePath", filePath)
+                .addString("activityColumnName", columnNames.toString())
                 .addLong("run.id", runId)
                 .addString(com.fyntrac.common.utils.Key.aggregationKey(this.dataService.getTenantId(), runId), key)
                 .addLong("batchId", activityBatch.getId())
                 .addString("tenantId", this.dataService.getTenantId())
-
+                .addLong("activityCount", activityCount)
+                .addLong("jobId", jobId)
                 .toJobParameters();
     }
 

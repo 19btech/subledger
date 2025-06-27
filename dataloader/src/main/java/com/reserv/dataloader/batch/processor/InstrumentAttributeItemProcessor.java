@@ -6,6 +6,10 @@ import com.fyntrac.common.utils.DateUtil;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -25,11 +29,15 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
 
         for (Map.Entry<String, Object> entry : item.entrySet()) {
             String key = entry.getKey();
+            if(key.isBlank()){
+                continue;
+            }
             Object value = entry.getValue();
             if(key.equalsIgnoreCase("ACTIVITYUPLOADID")){
                 continue;
             } else if (key.equalsIgnoreCase("EFFECTIVEDATE")) {
-                effectiveDate = DateUtil.parseDate((String) value);
+                LocalDate localDate = LocalDate.parse((String) value, DateTimeFormatter.ofPattern("M/dd/yyyy"));
+                effectiveDate = Date.from(localDate.atStartOfDay(ZoneOffset.UTC).toInstant());
             } else if (key.equalsIgnoreCase("INSTRUMENTID")) {
                 instrumentId = (String) value;
             } else if (key.equalsIgnoreCase("ATTRIBUTEID")) {
@@ -38,6 +46,9 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
                 Date pDate = DateUtil.parseDate((String) value);
                 postingDate = DateUtil.dateInNumber(pDate);
         }else {
+                if(key.isBlank()){
+                    continue;
+                }
                 attributes.put(key, value);
             }
         }

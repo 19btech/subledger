@@ -4,6 +4,7 @@ import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.*;
 import com.fyntrac.common.enums.AggregationLevel;
+import com.fyntrac.common.enums.InstrumentAttributeVersionType;
 import com.fyntrac.common.service.*;
 import com.fyntrac.common.service.aggregation.AttributeLevelAggregationService;
 import com.fyntrac.common.service.aggregation.InstrumentLevelAggregationService;
@@ -29,8 +30,7 @@ public class ExcelModelExecutor {
     private final MetricLevelAggregationService metricLevelLtdService;
     private final ExcelFileService excelFileService;
     private final ExecutionStateService executionStateService;
-    private final InstrumentActivityStateService instrumentActivityStateService;
-    private final InstrumentActivityReplayStateService instrumentActivityReplayStateService;
+    private final InstrumentReplayStateService instrumentReplayStateService;
 
     @Autowired
     public ExcelModelExecutor(ExcelFileService excelFileService,
@@ -40,8 +40,7 @@ public class ExcelModelExecutor {
                                , AttributeLevelAggregationService attributeLevelLtdService
                                , MetricLevelAggregationService metricLevelLtdService
                               , ExecutionStateService executionStateService
-                              , InstrumentActivityStateService instrumentActivityStateService
-                              , InstrumentActivityReplayStateService instrumentActivityReplayStateService
+            , InstrumentReplayStateService instrumentReplayStateService
     ) {
         this.excelFileService = excelFileService;
         this.transactionService = transactionService;
@@ -50,8 +49,7 @@ public class ExcelModelExecutor {
         this.attributeLevelLtdService = attributeLevelLtdService;
         this.metricLevelLtdService = metricLevelLtdService;
         this.executionStateService = executionStateService;
-        this.instrumentActivityStateService = instrumentActivityStateService;
-        this.instrumentActivityReplayStateService = instrumentActivityReplayStateService;
+        this.instrumentReplayStateService = instrumentReplayStateService;
     }
 
     public Records.ModelOutputData execute(ModelWorkflowContext context) throws Throwable {
@@ -62,20 +60,42 @@ public class ExcelModelExecutor {
         Workbook workbook = ExcelUtil.convertBinaryToWorkbook(context.excelModel.modelFile().getFileData());
 
         ExecutionState executionState = executionStateService.getExecutionState();
+        if(executionState == null) {
+            executionState = ExecutionState.builder()
+                    .executionDate(0)
+                    .lastExecutionDate(0)
+                    .build();
+        }
+
         context.setExecutionState(executionState);
-        loadTransactions(context, workbook);
-        loadExecutionDate(context, workbook);
         context.setIInstrumentAttributes(new ArrayList<>(0));
-        context.getIInstrumentAttributes().add(MongoDocumentConverter.convertToFlatMap(context.getCurrentInstrumentAttribute()));
         loadFirstInstrumentAttributes(context);
         loadLastInstrumentAttributes(context);
+        loadTransactions(context, workbook);
+        loadExecutionDate(context, workbook);
+
+        addInstrumentAttribute(context);
         loadMetrics(context, workbook);
 
 
         // Pass the appropriate execution date
-        return ExcelModelProcessor.processExcel(context.getCurrentInstrumentAttribute(), context.getExecutionDate(), context.getAccountingPeriod(), workbook, context.getITransactions(), context.getIMetrics(), context.getIInstrumentAttributes(), context.getIExecutionDate() );
+        return ExcelModelProcessor.processExcel(context.getInstrumentId(), context.getCurrentInstrumentAttribute(), context.getExecutionDate(), context.getAccountingPeriod(), workbook, context.getITransactions(), context.getIMetrics(), context.getIInstrumentAttributes(), context.getIExecutionDate() );
     }
 
+    private void addInstrumentAttribute(ModelWorkflowContext context) {
+        for(Records.InstrumentAttributeModelRecord instrumentAttribute : context.getCurrentInstrumentAttribute()) {
+            context.getIInstrumentAttributes().add(MongoDocumentConverter.convertRecordToFlatMap(instrumentAttribute));
+        }
+
+    }
+    private List<TransactionActivity> getActivities(ModelWorkflowContext context, List<String> upperCaseTransactions) {
+        List<TransactionActivity> activityList = new ArrayList<>(0);
+        for(Records.InstrumentAttributeModelRecord instrumentAttribute : context.getCurrentInstrumentAttribute()) {
+            List<TransactionActivity> transactionActivities =  this.transactionService.fetchTransactions(upperCaseTransactions,instrumentAttribute.instrumentId(), instrumentAttribute.attributeId(),  context.getExecutionDate());
+            activityList.addAll(transactionActivities);
+        }
+       return  activityList;
+    }
     private void  loadTransactions(ModelWorkflowContext context, Workbook workbook) throws Throwable {
         List<String> transactionList = this.excelFileService.readExcelSheet(workbook, this.excelFileService.TRANSACTION_SHEET_NAME);
 
@@ -87,7 +107,7 @@ public class ExcelModelExecutor {
                 .map(String::toUpperCase) // Convert each string to uppercase
                 .collect(Collectors.toList()); // Collect the results into a new List
 
-        List<TransactionActivity> transactionActivities =  this.transactionService.fetchTransactions(upperCaseTransactions,context.getInstrumentId(), context.getAttributeId(),  context.getExecutionDate());
+        List<TransactionActivity> transactionActivities =  getActivities(context, upperCaseTransactions);
 
         // Group by UPPERCASE transactionName & sort each list by effectiveDate (DESC)
         Map<String, List<TransactionActivity>> transactionsMapByName = transactionActivities.stream()
@@ -102,19 +122,6 @@ public class ExcelModelExecutor {
                         )
                 ));
 
-        // Group by UPPERCASE transactionName & sort each list by effectiveDate (ASC)
-//        Map<String, List<TransactionActivity>> transactionsMapByName = transactionActivities.stream()
-//                .collect(Collectors.groupingBy(
-//                        transaction -> transaction.getTransactionName().toUpperCase(), // Convert key to uppercase
-//                        Collectors.collectingAndThen(
-//                                Collectors.toList(),
-//                                list -> {
-//                                    list.sort(Comparator.comparingInt(TransactionActivity::getEffectiveDate));
-//                                    return list;
-//                                }
-//                        )
-//                ));
-
         // Create a list to maintain the order
         List<Map<String, Object>> orderedTransactionActivities = new ArrayList<>();
 
@@ -123,7 +130,8 @@ public class ExcelModelExecutor {
             List<TransactionActivity> activityList = transactionsMapByName.get(transactionName);
             if (activityList != null) {
                 for(TransactionActivity activity :  activityList) {
-                    orderedTransactionActivities.add(MongoDocumentConverter.convertToMap(activity));
+                    Records.TransactionActivityModelRecord modelRecord =  RecordFactory.createTransactionActivityModelRecord(activity);
+                    orderedTransactionActivities.add(MongoDocumentConverter.convertToMap(modelRecord));
                 }
             }
         }
@@ -139,70 +147,109 @@ public class ExcelModelExecutor {
         // Iterate through the transactions list and add corresponding activities in order
         Date lastExecutionDate = null;
         Date replayDate = null;
-        if(executionState != null) {
-            if(executionState.getExecutionDate() != null) {
+        int intExecutionDate = DateUtil.dateInNumber(context.getExecutionDate());
+        if (executionState != null) {
+            if (executionState.getExecutionDate() != null && intExecutionDate > executionState.getExecutionDate()) {
                 lastExecutionDate = DateUtil.convertToDateFromYYYYMMDD(executionState.getExecutionDate());
+            }else if(executionState.getLastExecutionDate() != 0) {
+                lastExecutionDate = DateUtil.convertToDateFromYYYYMMDD(executionState.getLastExecutionDate());
             }
-        InstrumentActivityReplayState replayState = instrumentActivityReplayStateService.getReplayState(context.getInstrumentId(), context.getAttributeId());
-        InstrumentActivityState activityState = instrumentActivityStateService.getActivityState(context.getInstrumentId(), context.getInstrumentId());
 
-            if(executionState.getLastExecutionDate() != null && executionState.getLastExecutionDate() > replayState.getMinTransactionDate()) {
-                replayDate = DateUtil.convertToDateFromYYYYMMDD(replayState.getMinTransactionDate());
-            }
+            InstrumentReplayState instrumentReplayState =  this.instrumentReplayStateService.getInstrumentReplayState(context.getInstrumentId(), intExecutionDate);
+           if(instrumentReplayState != null) {
+               replayDate = DateUtil.convertToDateFromYYYYMMDD(instrumentReplayState.getMinEffectiveDate());
+           }
+            Records.ExecutionDateRecord executionDateRecord = RecordFactory.createExcutionDateRecord(context.getExecutionDate(), lastExecutionDate, replayDate);
+            iExecutionDate.add(MongoDocumentConverter.convertToMap(executionDateRecord));
+            context.setIExecutionDate(iExecutionDate);
         }
-
-        Records.ExecutionDateRecord executionDateRecord = RecordFactory.createExcutionDateRecord(context.getExecutionDate(), lastExecutionDate, replayDate);
-        iExecutionDate.add(MongoDocumentConverter.convertToMap(executionDateRecord));
-        context.setIExecutionDate(iExecutionDate);
     }
 
     private void  loadLastInstrumentAttributes(ModelWorkflowContext context) throws Throwable {
 
-        long lastInstrumentAttributeVersionId = context.getCurrentInstrumentAttribute().getPreviousVersionId();
-       InstrumentAttribute instrumentAttribute = this.instrumentAttributeService.getInstrumentAttributeByVersionId(lastInstrumentAttributeVersionId);
-        if(instrumentAttribute == null) {
-            return;
+        for(Records.InstrumentAttributeModelRecord instrumentAttributeModelRecord :  context.currentInstrumentAttribute) {
+            long lastInstrumentAttributeVersionId = instrumentAttributeModelRecord.previousVersionId();
+            InstrumentAttribute instrumentAttribute = this.instrumentAttributeService.getInstrumentAttributeByVersionId(lastInstrumentAttributeVersionId);
+            if(instrumentAttribute == null) {
+                continue;
+            }
+            // context.setLastInstrumentAttribute(instrumentAttribute);
+            Records.InstrumentAttributeModelRecord previousInstrumentAttributeModelRecord = RecordFactory.createInstrumentAttributeModelRecord(InstrumentAttributeVersionType.LAST_CLOSED_VERSION,instrumentAttribute);
+
+            context.getIInstrumentAttributes().add(MongoDocumentConverter.convertRecordToFlatMap(previousInstrumentAttributeModelRecord));
         }
-        context.setLastInstrumentAttribute(instrumentAttribute);
-        context.getIInstrumentAttributes().add(MongoDocumentConverter.convertToFlatMap(instrumentAttribute));
+
     }
 
     private void  loadFirstInstrumentAttributes(ModelWorkflowContext context) throws Throwable {
-        InstrumentAttribute instrumentAttribute = this.instrumentAttributeService.getFirstVersionOfInstrumentAttributes(context.getInstrumentId(), context.getAttributeId());
-        if(instrumentAttribute == null) {
-            return;
+        for(Records.InstrumentAttributeModelRecord instrumentAttributeModelRecord :  context.currentInstrumentAttribute) {
+            InstrumentAttribute instrumentAttribute = this.instrumentAttributeService.getFirstVersionOfInstrumentAttributes(instrumentAttributeModelRecord.instrumentId(), instrumentAttributeModelRecord.attributeId());
+            if(instrumentAttribute == null) {
+                continue;
+            }
+            // context.setFirstInstrumentAttribute(instrumentAttribute);
+            Records.InstrumentAttributeModelRecord fvInstrumentAttributeModelRecord = RecordFactory.createInstrumentAttributeModelRecord(InstrumentAttributeVersionType.FIRST_VERSION,instrumentAttribute);
+
+            context.getIInstrumentAttributes().add(MongoDocumentConverter.convertRecordToFlatMap(fvInstrumentAttributeModelRecord));
         }
-        context.setFirstInstrumentAttribute(instrumentAttribute);
-        context.getIInstrumentAttributes().add(MongoDocumentConverter.convertToFlatMap(instrumentAttribute));
+
+    }
+
+    private List<AttributeLevelLtd> getAttributeLevelLtdBalance(ModelWorkflowContext context, List<String> metrics, int executionDate) {
+        List<AttributeLevelLtd> balances = new ArrayList<>(0);
+        for(Records.InstrumentAttributeModelRecord instrumentAttribute : context.getCurrentInstrumentAttribute()) {
+            List<AttributeLevelLtd> balancesList = this.attributeLevelLtdService.getBalance(instrumentAttribute.instrumentId(), instrumentAttribute.attributeId(), metrics, executionDate);
+            balances.addAll(balancesList);
+        }
+        return balances;
+    }
+
+
+    private List<InstrumentLevelLtd> getInstrumentIdLevelLtdBalance(ModelWorkflowContext context, List<String> metrics, int executionDate) {
+        List<InstrumentLevelLtd> balances = new ArrayList<>(0);
+        for(Records.InstrumentAttributeModelRecord instrumentAttribute : context.getCurrentInstrumentAttribute()) {
+            List<InstrumentLevelLtd> balancesList = this.instrumentLevelLtdService.getBalance(instrumentAttribute.instrumentId(), metrics, executionDate);
+            balances.addAll(balancesList);
+        }
+        return balances;
+    }
+
+    private List<MetricLevelLtd> getMetricLevelLtdBalance(ModelWorkflowContext context, List<String> metrics, int executionDate) {
+        List<MetricLevelLtd> balances = new ArrayList<>(0);
+        for(Records.InstrumentAttributeModelRecord instrumentAttribute : context.getCurrentInstrumentAttribute()) {
+            List<MetricLevelLtd> balancesList = this.metricLevelLtdService.getBalance( metrics, executionDate);
+            balances.addAll(balancesList);
+        }
+        return balances;
     }
 
     private void  loadMetrics(ModelWorkflowContext context, Workbook workbook) throws Throwable {
         List<String> metrics = this.excelFileService.readExcelSheet(workbook, this.excelFileService.METRIC_SHEET_NAME);
-        Map<String, Records.MetricRecord> metricsMap = new HashMap<>(0);
+        List<Records.MetricRecord> balances = new ArrayList<>(0);
         Model model = context.excelModel.model();
         AggregationLevel aggregationLevel = model.getModelConfig().getAggregationLevel();
-        int executionDate =  (context.getExecutionState().getExecutionDate() == null) ? context.getExecutionState().getActivityPostingDate() :  context.getExecutionState().getExecutionDate();
+        int executionDate =  context.getLastActivityPostingDate();
 
-        if(context.getExecutionState().getActivityPostingDate() >  executionDate) {
-           executionDate = context.getExecutionState().getActivityPostingDate();
+        if(context.getExecutionState().getExecutionDate() >  executionDate) {
+           executionDate = context.getExecutionState().getExecutionDate();
         }
         switch (aggregationLevel){
             case AggregationLevel.ATTRIBUTE -> {
-                    List<AttributeLevelLtd> ltds = this.attributeLevelLtdService.getBalance(context.getInstrumentId(), context.getAttributeId(), metrics, executionDate);
+                    List<AttributeLevelLtd> ltds = getAttributeLevelLtdBalance(context, metrics, executionDate);
                     for(AttributeLevelLtd ltd : ltds) {
-                        metricsMap.put(ltd.getMetricName(), RecordFactory.createMetricRecord(ltd));
+                        balances.add(RecordFactory.createMetricRecord(ltd));
                     }
             }
             case AggregationLevel.INSTRUMENT -> {
-                List<InstrumentLevelLtd> ltds = this.instrumentLevelLtdService.getBalance(context.getInstrumentId(), metrics, executionDate);
+                List<InstrumentLevelLtd> ltds = this.getInstrumentIdLevelLtdBalance(context, metrics, executionDate);
                 for(InstrumentLevelLtd ltd : ltds) {
-                    metricsMap.put(ltd.getMetricName(), RecordFactory.createMetricRecord(ltd));
+                    balances.add(RecordFactory.createMetricRecord(ltd));
                 }
             }
             case AggregationLevel.TENANT ->  {
-                List<MetricLevelLtd> ltds = this.metricLevelLtdService.getBalance( metrics, executionDate);
+                List<MetricLevelLtd> ltds = this.getMetricLevelLtdBalance( context, metrics, executionDate);
                 for(MetricLevelLtd ltd : ltds) {
-                    metricsMap.put(ltd.getMetricName(), RecordFactory.createMetricRecord(ltd));
+                    balances.add(RecordFactory.createMetricRecord(ltd));
                 }
             }
             default -> {}
@@ -212,10 +259,9 @@ public class ExcelModelExecutor {
         List<Map<String, Object>> orderedMetrics = new ArrayList<>();
 
         // Iterate through the transactions list and add corresponding activities in order
-        for (String metricName : metrics) {
-            Records.MetricRecord metricRecord = metricsMap.get(metricName.toUpperCase());
-            if (metricRecord != null) {
-                orderedMetrics.add(MongoDocumentConverter.convertToMap(metricRecord));
+        for (Records.MetricRecord record : balances) {
+            if (record != null) {
+                orderedMetrics.add(MongoDocumentConverter.convertToMap(record));
             }
         }
 
@@ -223,7 +269,7 @@ public class ExcelModelExecutor {
     }
 
     private void execute(ModelWorkflowContext context, Workbook workbook) throws IOException {
-        ExcelModelProcessor.processExcel(context.getCurrentInstrumentAttribute(), context.getExecutionDate(), context.getAccountingPeriod(), workbook, context.getITransactions(), context.getIMetrics(), context.getIInstrumentAttributes(), context.getIExecutionDate());
+        ExcelModelProcessor.processExcel(context.getInstrumentId(), context.getCurrentInstrumentAttribute(), context.getExecutionDate(), context.getAccountingPeriod(), workbook, context.getITransactions(), context.getIMetrics(), context.getIInstrumentAttributes(), context.getIExecutionDate());
     }
 
     private void valuateModel() {

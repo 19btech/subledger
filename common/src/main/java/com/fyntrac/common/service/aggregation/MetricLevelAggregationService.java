@@ -307,12 +307,12 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
         return aggregates;
     }
 
-    public List<MetricLevelLtd> getBalance(List<String> metrics, int accountingPeriodId) {
+    public List<MetricLevelLtd> getBalance(List<String> metrics, int posltingDate) {
         Query query = new Query();
-        List<String> metricList = StringUtil.convertUpperCase(metrics);
+        Set<String> metricList = new HashSet<>(StringUtil.convertUpperCase(metrics));
         // Add criteria to filter by transactionName (list) and transactionDate
-        query.addCriteria(Criteria.where("accountingPeriodId").is(accountingPeriodId)
-                .and("metricName").in(metrics));
+        query.addCriteria(Criteria.where("postingDate").is(posltingDate)
+                .and("metricName").in(metricList));
 
         // Execute the query
         return this.dataService.fetchData(query, MetricLevelLtd.class);

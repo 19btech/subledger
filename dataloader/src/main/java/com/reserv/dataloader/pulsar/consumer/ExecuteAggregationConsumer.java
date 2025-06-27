@@ -36,9 +36,6 @@ public class ExecuteAggregationConsumer {
     private AggregationExecutionService aggregationExecutionService;
 
     @Autowired
-    private Job updateInstrumentActivitySateJob;
-
-    @Autowired
     private JobLauncher jobLauncher;
 
     @Autowired
@@ -110,7 +107,6 @@ public class ExecuteAggregationConsumer {
                     .addLong("run.id", runId)
                     .addLong("execution-date", messageRecord.aggregationDate())
                     .toJobParameters();
-            jobLauncher.run(updateInstrumentActivitySateJob, jobParameters);
 
             // Step 8: Log success
             log.info("Message processed successfully: {}", msg.getValue());

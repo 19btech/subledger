@@ -3,6 +3,7 @@ package com.fyntrac.common.entity;
 import lombok.Builder;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.format.annotation.NumberFormat;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
@@ -14,8 +15,11 @@ import java.math.RoundingMode;
 public class BaseLtd implements Serializable {
     private static final long serialVersionUID = -7956532636381889893L;
 
+    @NumberFormat(pattern = "#.####")
     private BigDecimal activity;
+    @NumberFormat(pattern = "#.####")
     private BigDecimal beginningBalance;
+    @NumberFormat(pattern = "#.####")
     private BigDecimal endingBalance;
 
     public BaseLtd(BigDecimal activity, BigDecimal beginningBalance, BigDecimal endingBalance) {

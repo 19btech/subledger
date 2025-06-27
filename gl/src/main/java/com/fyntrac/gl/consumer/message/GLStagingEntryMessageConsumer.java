@@ -27,7 +27,7 @@ public class GLStagingEntryMessageConsumer {
         try {
             Records.GeneralLedgerMessageRecord transactionActivity = message.getValue(); // Get the value from the message
             // Process the message
-            log.info("EventConsumer:: consumeTextEvent consumed events {}, {}", transactionActivity.tenantId(), transactionActivity.dataKey());
+            log.info("EventConsumer:: consumeTextEvent consumed events {}, {}", transactionActivity.tenantId(), transactionActivity.jobId());
             // No need to acknowledge here; @PulsarListener handles it
             processGeneralLedgerStaging.process(transactionActivity);
         } catch (Exception e) {

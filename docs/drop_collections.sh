@@ -4,7 +4,7 @@
 CONTAINER_NAME="mongodb"
 
 # MongoDB database name
-DB_NAME="TOne"
+DB_NAME=$1
 
 # List of collections to drop
 COLLECTIONS=("InstrumentActivityReplayState" "InstrumentActivityState" "ExecutionState" "GeneralLedgerEntery" "GeneralLedgerAccountBalance" "Batch" "sequences" "GeneralLedgerAccountBalanceStage" "GeneralLedgerEnteryStage" "ReclassValues" "MetricLevelLtd" "AttributeLevelLtd" "InstrumentLevelLtd " "InstrumentAttribute" "TransactionActivity")

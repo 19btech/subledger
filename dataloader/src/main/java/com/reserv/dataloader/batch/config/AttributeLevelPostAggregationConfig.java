@@ -127,6 +127,9 @@ public class AttributeLevelPostAggregationConfig {
             if (!items.isEmpty()) {
                 Set<AttributeLevelLtd> resultSet = new LinkedHashSet<>();
                 for (AttributeLevelLtd item : items) {
+                    if(item.getMetricName() == null || item.getMetricName().isEmpty() || item.getMetricName().isBlank()) {
+                        continue;
+                    }
                     resultSet.add(item);
                 }
                 this.dataService.getMongoTemplate().insert(resultSet, "AttributeLevelLtd");

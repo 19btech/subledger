@@ -1,10 +1,21 @@
 package com.reserv.dataloader.batch.writer;
 
-import  com.fyntrac.common.entity.AccountingPeriod;
-import  com.fyntrac.common.component.TenantDataSourceProvider;
+import com.fyntrac.common.cache.collection.CacheList;
+import com.fyntrac.common.component.InstrumentReplayQueue;
+import com.fyntrac.common.component.InstrumentReplaySet;
+import com.fyntrac.common.component.TenantDataSourceProvider;
+import com.fyntrac.common.config.ReferenceData;
+import com.fyntrac.common.dto.record.RecordFactory;
+import com.fyntrac.common.dto.record.Records;
+import com.fyntrac.common.entity.AccountingPeriod;
+import com.fyntrac.common.entity.ExecutionState;
 import com.fyntrac.common.entity.InstrumentAttribute;
-import com.fyntrac.common.entity.TransactionActivity;
+import com.fyntrac.common.repository.MemcachedRepository;
+import com.fyntrac.common.service.AccountingPeriodService;
+import com.fyntrac.common.service.ExecutionStateService;
+import com.fyntrac.common.service.InstrumentAttributeService;
 import com.fyntrac.common.utils.DateUtil;
+import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.StepExecution;
@@ -13,16 +24,9 @@ import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.data.mongodb.core.MongoTemplate;
-import com.fyntrac.common.repository.MemcachedRepository;
-import com.fyntrac.common.service.InstrumentAttributeService;
-import com.fyntrac.common.dto.record.Records;
-import com.fyntrac.common.dto.record.RecordFactory;
-import com.fyntrac.common.utils.Key;
-import com.fyntrac.common.cache.collection.CacheList;
-import com.fyntrac.common.config.ReferenceData;
+
 import java.util.*;
 import java.util.stream.Collectors;
-import com.fyntrac.common.service.AccountingPeriodService;
 
 @Slf4j
 public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute> {
@@ -37,12 +41,20 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     private AccountingPeriodService accountingPeriodService;
     private long batchId;
     private CacheList<Records.TransactionActivityReplayRecord> transactionActivityReplayRecordCacheList;
+    private ExecutionStateService executionStateService;
+    private final InstrumentReplaySet instrumentReplaySet;
+    private final InstrumentReplayQueue instrumentReplayQueue;
+    private ExecutionState executionState;
+    private Long jobId;
 
     public InstrumentAttributeWriter(MongoItemWriter<InstrumentAttribute> delegate,
-                                 TenantDataSourceProvider dataSourceProvider,
-                                  MemcachedRepository memcachedRepository,
+                                     TenantDataSourceProvider dataSourceProvider,
+                                     MemcachedRepository memcachedRepository,
                                      InstrumentAttributeService instrumentAttributeService,
-                                     AccountingPeriodService accountingPeriodService) {
+                                     AccountingPeriodService accountingPeriodService
+            , ExecutionStateService executionStateService
+            , InstrumentReplaySet instrumentReplaySet
+            , InstrumentReplayQueue instrumentReplayQueue) {
         this.delegate = delegate;
         this.dataSourceProvider = dataSourceProvider;
         this.memcachedRepository = memcachedRepository;
@@ -50,6 +62,9 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.reclassMessageRecords = new CacheList<Records.InstrumentAttributeReclassMessageRecord>();
         this.runId=0;
         this.accountingPeriodService = accountingPeriodService;
+        this.executionStateService = executionStateService;
+        this.instrumentReplaySet = instrumentReplaySet;
+        this.instrumentReplayQueue = instrumentReplayQueue;
     }
 
     @BeforeStep
@@ -61,7 +76,8 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.tenantId = jobParameters.getString("tenantId");
         this.instrumentAttributeService.setTenant(tenantId);
         this.batchId = jobParameters.getLong("batchId");
-
+        this.jobId = jobParameters.getLong("jobId");
+        executionState = this.executionStateService.getExecutionState();
     }
     @Override
     public void write(Chunk<? extends InstrumentAttribute> instrumentAttributes) throws Exception {
@@ -86,6 +102,9 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
             if (this.tenantId != null && !this.tenantId.isEmpty()) {
 
             MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(this.tenantId);
+            if(mongoTemplate == null) {
+                return;
+            }
 
             for(InstrumentAttribute instrumentAttribute : combinedAttributes) {
                 int effectivePeriodId = com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(instrumentAttribute.getEffectiveDate());
@@ -103,7 +122,13 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 }
                 instrumentAttribute.setBatchId(batchId);
                 this.instrumentAttributeService.addIntoCache(this.tenantId, instrumentAttribute);
-                isReplayActivity(instrumentAttribute);
+                int intEffectiveDate = DateUtil.convertToIntYYYYMMDDFromJavaDate(instrumentAttribute.getEffectiveDate());
+
+                if(executionState != null && executionState.getExecutionDate() > intEffectiveDate) {
+                    Records.InstrumentReplayRecord replayRecord = RecordFactory.createInstrumentReplayRecord(instrumentAttribute.getInstrumentId(), instrumentAttribute.getPostingDate(), intEffectiveDate);
+                    instrumentReplaySet.add(tenantId, this.jobId,replayRecord);
+                    instrumentReplayQueue.add(tenantId, this.jobId,replayRecord);
+                }
             }
             delegate.setTemplate(mongoTemplate);
         }
@@ -113,16 +138,6 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.memcachedRepository.putInCache(replayDataKey, this.transactionActivityReplayRecordCacheList);
     }
 
-    private boolean isReplayActivity(InstrumentAttribute instrumentAttribute) {
-        int intEffectiveDate = DateUtil.dateInNumber(instrumentAttribute.getEffectiveDate());
-        boolean isReplayActiity = this.instrumentAttributeService.existsReplay(instrumentAttribute.getInstrumentId(), instrumentAttribute.getAttributeId(),  intEffectiveDate);
-        if(isReplayActiity) {
-            Records.TransactionActivityReplayRecord replayRecord = RecordFactory.createTransactionActivityReplayRecord(instrumentAttribute.getInstrumentId(), instrumentAttribute.getAttributeId(), intEffectiveDate);
-            this.transactionActivityReplayRecordCacheList.add(replayRecord);
-            return Boolean.TRUE;
-        }
-        return Boolean.FALSE;
-    }
 
     private Chunk<InstrumentAttribute> setEndDate(long batchId , List<InstrumentAttribute> attributesList) {
 

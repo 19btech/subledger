@@ -64,12 +64,18 @@ public class TransactionActivityUploadService extends UploadService {
                 .isInprogress(Boolean.FALSE)
                 .tenantId(this.dataService.getTenantId())
                 .key(key).build();
-//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.ATTRIBUTE_LEVEL_AGG);
-//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.INSTRUMENT_LEVEL_AGG);
-//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.METRIC_LEVEL_AGG);
-//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.COMPLETE_AGG);
+        StringBuilder columnNames = new StringBuilder();
+        columnNames.append("ACTIVITYUPLOADID:NUMBER");
+        columnNames.append(",POSTINGDATE:DATE");
+        columnNames.append(",AMOUNT:NUMBER");
+        columnNames.append(",TRANSACTIONDATE:DATE");
+        columnNames.append(",TRANSACTIONNAME:STRING");
+        columnNames.append(",ATTRIBUTEID:STRING");
+        columnNames.append(",INSTRUMENTID:STRING");
+
         JobParameters jobParameters = new JobParametersBuilder()
                 .addString("filePath", filePath)
+                .addString("activityColumnName", columnNames.toString())
                 .addLong("run.id", this.runId)
                 .addString("aggregation-key", key)
                 .addString("tenantId", this.dataService.getTenantId())

@@ -125,6 +125,9 @@ public class MetricLevelPostAggregationConfig {
             if (!items.isEmpty()) {
                 Set<MetricLevelLtd> resultSet = new LinkedHashSet<>();
                 for (MetricLevelLtd item : items) {
+                    if(item.getMetricName() == null || item.getMetricName().isEmpty() || item.getMetricName().isBlank()) {
+                        continue;
+                    }
                     resultSet.add(item);
                 }
                 this.dataService.saveAll(resultSet, MetricLevelLtd.class);

@@ -1,5 +1,6 @@
 package com.reserv.dataloader.service;
 
+import com.fyntrac.common.entity.Attributes;
 import com.fyntrac.common.service.ExcelFileService;
 import com.reserv.dataloader.utils.ExcelFileUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -29,8 +30,8 @@ public class DataloaderExcelFileService extends ExcelFileService {
 
 
     @Autowired
-    public DataloaderExcelFileService(DataService<ModelFile> dataService) {
-        super(dataService);
+    public DataloaderExcelFileService(DataService<ModelFile> dataService, DataService<Attributes> attributesDataService) {
+        super(dataService, attributesDataService);
     }
 
     // Upload file to MongoDB

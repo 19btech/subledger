@@ -1,25 +1,29 @@
 package com.reserv.dataloader.batch.config;
 
+import com.fyntrac.common.component.InstrumentReplayQueue;
+import com.fyntrac.common.component.InstrumentReplaySet;
+import com.fyntrac.common.component.TenantDataSourceProvider;
+import com.fyntrac.common.component.TransactionActivityQueue;
+import com.fyntrac.common.config.TenantContextHolder;
+import com.fyntrac.common.entity.MetricLevelLtd;
+import com.fyntrac.common.entity.TransactionActivity;
+import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.*;
 import com.fyntrac.common.service.aggregation.AggregationService;
 import com.fyntrac.common.service.aggregation.AttributeLevelAggregationService;
 import com.fyntrac.common.service.aggregation.InstrumentLevelAggregationService;
 import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
-import com.fyntrac.common.utils.DateUtil;
 import com.reserv.dataloader.batch.listener.TransactionActivityJobCompletionListener;
+import com.reserv.dataloader.batch.mapper.HeaderColumnNameMapper;
 import com.reserv.dataloader.batch.processor.TransactionActivityItemProcessor;
 import com.reserv.dataloader.batch.tasklet.AttributeLevelAggregatorTasklet;
-import com.reserv.dataloader.batch.tasklet.InstrumentActivityStateTasklet;
 import com.reserv.dataloader.batch.tasklet.InstrumentLevelAggregatorTasklet;
 import com.reserv.dataloader.batch.tasklet.MetricLevelAggregatorTasklet;
 import com.reserv.dataloader.batch.writer.TransactionActivityItemWriter;
-import  com.fyntrac.common.config.TenantContextHolder;
-import  com.fyntrac.common.component.TenantDataSourceProvider;
-import com.fyntrac.common.entity.MetricLevelLtd;
-import com.fyntrac.common.entity.TransactionActivity;
-import com.fyntrac.common.repository.MemcachedRepository;
-
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.Step;
@@ -35,11 +39,8 @@ import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.batch.item.data.builder.MongoItemWriterBuilder;
 import org.springframework.batch.item.file.FlatFileItemReader;
-import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
 import org.springframework.batch.item.file.mapping.DefaultLineMapper;
-import org.springframework.batch.item.file.mapping.FieldSetMapper;
 import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
-import org.springframework.batch.item.file.transform.FieldSet;
 import org.springframework.batch.support.transaction.ResourcelessTransactionManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -49,10 +50,15 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.validation.BindException;
 
-import java.math.BigDecimal;
-import java.util.Date;
+import java.io.IOException;
+import java.io.Reader;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 @Configuration
 @EnableBatchProcessing(modular = true)
@@ -71,14 +77,15 @@ public class TransactionActivityDataLoadConfig {
     private final AttributeService attributeService;
     private final AccountingPeriodService accountingPeriodService;
     private final ExecutionStateService executionStateService;
-    private final TransactionActivityService activityService;
-    private final TransactionActivityReversalService transactionActivityReversalService;
     private final AggregationService aggregationService;
     private  final AttributeLevelAggregationService attributeLevelAggregationService;
     private  final InstrumentLevelAggregationService instrumentLevelAggregationService;
     private final MetricLevelAggregationService metricLevelAggregationService;
     private final TransactionService transactionService;
-
+    private final InstrumentReplaySet instrumentReplaySet;
+    private final InstrumentReplayQueue instrumentReplayQueue;
+    private final TransactionActivityQueue transactionActivityQueue;
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("M/d/yyyy");
     @Autowired
     public TransactionActivityDataLoadConfig(JobRepository jobRepository
                                      , MongoTemplate mongoTemplate
@@ -92,13 +99,14 @@ public class TransactionActivityDataLoadConfig {
     , AttributeService attributeService
     , AccountingPeriodService accountingPeriodService
     , ExecutionStateService executionStateService
-    , TransactionActivityService activityService
-    , TransactionActivityReversalService transactionActivityReversalService
     , AggregationService aggregationService
     , AttributeLevelAggregationService attributeLevelAggregationService
     , InstrumentLevelAggregationService instrumentLevelAggregationService
     , MetricLevelAggregationService metricLevelAggregationService
-    , TransactionService transactionService) {
+    , TransactionService transactionService
+    , InstrumentReplaySet instrumentReplaySet
+    , TransactionActivityQueue transactionActivityQueue
+    , InstrumentReplayQueue instrumentReplayQueue) {
         this.jobRepository = jobRepository;
         this.tenantContextHolder = tenantContextHolder;
         this.dataSourceProvider = dataSourceProvider;
@@ -111,13 +119,14 @@ public class TransactionActivityDataLoadConfig {
         this.attributeService = attributeService;
         this.accountingPeriodService = accountingPeriodService;
         this.executionStateService = executionStateService;
-        this.activityService = activityService;
-        this.transactionActivityReversalService = transactionActivityReversalService;
         this.aggregationService = aggregationService;
         this.attributeLevelAggregationService = attributeLevelAggregationService;
         this.instrumentLevelAggregationService = instrumentLevelAggregationService;
         this.metricLevelAggregationService = metricLevelAggregationService;
         this.transactionService = transactionService;
+        this.instrumentReplaySet = instrumentReplaySet;
+        this.transactionActivityQueue = transactionActivityQueue;
+        this.instrumentReplayQueue = instrumentReplayQueue;
     }
 
     @Bean("transactionActivityUploadJob")
@@ -131,10 +140,10 @@ public class TransactionActivityDataLoadConfig {
     }
 
     @Bean
-    public Step transactionActivityImportStep() {
+    public Step transactionActivityImportStep() throws IOException {
         return new StepBuilder("transactionActivityImportStep", jobRepository)
-                .<TransactionActivity, TransactionActivity>chunk(10, new ResourcelessTransactionManager())
-                .reader(transactionActivityFileReader(""))
+                .<Map<String, Object>, TransactionActivity>chunk(10, new ResourcelessTransactionManager())
+                .reader(transactionActivityReader(""))
                 .processor(transactionActivityItemProcessor())
                 .writer(transactionActivityItemWriter(dataSourceProvider
                         , tenantContextHolder
@@ -142,56 +151,57 @@ public class TransactionActivityDataLoadConfig {
                         , this.instrumentAttributeService
                         , this.attributeService
                         , this.accountingPeriodService
-                , this.transactionActivityReversalService))
+                        , this.instrumentReplaySet
+                , this.transactionActivityQueue
+                , this.instrumentReplayQueue))
                 .build();
     }
 
     @Bean
-    public ItemProcessor<TransactionActivity, TransactionActivity> transactionActivityItemProcessor() {
+    public ItemProcessor<Map<String,Object>, TransactionActivity> transactionActivityItemProcessor() {
         return new TransactionActivityItemProcessor();
     }
 
-    @Bean()
     @StepScope
-    public FlatFileItemReader<TransactionActivity> transactionActivityFileReader(@Value("#{jobParameters[filePath]}") String fileName) {
+    @Bean
+    public FlatFileItemReader<Map<String, Object>> transactionActivityReader(
+            @Value("#{jobParameters['filePath']}") String filePath) throws IOException {
 
-        DefaultLineMapper<TransactionActivity> defaultLineMapper = new DefaultLineMapper<>();
-        DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
+        FlatFileItemReader<Map<String, Object>> reader = new FlatFileItemReader<>();
+        reader.setResource(new FileSystemResource(filePath));
+        reader.setLinesToSkip(1); // Skip the header
 
-        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID" ,"POSTINGDATE" ,"TRANSACTIONDATE","INSTRUMENTID","TRANSACTIONNAME","AMOUNT","ATTRIBUTEID"});
-        defaultLineMapper.setLineTokenizer(lineTokenizer);
-        defaultLineMapper.setFieldSetMapper(new FieldSetMapper<TransactionActivity>() {
-            @Override
-            public TransactionActivity mapFieldSet(FieldSet fieldSet) throws BindException {
-                TransactionActivity transactionActivity = new TransactionActivity();
-                Date postingDate = DateUtil.stripTime(fieldSet.readDate("POSTINGDATE"));
-                int postingDateIntValue = DateUtil.dateInNumber(postingDate);
-                transactionActivity.setPostingDate(postingDateIntValue);
+        // Read actual header line using Apache Commons CSV to get clean column names
+        List<String> headerNames = getHeaderNames(filePath);
 
-                int effectiveDate = DateUtil.dateInNumber(fieldSet.readDate("TRANSACTIONDATE"));
-                Date utcEffectiveDate = DateUtil.convertToUtc(fieldSet.readDate("TRANSACTIONDATE"));
-                transactionActivity.setEffectiveDate(effectiveDate);
-                transactionActivity.setTransactionDate(utcEffectiveDate);
-                transactionActivity.setInstrumentId(fieldSet.readString("INSTRUMENTID"));
-                transactionActivity.setTransactionName(fieldSet.readString("TRANSACTIONNAME"));
-                double amount = fieldSet.readDouble("AMOUNT");
-                transactionActivity.setAmount(BigDecimal.valueOf(amount));
-                transactionActivity.setAttributeId(fieldSet.readString("ATTRIBUTEID"));
+        // Setup line tokenizer
+        DelimitedLineTokenizer tokenizer = new DelimitedLineTokenizer();
+        tokenizer.setDelimiter(",");
+        tokenizer.setQuoteCharacter('"'); // Handles quoted fields correctly
+        tokenizer.setStrict(false); // Allow rows with missing fields
+        tokenizer.setNames(headerNames.toArray(new String[0]));
 
-                return transactionActivity;
+        // Line mapper
+        DefaultLineMapper<Map<String, Object>> lineMapper = new DefaultLineMapper<>();
+        lineMapper.setLineTokenizer(tokenizer);
+        lineMapper.setFieldSetMapper(new HeaderColumnNameMapper());
+
+        reader.setLineMapper(lineMapper);
+        return reader;
+
+    }
+
+    private List<String> getHeaderNames(String filePath) throws IOException {
+        try (Reader reader = Files.newBufferedReader(Paths.get(filePath));
+             CSVParser parser = new CSVParser(reader, CSVFormat.DEFAULT.withQuote('"'))) {
+
+            CSVRecord headerRecord = parser.iterator().next();
+            List<String> headers = new ArrayList<>();
+            for (String header : headerRecord) {
+                headers.add(header.trim());
             }
-        });
-
-        return new FlatFileItemReaderBuilder<TransactionActivity>()
-                .name("transactionActivityItemReader")
-                .resource(new FileSystemResource(fileName))
-                .delimited()
-                .names(new String[]{
-                        "ACTIVITYUPLOADID","POSTINGDATE","TRANSACTIONDATE","INSTRUMENTID","TRANSACTIONNAME","AMOUNT","ATTRIBUTEID"
-                })
-                .linesToSkip(1)
-                .lineMapper(defaultLineMapper)
-                .build();
+            return headers;
+        }
     }
 
     private void validateFile(String filename) {
@@ -210,7 +220,9 @@ public class TransactionActivityDataLoadConfig {
             , InstrumentAttributeService instrumentAttributeService
             , AttributeService attributeService
             , AccountingPeriodService accountingPeriodService
-    , TransactionActivityReversalService transactionActivityReversalService) {
+    , InstrumentReplaySet instrumentReplaySet
+    , TransactionActivityQueue transactionActivityQueue
+    , InstrumentReplayQueue instrumentReplayQueue) {
         MongoItemWriter<TransactionActivity> delegate = new MongoItemWriterBuilder<TransactionActivity>()
                 .template(mongoTemplate)
                 .collection("TransactionActivity")
@@ -222,8 +234,11 @@ public class TransactionActivityDataLoadConfig {
                 , instrumentAttributeService
                 , attributeService
                 , accountingPeriodService
-        , transactionActivityReversalService
-        , transactionService);
+        , transactionService
+        , executionStateService
+        , instrumentReplaySet
+        , transactionActivityQueue
+        , instrumentReplayQueue);
     }
 
     @Bean
@@ -260,13 +275,6 @@ public class TransactionActivityDataLoadConfig {
                 .build();
     }
 
-    @Bean("updateInstrumentActivitySateJob")
-    public Job updateInstrumentActivitySateJob() {
-        return new JobBuilder("updateInstrumentActivitySateJob", this.jobRepository)
-                .start(instrumentActivityStateStep())
-                .build();
-    }
-
     @Bean
     public Step postUploadActivityStep() {
         return new StepBuilder("postUploadActivityStep", jobRepository)
@@ -296,40 +304,29 @@ public class TransactionActivityDataLoadConfig {
     }
 
     @Bean
-    public Step instrumentActivityStateStep() {
-        return  new StepBuilder("instrumentActivityStateStep", jobRepository)
-                .tasklet(instrumentActivityStateTasklet(), transactionManager)
-                .build();
-    }
-
-    @Bean
     @StepScope
     public Tasklet postUploadActivityStepTasklet() {
-        return new MetricLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService,accountingPeriodService, this.aggregationService, this.metricLevelAggregationService,this.dataService.getTenantId());
+        return new MetricLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService,accountingPeriodService, this.aggregationService, this.metricLevelAggregationService, this.transactionActivityQueue,this.dataService.getTenantId());
     }
 
     @Bean
     @StepScope
     public Tasklet metricLevelAggregatorTasklet() {
-        return new MetricLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService,accountingPeriodService, this.aggregationService, this.metricLevelAggregationService,this.dataService.getTenantId());
+        return new MetricLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService,accountingPeriodService, this.aggregationService, this.metricLevelAggregationService, this.transactionActivityQueue,this.dataService.getTenantId());
     }
 
     @Bean
     @StepScope
     public Tasklet instrumentLevelAggregatorTasklet() {
-        return new InstrumentLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService, this.accountingPeriodService, this.aggregationService,this.instrumentLevelAggregationService,this.dataService.getTenantId());
+        return new InstrumentLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService, this.accountingPeriodService, this.aggregationService,this.instrumentLevelAggregationService, this.transactionActivityQueue,this.dataService.getTenantId());
     }
 
     @Bean
     @StepScope
     public Tasklet attributeLevelAggregatorTasklet() {
-        return new AttributeLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService, this.accountingPeriodService, this.aggregationService,this.attributeLevelAggregationService,this.dataService.getTenantId());
+        return new AttributeLevelAggregatorTasklet(this.memcachedRepository, this.dataService, this.settingsService, this.executionStateService, this.accountingPeriodService, this.aggregationService,this.attributeLevelAggregationService, this.transactionActivityQueue,this.dataService.getTenantId());
     }
 
-    @Bean
-    @StepScope
-    public Tasklet instrumentActivityStateTasklet() {
-        return new InstrumentActivityStateTasklet(activityService);
-    }
+
 }
 

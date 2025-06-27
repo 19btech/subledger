@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 public interface Aggregator {
-    void aggregate(List<String> activities);
+    void aggregate(List<TransactionActivity> activities);
     void aggregate(TransactionActivity activity);
     void cleanup() throws ExecutionException, InterruptedException;
-    List<String> getCleanupList();
+    List<TransactionActivity> getCleanupList();
 }

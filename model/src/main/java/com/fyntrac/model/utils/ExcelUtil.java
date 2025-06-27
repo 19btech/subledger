@@ -2,6 +2,7 @@ package com.fyntrac.model.utils;
 
 import com.fyntrac.common.enums.AccountingRules;
 import com.fyntrac.common.exception.ExcelFormulaCellException;
+import com.fyntrac.common.utils.NumberUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.bson.types.Binary;
@@ -25,15 +26,13 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.text.DateFormat;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipInputStream;
@@ -459,7 +458,7 @@ public class ExcelUtil {
                         // Optionally, you can set a date format for the cell
                         CellStyle cellStyle = sheet.getWorkbook().createCellStyle();
                         DataFormat format = sheet.getWorkbook().createDataFormat();
-                        cellStyle.setDataFormat(format.getFormat("MM/dd/yyyy"));
+                        cellStyle.setDataFormat(format.getFormat("M/dd/yyyy"));
                         excelRow.getCell(colIndex).setCellStyle(cellStyle);
                     } else if (cellValue instanceof Number) {
                         // Set the cell value as a Number
@@ -474,6 +473,355 @@ public class ExcelUtil {
                 }
             }
         }
+    }
+
+    public static void fillExcelSheetByAttributeIdOrOrder(List<Map<String, Object>> jsonData, Workbook workbook, String sheetName) {
+        Sheet sheet = getSheetIgnoreCase(workbook, sheetName);
+        if (sheet == null) throw new IllegalArgumentException("Sheet '" + sheetName + "' not found.");
+
+        // Step 1: Extract and normalize headers
+        Row headerRow = sheet.getRow(0);
+        if (headerRow == null) throw new IllegalArgumentException("Sheet must have a header row.");
+
+        Map<String, Integer> columnIndexMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (Cell cell : headerRow) {
+            columnIndexMap.put(cell.getStringCellValue().trim().toLowerCase(), cell.getColumnIndex());
+        }
+
+        Integer attributeIdCol = columnIndexMap.get("attributeid");
+        Integer transactionTypeCol = columnIndexMap.get("type");
+
+        // Step 2: Classify template rows
+        Map<String, Queue<Integer>> compositeKeyToRowMap = new LinkedHashMap<>();
+        List<Integer> rowsWithoutCompositeKey = new ArrayList<>();
+
+        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i);
+            if (row == null) continue;
+
+            String attr = (attributeIdCol != null) ? getCellValue(row.getCell(attributeIdCol)) : "";
+            String txn = (transactionTypeCol != null) ? getCellValue(row.getCell(transactionTypeCol)) : "";
+
+            if (!attr.isEmpty() && !txn.isEmpty()) {
+                String key = (attr + "_" + txn).toLowerCase();
+                compositeKeyToRowMap
+                        .computeIfAbsent(key, k -> new LinkedList<>())
+                        .add(i);
+            } else {
+                rowsWithoutCompositeKey.add(i);
+            }
+        }
+
+
+        // Step 3: Track used data rows
+        Set<Integer> usedIndexes = new HashSet<>();
+
+        // Step 4: Fill rows based on composite key match
+        for (int i = 0; i < jsonData.size(); i++) {
+            Map<String, Object> data = jsonData.get(i);
+            Object attrObj = getIgnoreCase(data, "AttributeId");
+            Object txnObj = getIgnoreCase(data, "Type");
+
+            if (attrObj == null || txnObj == null) continue;
+
+            String key = (attrObj.toString().trim() + "_" + txnObj.toString().trim()).toLowerCase();
+            Integer rowIndex = compositeKeyToRowMap.get(key).poll();
+            if (rowIndex == null) continue;
+
+            data.remove("ATTRIBUTEID");
+            columnIndexMap.remove("attributeid");
+
+            data.remove("TYPE");
+            columnIndexMap.remove("type");
+
+            fillRow(sheet, sheet.getRow(rowIndex), data, columnIndexMap);
+            usedIndexes.add(i);
+        }
+
+        // Step 5: Fill remaining rows by order
+        int fillIndex = 0;
+        for (int rowIndex : rowsWithoutCompositeKey) {
+            while (fillIndex < jsonData.size() && usedIndexes.contains(fillIndex)) {
+                fillIndex++;
+            }
+            if (fillIndex >= jsonData.size()) break;
+
+            fillRow(sheet, sheet.getRow(rowIndex), jsonData.get(fillIndex), columnIndexMap);
+            usedIndexes.add(fillIndex);
+            fillIndex++;
+        }
+    }
+
+    private static Date parseDate(Object obj) {
+        if (obj instanceof Date) return (Date) obj;
+        if (obj instanceof String s) {
+            try {
+                return new SimpleDateFormat("M/d/yyyy").parse(s);
+            } catch (ParseException e) {
+                return new Date(0); // fallback
+            }
+        }
+        return new Date(0);
+    }
+
+    private static String getCellStringValue(Cell cell) {
+        if (cell == null) return "";
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue().trim();
+            case NUMERIC -> {
+                double d = cell.getNumericCellValue();
+                if (d == (long) d) yield String.valueOf((long) d);
+                else yield String.valueOf(d);
+            }
+            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+            case FORMULA -> {
+                FormulaEvaluator evaluator = cell.getSheet().getWorkbook().getCreationHelper().createFormulaEvaluator();
+                CellValue evaluated = evaluator.evaluate(cell);
+                yield switch (evaluated.getCellType()) {
+                    case STRING -> evaluated.getStringValue();
+                    case NUMERIC -> String.valueOf(evaluated.getNumberValue());
+                    case BOOLEAN -> String.valueOf(evaluated.getBooleanValue());
+                    default -> "";
+                };
+            }
+            default -> "";
+        };
+    }
+
+    public static void fillExcelSheetByAttributeIdAndTransactionTypeOrOrder(List<Map<String, Object>> jsonData, Workbook workbook, String sheetName) {
+        Sheet sheet = getSheetIgnoreCase(workbook, sheetName);
+        if (sheet == null) throw new IllegalArgumentException("Sheet '" + sheetName + "' not found.");
+
+        // Step 1: Extract and normalize headers
+        Row headerRow = sheet.getRow(0);
+        if (headerRow == null) throw new IllegalArgumentException("Sheet must have a header row.");
+
+        Map<String, Integer> columnIndexMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (Cell cell : headerRow) {
+            columnIndexMap.put(cell.getStringCellValue().trim().toLowerCase(), cell.getColumnIndex());
+        }
+
+        Integer attributeIdCol = columnIndexMap.get("attributeid");
+        Integer transactionTypeCol = columnIndexMap.get("transactionname");
+
+        // Step 2: Classify template rows
+        Map<String, Queue<Integer>> compositeKeyToRowMap = new LinkedHashMap<>();
+        List<Integer> rowsWithoutCompositeKey = new ArrayList<>();
+
+        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i);
+            if (row == null) continue;
+
+            String attr = (attributeIdCol != null) ? getCellValue(row.getCell(attributeIdCol)) : "";
+            String txn = (transactionTypeCol != null) ? getCellValue(row.getCell(transactionTypeCol)) : "";
+
+            if (!attr.isEmpty() && !txn.isEmpty()) {
+                String key = (attr + "_" + txn).toLowerCase();
+                compositeKeyToRowMap
+                        .computeIfAbsent(key, k -> new LinkedList<>())
+                        .add(i);
+            } else {
+                rowsWithoutCompositeKey.add(i);
+            }
+        }
+
+
+        // Step 3: Track used data rows
+        Set<Integer> usedIndexes = new HashSet<>();
+
+        // Step 4: Fill rows based on composite key match
+        for (int i = 0; i < jsonData.size(); i++) {
+            Map<String, Object> data = jsonData.get(i);
+            Object attrObj = getIgnoreCase(data, "AttributeId");
+            Object txnObj = getIgnoreCase(data, "TransactionName");
+
+            if (attrObj == null || txnObj == null) continue;
+
+            String key = (attrObj.toString().trim() + "_" + txnObj.toString().trim()).toLowerCase();
+            Integer rowIndex = compositeKeyToRowMap.get(key).poll();
+            if (rowIndex == null) continue;
+
+            data.remove("ATTRIBUTEID");
+            columnIndexMap.remove("attributeid");
+
+            data.remove("TRANSACTIONNAME");
+            columnIndexMap.remove("transactionname");
+
+            fillRow(sheet, sheet.getRow(rowIndex), data, columnIndexMap);
+            usedIndexes.add(i);
+        }
+
+        // Step 5: Fill remaining rows by order
+        int fillIndex = 0;
+        for (int rowIndex : rowsWithoutCompositeKey) {
+            while (fillIndex < jsonData.size() && usedIndexes.contains(fillIndex)) {
+                fillIndex++;
+            }
+            if (fillIndex >= jsonData.size()) break;
+
+            fillRow(sheet, sheet.getRow(rowIndex), jsonData.get(fillIndex), columnIndexMap);
+            usedIndexes.add(fillIndex);
+            fillIndex++;
+        }
+    }
+
+    public static void fillExcelSheetByAttributeIdAndMetricNameOrOrder(List<Map<String, Object>> jsonData, Workbook workbook, String sheetName) {
+        Sheet sheet = getSheetIgnoreCase(workbook, sheetName);
+        if (sheet == null) throw new IllegalArgumentException("Sheet '" + sheetName + "' not found.");
+
+        // Step 1: Extract and normalize headers
+        Row headerRow = sheet.getRow(0);
+        if (headerRow == null) throw new IllegalArgumentException("Sheet must have a header row.");
+
+        Map<String, Integer> columnIndexMap = new HashMap<>();
+        for (Cell cell : headerRow) {
+            columnIndexMap.put(cell.getStringCellValue().trim().toLowerCase(), cell.getColumnIndex());
+        }
+
+        Integer attributeIdCol = columnIndexMap.get("attributeid");
+        Integer metricNameCol = columnIndexMap.get("metricname");
+
+        // Step 2: Classify template rows
+        Map<String, Queue<Integer>> compositeKeyToRowMap = new LinkedHashMap<>();
+        List<Integer> rowsWithoutCompositeKey = new ArrayList<>();
+
+        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i);
+            if (row == null) continue;
+
+            String attr = (attributeIdCol != null) ? getCellValue(row.getCell(attributeIdCol)) : "";
+            String txn = (metricNameCol != null) ? getCellValue(row.getCell(metricNameCol)) : "";
+
+            if (!attr.isEmpty() && !txn.isEmpty()) {
+                String key = (attr + "_" + txn).toLowerCase();
+                compositeKeyToRowMap
+                        .computeIfAbsent(key, k -> new LinkedList<>())
+                        .add(i);
+            } else {
+                rowsWithoutCompositeKey.add(i);
+            }
+        }
+
+
+        // Step 3: Track used data rows
+        Set<Integer> usedIndexes = new HashSet<>();
+
+        // Step 4: Fill rows based on composite key match
+        for (int i = 0; i < jsonData.size(); i++) {
+            Map<String, Object> data = jsonData.get(i);
+            Object attrObj = getIgnoreCase(data, "AttributeId");
+            Object txnObj = getIgnoreCase(data, "MetricName");
+
+            if (attrObj == null || txnObj == null) continue;
+
+            String key = (attrObj.toString().trim() + "_" + txnObj.toString().trim()).toLowerCase();
+            Integer rowIndex = compositeKeyToRowMap.get(key).poll();
+            if (rowIndex == null) continue;
+
+            data.remove("ATTRIBUTEID");
+            columnIndexMap.remove("attributeid");
+            data.remove("METRICNAME");
+            columnIndexMap.remove("metricname");
+            fillRow(sheet, sheet.getRow(rowIndex), data, columnIndexMap);
+            usedIndexes.add(i);
+        }
+
+        // Step 5: Fill remaining rows by order
+        int fillIndex = 0;
+        for (int rowIndex : rowsWithoutCompositeKey) {
+            while (fillIndex < jsonData.size() && usedIndexes.contains(fillIndex)) {
+                fillIndex++;
+            }
+            if (fillIndex >= jsonData.size()) break;
+
+            fillRow(sheet, sheet.getRow(rowIndex), jsonData.get(fillIndex), columnIndexMap);
+            usedIndexes.add(fillIndex);
+            fillIndex++;
+        }
+    }
+
+    // Fills a row with provided data based on header mapping
+    private static void fillRow(Sheet sheet, Row row, Map<String, Object> data, Map<String, Integer> headerMap) {
+        if (row == null) return;
+
+        for (Map.Entry<String, Object> entry : data.entrySet()) {
+            String column = entry.getKey().toLowerCase();
+            Object value = entry.getValue();
+
+            Integer colIndex = headerMap.get(column);
+            if (colIndex == null) continue;
+
+            Cell cell = row.getCell(colIndex);
+            if (cell == null) cell = row.createCell(colIndex);
+
+            if (value instanceof String str && NumberUtil.isValidNumber(str)) {
+                double numberValue = new java.math.BigDecimal(str).doubleValue();
+                row.createCell(colIndex).setCellValue(numberValue);
+            } else if (value instanceof Date dateValue) {
+
+                cell = row.createCell(colIndex);
+                cell.setCellValue(com.fyntrac.common.utils.DateUtil.stripTime(dateValue));
+
+                // Format the cell to only show date (no time)
+                // Create a cell style with date format
+                CreationHelper createHelper = sheet.getWorkbook().getCreationHelper();
+                CellStyle cellStyle = sheet.getWorkbook().createCellStyle();
+                cellStyle.setDataFormat(createHelper.createDataFormat().getFormat("M/dd/yyyy"));
+                cell.setCellStyle(cellStyle);
+
+            } else if (value instanceof String str && isValidDate(str)) {
+                // Parse the string into a LocalDate
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("M/dd/yyyy");
+                LocalDate localDate = LocalDate.parse(str, formatter);
+
+                // Convert LocalDate to Date at UTC midnight (removes time offset)
+                Date dateValue = Date.from(localDate.atStartOfDay(ZoneOffset.UTC).toInstant());
+
+                cell = row.createCell(colIndex);
+                cell.setCellValue(com.fyntrac.common.utils.DateUtil.stripTime(dateValue));
+
+                // Create a cell style with date format
+                CreationHelper createHelper = sheet.getWorkbook().getCreationHelper();
+                CellStyle cellStyle = sheet.getWorkbook().createCellStyle();
+                cellStyle.setDataFormat(createHelper.createDataFormat().getFormat("M/dd/yyyy"));
+                cell.setCellStyle(cellStyle);
+            }
+            else if (value == null) {
+                // Handle null value
+                row.createCell(colIndex).setCellValue(""); // Set to empty string or use "N/A"
+            } else {
+                // Set other types of values as string
+                row.createCell(colIndex).setCellValue(value.toString());
+            }
+        }
+    }
+
+    public static boolean isValidDate(String dateStr) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("M/dd/yyyy", Locale.US);
+        try {
+            // Parse the string to check if it's a valid date
+            LocalDate.parse(dateStr, formatter);
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
+        }
+    }
+
+    // Helper: get cell value as trimmed string
+    private static String getCellValue(Cell cell) {
+        if (cell == null) return "";
+        return cell.toString().trim();
+    }
+
+
+    // Utility: Case-insensitive fetch from Map
+    private static Object getIgnoreCase(Map<String, Object> map, String key) {
+        for (String k : map.keySet()) {
+            if (k.equalsIgnoreCase(key)) {
+                return map.get(k);
+            }
+        }
+        return null;
     }
 
     private static Map<String, Integer> getColumnIndexMap(Row headerRow) {

@@ -6,16 +6,14 @@ import com.fyntrac.common.key.MetricLevelLtdKey;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.DataService;
-import com.fyntrac.common.service.ExecutionStateService;
+import com.fyntrac.common.service.SettingsService;
 import com.fyntrac.common.service.aggregation.AggregationService;
 import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
 import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
-import com.fyntrac.common.service.SettingsService;
 import org.springframework.data.mongodb.core.query.Criteria;
-
 import org.springframework.data.mongodb.core.query.Query;
 
 import java.math.BigDecimal;
@@ -43,14 +41,16 @@ public class MetricLevelAggregator  extends BaseAggregator {
                                  , AggregationService aggregationService
                                  , MetricLevelAggregationService metricLevelAggregationService
                                  , AggregationRequest aggregationRequest
-            , String tenantId) {
+            , String tenantId
+    , long jobId) {
         super(memcachedRepository
                 ,dataService
                 ,settingsService
                 , accountingPeriodService
                 , aggregationService
                 , aggregationRequest
-                , tenantId);
+                , tenantId
+        ,jobId);
         newPostingDates = new HashSet<>(0);
         this.metricLevelAggregationService =metricLevelAggregationService;
 
@@ -96,13 +96,12 @@ public class MetricLevelAggregator  extends BaseAggregator {
      * Aggregate Transaction Activities
      * @param activities
      */
-    public void aggregate(List<String> activities) {
-        for(String transactionActivityKey : activities) {
+    public void aggregate(List<TransactionActivity> activities) {
+        for(TransactionActivity transactionActivity : activities) {
             try {
-                TransactionActivity transactionActivity = this.memcachedRepository.getFromCache(transactionActivityKey, TransactionActivity.class);
                 this.aggregate(transactionActivity);
             } catch (Exception e) {
-                log.error("Failed to process transactionActivityKey: {}", transactionActivityKey, e);
+                log.error("Failed to process transactionActivity: {}", transactionActivity, e);
             }
         }
 
@@ -198,8 +197,8 @@ public class MetricLevelAggregator  extends BaseAggregator {
 
 
 
-                MetricLevelLtdKey previousPeriodKey = new MetricLevelLtdKey(this.tenantId, metric.toUpperCase(), lastActivityPostingDate);
-                MetricLevelLtdKey currentPeriodKey = new MetricLevelLtdKey(this.tenantId, metric.toUpperCase(), activityPostingDate);
+                MetricLevelLtdKey previousPeriodKey = new MetricLevelLtdKey(String.format("tenantId:%s:jobId:%d",this.tenantId, this.jobId), metric.toUpperCase(), lastActivityPostingDate);
+                MetricLevelLtdKey currentPeriodKey = new MetricLevelLtdKey(String.format("tenantId:%s:jobId:%d",this.tenantId, this.jobId), metric.toUpperCase(), activityPostingDate);
 
                 MetricLevelLtd currentLtd = this.metricLevelAggregationService.getBalance(this.tenantId, metric.toUpperCase(), activityPostingDate);
                 MetricLevelLtd previousLtd = this.metricLevelAggregationService.getBalance(this.tenantId, metric.toUpperCase(), lastActivityPostingDate);
@@ -235,45 +234,45 @@ public class MetricLevelAggregator  extends BaseAggregator {
                 this.memcachedRepository.putInCache(Key.allMetricLevelLtdKeyList(tenantId), allMetricLevelInstruments);
             }
         }
-
-        Set<MetricLevelLtd> updateable = new HashSet<>(0);
-        Set<MetricLevelLtd> insertable = new HashSet<>(0);
-        for(MetricLevelLtd metricLevelLtd : balances) {
-
-            if(metricLevelLtd.getId() != null) {
-                updateable.add(metricLevelLtd);
-            }else{
-                insertable.add(metricLevelLtd);
-            }
-        }
-
-        try {
-            for (MetricLevelLtd ltd : this.dataService.saveAll(insertable, this.tenantId, MetricLevelLtd.class)) {
-                String k = ltd.getKey(this.tenantId);
-                if (this.memcachedRepository.ifExists(k)) {
-                    this.memcachedRepository.replaceInCache(k, ltd);
-                } else {
-                    this.memcachedRepository.putInCache(k, ltd);
-                    this.ltdObjectCleanupList.add(k);
-                }
-            }
-        }catch(Exception e){
-            log.error("Failed to process metric: {}", insertable, e);
-        }
-
-        try {
-            for (MetricLevelLtd ltd : updateable) {
-                this.dataService.saveObject(ltd, this.tenantId);
-                String k = ltd.getKey(this.tenantId);
-                if (this.memcachedRepository.ifExists(k)) {
-                    this.memcachedRepository.replaceInCache(k, ltd);
-                } else {
-                    this.memcachedRepository.putInCache(k, ltd);
-                    this.ltdObjectCleanupList.add(k);
-                }
-            }
-        }catch(Exception e) {
-            log.error("Failed to process metric: {}", updateable, e);
-        }
+        this.dataService.bulkSave(balances, this.tenantId, MetricLevelLtd.class);
+//        Set<MetricLevelLtd> updateable = new HashSet<>(0);
+//        Set<MetricLevelLtd> insertable = new HashSet<>(0);
+//        for(MetricLevelLtd metricLevelLtd : balances) {
+//
+//            if(metricLevelLtd.getId() != null) {
+//                updateable.add(metricLevelLtd);
+//            }else{
+//                insertable.add(metricLevelLtd);
+//            }
+//        }
+//
+//        try {
+//            for (MetricLevelLtd ltd : this.dataService.saveAll(insertable, this.tenantId, MetricLevelLtd.class)) {
+//                String k = ltd.getKey(this.tenantId);
+//                if (this.memcachedRepository.ifExists(k)) {
+//                    this.memcachedRepository.replaceInCache(k, ltd);
+//                } else {
+//                    this.memcachedRepository.putInCache(k, ltd);
+//                    this.ltdObjectCleanupList.add(k);
+//                }
+//            }
+//        }catch(Exception e){
+//            log.error("Failed to process metric: {}", insertable, e);
+//        }
+//
+//        try {
+//            for (MetricLevelLtd ltd : updateable) {
+//                this.dataService.saveObject(ltd, this.tenantId);
+//                String k = ltd.getKey(this.tenantId);
+//                if (this.memcachedRepository.ifExists(k)) {
+//                    this.memcachedRepository.replaceInCache(k, ltd);
+//                } else {
+//                    this.memcachedRepository.putInCache(k, ltd);
+//                    this.ltdObjectCleanupList.add(k);
+//                }
+//            }
+//        }catch(Exception e) {
+//            log.error("Failed to process metric: {}", updateable, e);
+//        }
     }
 }

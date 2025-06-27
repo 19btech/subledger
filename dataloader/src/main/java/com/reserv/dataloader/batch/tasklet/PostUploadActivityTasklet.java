@@ -25,7 +25,6 @@ public class PostUploadActivityTasklet implements Tasklet {
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) throws Exception {
 
         try{
-            this.processRewindAndReplay(contribution);
             this.bookGL(contribution);
         }catch (Exception e) {
 
@@ -35,18 +34,10 @@ public class PostUploadActivityTasklet implements Tasklet {
         return RepeatStatus.FINISHED;
     }
 
-    public void processRewindAndReplay(StepContribution contribution) {
-        String tenantId = contribution.getStepExecution().getJobParameters().getString("tenantId");
-        Long runKey = contribution.getStepExecution().getJobParameters().getLong(runIdKey);
-        String replayInstrumentDataKey = Key.replayMessageList(tenantId, runKey);
-        CacheList<Records.TransactionActivityReplayRecord> replayList = this.memcachedRepository.getFromCache(replayInstrumentDataKey, CacheList.class);
-
-    }
-
     public void bookGL(StepContribution contribution) {
-        Long key = contribution.getStepExecution().getJobParameters().getLong(runIdKey);
-        String tenantId = contribution.getStepExecution().getJobParameters().getString("tenantId");
-        Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenantId, com.fyntrac.common.utils.Key.aggregationKey(tenantId, key));
+         String tenantId = contribution.getStepExecution().getJobParameters().getString("tenantId");
+        long jobId = contribution.getStepExecution().getJobParameters().getLong("jobid");
+        Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenantId, jobId);
         generalLedgerMessageProducer.bookTempGL(glRec);
     }
 }

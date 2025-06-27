@@ -1,15 +1,11 @@
 package com.fyntrac.common.service;
 
-import com.fyntrac.common.component.TenantDataSourceProvider;
-import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.entity.ExecutionState;
 import com.fyntrac.common.repository.MemcachedRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
-import java.util.List;
 import java.util.NoSuchElementException;
-import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 @Service
@@ -38,6 +34,9 @@ public class ExecutionStateService extends CacheBasedService<ExecutionState>{
         Collection<ExecutionState> states = this.fetchAll();
         if (!states.isEmpty()) {
             ExecutionState executionState = states.iterator().next(); // Get the first ExecutionState
+            if(executionState == null) {
+                ExecutionState.builder().executionDate(0).lastExecutionDate(0).build();
+            }
             this.memcachedRepository.putInCache(this.key, executionState); // Cache the retrieved ExecutionState
             return executionState; // Return the retrieved ExecutionState
         }

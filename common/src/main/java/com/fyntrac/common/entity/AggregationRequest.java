@@ -21,4 +21,5 @@ public class AggregationRequest implements Serializable {
     private AggregationRequestType requestType;
     private int postingDate;
     private int lastPostingDate;
+    private long jobId;
 }

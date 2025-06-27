@@ -317,7 +317,7 @@ public class InstrumentLevelAggregationService extends CacheBasedService<Instrum
 
     public List<InstrumentLevelLtd> getBalance(String instrumentId, List<String> metrics, int postingDate) {
         Query query = new Query();
-        List<String> metricList = StringUtil.convertUpperCase(metrics);
+        Set<String> metricList = new HashSet<>(StringUtil.convertUpperCase(metrics));
         // Add criteria to filter by transactionName (list) and transactionDate
         query.addCriteria(Criteria.where("instrumentId").is(instrumentId.toUpperCase())
                 .and("postingDate").is(postingDate)

@@ -20,6 +20,10 @@ import org.springframework.stereotype.Service;
 import org.bson.Document;
 
 import java.math.BigDecimal;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -30,13 +34,16 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
     private final AttributeService attributeService;
     @Value("${fyntrac.chunk.size}")
     private int chunkSize;
+    private final TransactionService transactionService;
 
     @Autowired
     public TransactionActivityService(DataService<TransactionActivity> dataService
                                       , MemcachedRepository memcachedRepository
-                                    , AttributeService attributeService) {
+                                    , AttributeService attributeService
+    , TransactionService transactionService) {
         super(dataService, memcachedRepository);
         this.attributeService = attributeService;
+        this.transactionService = transactionService;
     }
 
     @Override
@@ -135,7 +142,7 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
     }
 
 
-    private Map<String, Object> getReclassableAttributes(Map<String, Object> instrumentAttributes) {
+    public Map<String, Object> getReclassableAttributes(Map<String, Object> instrumentAttributes) {
         Map<String, Object> reclassAttributes = new HashMap<>(0);
         Collection<Attributes> attributes = attributeService.getReclassableAttributes();
         for(Attributes attribute : attributes) {
@@ -153,20 +160,37 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
     public Set<TransactionActivity> generateTransactions(List<Map<String, Object>> transactions
             , InstrumentAttribute instrumentAttribute
             , AccountingPeriod accountingPeriod
-            , Date transactionDate
+            , Date executionDate
             , Source source
             , String sourceId) {
 
         Map<String, Object> attributes = this.getReclassableAttributes(instrumentAttribute.getAttributes());
 
         Set<TransactionActivity>  transactionActivities = transactions.stream()
-                .map(transactionActivityMap -> this.save(transactionActivityMap, accountingPeriod))
+                .map(transactionActivityMap -> {
+                    try {
+                        return this.fillTrascationActivity(transactionActivityMap, accountingPeriod);
+                    } catch (ParseException e) {
+                        throw new RuntimeException(e);
+                    }
+                })
                 .collect(Collectors.toCollection(HashSet::new));
         transactionActivities.forEach(transactionActivity -> {
             transactionActivity.setAccountingPeriod(accountingPeriod);
             transactionActivity.setOriginalPeriodId(accountingPeriod.getPeriodId());
-            transactionActivity.setTransactionDate(DateUtil.stripTime(transactionDate));
-            transactionActivity.setEffectiveDate(DateUtil.dateInNumber(transactionDate));
+            try {
+                if(transactionActivity.getTransactionDate() != null) {
+                    try {
+                        transactionActivity.setEffectiveDate(DateUtil.dateInNumber(transactionActivity.getTransactionDate()));
+                    } catch (ParseException e) {
+                        throw new RuntimeException(e);
+                    }
+                }else {
+                    transactionActivity.setEffectiveDate(DateUtil.dateInNumber(executionDate));
+                }
+            } catch (ParseException e) {
+                throw new RuntimeException(e);
+            }
             transactionActivity.setPostingDate(transactionActivity.getEffectiveDate());
             if(transactionActivity.getAttributeId() == null || transactionActivity.getAttributeId().isBlank()) {
                 transactionActivity.setAttributeId(instrumentAttribute.getAttributeId());
@@ -184,7 +208,7 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
         return transactionActivities;
     }
 
-    public TransactionActivity save(Map<String, Object> map, AccountingPeriod accountingPeriod) {
+    public TransactionActivity fillTrascationActivity(Map<String, Object> map, AccountingPeriod accountingPeriod) throws ParseException {
         TransactionActivity.TransactionActivityBuilder builder = TransactionActivity.builder();
 
         builder.accountingPeriod(accountingPeriod);
@@ -195,7 +219,7 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
         if (map.containsKey("instrumentId")) {
             Object instrumentIdObj = map.get("instrumentId");
             if(instrumentIdObj != null) {
-                String parseInstrumentId = instrumentIdObj.toString();
+                String parseInstrumentId = instrumentIdObj.toString().toUpperCase();
                 builder.instrumentId(parseInstrumentId);
             }else{
                 builder.instrumentId("");
@@ -206,13 +230,34 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
         if (map.containsKey("transactionName")) {
             Object transactionNameObj = map.get("transactionName");
             if(transactionNameObj != null) {
-                String parseTransactionName = transactionNameObj.toString();
+                String parseTransactionName = transactionNameObj.toString().toUpperCase();
                 builder.transactionName(parseTransactionName);
+                Transactions transaction = this.transactionService.getTransaction(parseTransactionName.toUpperCase());
+                builder.isReplayable((transaction == null) ? 0 : transaction.getIsReplayable());
             }else{
                 builder.transactionName("");
             }
 
         }
+
+
+        if (map.containsKey("transactionDate")) {
+            Object transactionDateObj = map.get("transactionDate");
+            if (transactionDateObj != null) {
+                String parseTransactionDate = transactionDateObj.toString().trim().toUpperCase();
+                if (!parseTransactionDate.isEmpty()) {
+                    Date effectiveDate =  DateUtil.convertToUtc(
+                            new SimpleDateFormat("M/dd/yyyy").parse(parseTransactionDate)
+                    );
+                    builder.transactionDate(DateUtil.convertToUtc(
+                            new SimpleDateFormat("M/dd/yyyy").parse(parseTransactionDate)));
+                    builder.effectiveDate(DateUtil.dateInNumber(effectiveDate));
+
+                }
+            }
+        }
+
+
         if (map.containsKey("amount")) {
             Object amountObj = map.get("amount"); // No need to cast to Object explicitly
             if (amountObj != null) {
@@ -235,7 +280,7 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
         if (map.containsKey("attributeId")) {
             Object attributeIdObj = map.get("attributeId");
             if(attributeIdObj !=null) {
-                String parseAttributeId = attributeIdObj.toString();
+                String parseAttributeId = attributeIdObj.toString().toUpperCase();
                 builder.attributeId(parseAttributeId);
             }else{
                 builder.attributeId("");

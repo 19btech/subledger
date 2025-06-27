@@ -20,9 +20,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.Date;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -55,12 +53,17 @@ public class ModelExecutionService {
         while (hasMoreData) {
 
             // Fetch the chunk of data
-            List<InstrumentAttribute> chunk = this.instrumentAttributeService.getInstruments(null, pageNumber, chunkSize);
+            List<InstrumentAttribute> chunk = this.instrumentAttributeService.getDistinctInstrumentsByInstrumentId(null, pageNumber, chunkSize);
+
+            Set<String> instrumentIdChunk = new HashSet<>(0);
+            for(InstrumentAttribute instrumentAttribute: chunk) {
+                instrumentIdChunk.add(instrumentAttribute.getInstrumentId());
+            }
 
             if (!chunk.isEmpty()) {
                 // Process this chunk, e.g., send it to your REST API
                 //send message to consumen
-                this.postModelExecutionMessage(executionDate, chunk, pageNumber);
+                this.postModelExecutionMessage(executionDate, new ArrayList<>(instrumentIdChunk), pageNumber);
                 pageNumber++;  // Move to the next page
             } else {
                 // No more data to fetch
@@ -69,8 +72,8 @@ public class ModelExecutionService {
         }
     }
 
-    private void postModelExecutionMessage(Date executionDate, List<InstrumentAttribute> instruments, int page) {
-        CacheList<InstrumentAttribute> cacheList = new CacheList<>();
+    private void postModelExecutionMessage(Date executionDate, List<String> instruments, int page) {
+        CacheList<String> cacheList = new CacheList<>();
         instruments.forEach(cacheList::add);
         int hashCode = Objects.hash(cacheList);
         String tenantId = TenantContextHolder.getTenant();

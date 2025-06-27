@@ -22,7 +22,7 @@ public class AggregationMessageProducer {
     public void executeAggregation(Records.ExecuteAggregationMessageRecord aggregationMessage){
         String traceId = UUID.randomUUID().toString();
         var msgId = pulsarTemplate.send(topic,aggregationMessage);
-        log.info("EventPublisher::publishRawMessage publish the event [executeAggregation] {}, {}", aggregationMessage.aggregationDate(), aggregationMessage.aggregationKey());
+        log.info("EventPublisher::publishRawMessage publish the event [executeAggregation] {}, {}", aggregationMessage.aggregationDate(), aggregationMessage.jobId());
         log.info("EventPublisher::publishRawMessage MessageId {}", msgId);
     }
 }

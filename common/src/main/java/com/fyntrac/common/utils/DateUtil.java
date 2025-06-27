@@ -37,12 +37,12 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
     public static final String DATE_FORMAT = "yyyy/MM/dd";
 
     /** The canonical extended date format used by the application. */
-    public static final String DATE_FORMAT_EXTENDED = "MM/dd/yyyy HH:mm:ss";
+    public static final String DATE_FORMAT_EXTENDED = "M/dd/yyyy HH:mm:ss";
 
     /** The canonical extended date format used by the application. */
-    public static final String DATE_TIME_FORMAT = "MM/dd/yyyy hh:mm a";
+    public static final String DATE_TIME_FORMAT = "M/dd/yyyy hh:mm a";
 
-    public static final String MYSQL_DATE_FORMAT = "MM/dd/yyyy";
+    public static final String MYSQL_DATE_FORMAT = "M/dd/yyyy";
 
     /** The canonical extended date format used by the application. */
     public static final String DATE_FORMAT_EXTENDED_WITH_TIMEZONE =
@@ -78,7 +78,7 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
 
     /**
      * Formats the specified date in the form MM/dd/yyyy.
-     * Also takes into account GJ Chronology Basis for dates older than year 01/01/1583
+     * Also takes into account GJstripTime Chronology Basis for dates older than year 01/01/1583
      * @param date The date to format.
      * @return The formatted date in the form MM/dd/yyyy.
      */
@@ -1421,7 +1421,6 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
                 continue;
             }
         }
-
         logger.info("Could not parse date with a year greater than 1970");
         throw new ParseException("Unable to parse the date: " + str, -1);
     }
@@ -1515,7 +1514,7 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
     }
 
     public static Date parseDate(String strDate) throws ParseException {
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+        SimpleDateFormat dateFormat = new SimpleDateFormat("MM/dd/yyyy");
         return parseDate(strDate,dateFormat);
     }
 
@@ -1667,6 +1666,13 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
         // Convert to UTC
         calendar.setTimeZone(TimeZone.getTimeZone("UTC"));
         return calendar.getTime();
+    }
+
+    public static Date convertIntDateToUtc(int dateInt) throws ParseException {
+        String dateStr = String.valueOf(dateInt); // "20220203"
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
+        sdf.setTimeZone(TimeZone.getTimeZone("UTC")); // Parse in UTC
+        return sdf.parse(dateStr);
     }
 }
 

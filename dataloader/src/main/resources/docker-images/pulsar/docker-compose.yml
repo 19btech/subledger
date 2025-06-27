@@ -9,6 +9,8 @@ services:
       - "6650:6650"
       - "8080:8080"
     restart: unless-stopped
+    volumes:
+      - pulsar-data:/pulsar/data
     networks:
       - pulsar
 
@@ -27,5 +29,7 @@ services:
 
 networks:
   pulsar:
-    name: pulsar
     driver: bridge
+
+volumes:
+  pulsar-data:

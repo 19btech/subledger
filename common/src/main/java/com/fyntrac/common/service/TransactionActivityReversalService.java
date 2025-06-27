@@ -4,13 +4,13 @@ import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.utils.DateUtil;
+import com.fyntrac.common.utils.NumberUtil;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mongodb.core.aggregation.Aggregation;
-import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.aggregation.*;
 import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -21,6 +21,9 @@ public class TransactionActivityReversalService {
 
     private final DataService dataService;
 
+    public DataService getDataService() {
+        return this.dataService;
+    }
     @Autowired
     public TransactionActivityReversalService(DataService dataService) {
         this.dataService = dataService;
@@ -31,91 +34,80 @@ public class TransactionActivityReversalService {
            return this.generateTransactionReversalActivity(reversalRecord, activity);
     }
 
-
     public Collection<TransactionActivity> getTransactionSummary(TransactionActivity activity) {
-
         int effectiveDate = activity.getEffectiveDate();
         String instrumentId = activity.getInstrumentId();
-        String attributeId = activity.getAttributeId();
-        String transactionName = activity.getTransactionName().trim()
-                .replaceAll("[\\u2013\\u2014]", "-") // Replace en/em dashes with hyphen
-                .replaceAll("\\s+", " ")            // Normalize whitespace
-                .toUpperCase();
 
         Criteria criteria = Criteria.where("effectiveDate").gte(effectiveDate)
-                .and("instrumentId").is(instrumentId)
-                .and("attributeId").is(attributeId); // Make sure this is a string in your DB
-        Query query = new Query(criteria);
-        // Execute the aggregation
-        Collection<TransactionActivity> results = this.dataService.fetchData(query, TransactionActivity.class);
+                .and("instrumentId").is(instrumentId);
 
+        MatchOperation match = Aggregation.match(criteria);
 
-        return results;
+        GroupOperation group = Aggregation.group("effectiveDate", "instrumentId", "attributeId")
+                .first("effectiveDate").as("effectiveDate")
+                .first("instrumentId").as("instrumentId")
+                .first("attributeId").as("attributeId")
+                .first("transactionName").as("transactionName")
+                .first("amount").as("amount")
+                .first("attributes").as("attribute")
+                .first("batchId").as("batchId")
+                .first("instrumentAttributeVersionId").as("instrumentAttributeVersionId")
+                .first("transactionDate").as("transactionDate")
+                .first("originalPeriodId").as("originalPeriodId");// Replace/add all required fields
+
+        ProjectionOperation project = Aggregation.project(TransactionActivity.class);
+
+        Aggregation aggregation = Aggregation.newAggregation(match, group, project);
+
+        AggregationResults<TransactionActivity> results =
+                this.dataService.getMongoTemplate().aggregate(aggregation, "transactionActivity", TransactionActivity.class);
+
+        return results.getMappedResults();
     }
 
 
-    public Collection<Records.TransactionActivityReversalRecord> getGroupTransactionSummary(TransactionActivity activity) {
-        // Create the aggregation pipeline
-
-//        Aggregation aggregation = Aggregation.newAggregation(
-//                Aggregation.match(
-//                        Criteria.where("effectiveDate").gte(20241025)
-//                                .and("transactionName").is("PURCHASE - UPB")
-//                                .and("instrumentId").is("ZXUB-ST2R")
-//                                .and("attributeId").is("1.0") // Make sure this is a string in your DB
-//                ),
-//                Aggregation.group("instrumentId", "attributeId", "transactionName")
-//                        .sum("amount").as("totalAmount"),
-//                Aggregation.project()
-//                        .and("_id.instrumentId").as("instrumentId")
-//                        .and("_id.attributeId").as("attributeId")
-//                        .and("_id.transactionName").as("transactionType")
-//                        .and("totalAmount").as("totalAmount")
-//        );
-
-        int effectiveDate = activity.getEffectiveDate();
-        String instrumentId = activity.getInstrumentId();
-        String attributeId = activity.getAttributeId();
-        String transactionName = activity.getTransactionName().trim()
-                .replaceAll("[\\u2013\\u2014]", "-") // Replace en/em dashes with hyphen
-                .replaceAll("\\s+", " ")            // Normalize whitespace
-                .toUpperCase();
+    public Collection<Records.TransactionActivityReversalRecord> getGroupTransactionSummary(
+            String instrumentId, int postingDate, int effectiveDate) {
 
         Criteria criteria = Criteria.where("effectiveDate").gte(effectiveDate)
-                .and("postingDate").lt(activity.getPostingDate())
+                .and("postingDate").lt(postingDate)
                 .and("instrumentId").is(instrumentId)
-                .and("attributeId").is(attributeId); // Make sure this is a string in your DB
+                .and("isReplayable").is(1);
 
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(
-                        criteria),
+                Aggregation.match(criteria),
                 Aggregation.group("instrumentId", "attributeId", "transactionName", "effectiveDate")
-                        .sum("amount").as("totalAmount"),
+                        .sum(ConvertOperators.ToDouble.toDouble("$amount")).as("totalAmount")
+                        .last("attributes").as("attributes")
+                        .last("originalPeriodId").as("originalPeriodId")
+                        .last("instrumentAttributeVersionId").as("instrumentAttributeVersionId")
+                        .last("transactionDate").as("transactionDate")
+                        .last("accountingPeriod").as("accountingPeriod")
+                        .last("batchId").as("batchId"),
                 Aggregation.project()
                         .and("_id.instrumentId").as("instrumentId")
                         .and("_id.attributeId").as("attributeId")
                         .and("_id.transactionName").as("transactionType")
                         .and("_id.effectiveDate").as("effectiveDate")
                         .and("totalAmount").as("totalAmount")
+                        .and("attributes").as("attributes")
+                        .and("instrumentAttributeVersionId").as("instrumentAttributeVersionId")
+                        .and("originalPeriodId").as("originalPeriodId")
+                        .and("transactionDate").as("transactionDate")
+                        .and("accountingPeriod").as("accountingPeriod")
+                        .and("batchId").as("batchId")
         );
 
-        // Execute the aggregation
-        AggregationResults<Records.TransactionActivityReversalRecord> results = this.dataService.getMongoTemplate().aggregate(
-                aggregation,
-                "TransactionActivity", // your collection name
-                Records.TransactionActivityReversalRecord.class
-        );
+        AggregationResults<Records.TransactionActivityReversalRecord> results =
+                this.dataService.getMongoTemplate()
+                        .aggregate(aggregation, "TransactionActivity", Records.TransactionActivityReversalRecord.class);
 
         List<Records.TransactionActivityReversalRecord> mappedResults = results.getMappedResults();
-
-        if (mappedResults.isEmpty()) {
-            return null; // or throw an exception if you prefer
-        }
-
-        return mappedResults;
+        return mappedResults.isEmpty() ? List.of() : mappedResults;
     }
 
-    public TransactionActivity generateTransactionReversalActivity(Records.TransactionActivityReversalRecord reversalRecord, TransactionActivity activity) {
+
+    public TransactionActivity generateTransactionReversalActivity(Records.TransactionActivityReversalRecord reversalRecord, TransactionActivity activity) throws ParseException {
 
         if (reversalRecord == null) {
             throw new IllegalArgumentException("No reversal record found in the results.");
@@ -124,16 +116,40 @@ public class TransactionActivityReversalService {
         return TransactionActivity.builder()
                 .accountingPeriod(activity.getAccountingPeriod())
                 .postingDate(activity.getPostingDate())
+                .effectiveDate(activity.getEffectiveDate())
                 .instrumentId(activity.getInstrumentId()) // Use getter method
                 .attributeId(activity.getAttributeId()) // Use getter method
                 .transactionName(activity.getTransactionName()) // Use getter method
                 .originalPeriodId(activity.getOriginalPeriodId()) // Use getter method
                 .attributes(activity.getAttributes())
-                .transactionDate(DateUtil.convertToDateFromYYYYMMDD(activity.getPostingDate()))
+                .transactionDate(DateUtil.convertToUtc(activity.getTransactionDate()))
                 .source(Source.REVERSAL)
                 .instrumentAttributeVersionId(activity.getInstrumentAttributeVersionId())
-                .amount(reversalRecord.totalAmount().negate())
+                .amount(NumberUtil.getNumber(reversalRecord.totalAmount()).negate())
                 .batchId(activity.getBatchId())
+                .build();
+    }
+
+    public TransactionActivity generateTransactionReversalActivity(Records.TransactionActivityReversalRecord reversalRecord, Records.InstrumentReplayRecord activity) {
+
+        if (reversalRecord == null) {
+            throw new IllegalArgumentException("No reversal record found in the results.");
+        }
+
+        return TransactionActivity.builder()
+                .accountingPeriod(reversalRecord.accountingPeriod())
+                .postingDate(activity.postingDate())
+                .effectiveDate(reversalRecord.effectiveDate())
+                .instrumentId(reversalRecord.instrumentId()) // Use getter method
+                .attributeId(reversalRecord.attributeId()) // Use getter method
+                .transactionName(reversalRecord.transactionType()) // Use getter method
+                .originalPeriodId(reversalRecord.originalPeriodId()) // Use getter method
+                .attributes(reversalRecord.attributes())
+                .transactionDate(DateUtil.convertToUtc(reversalRecord.transactionDate()))
+                .source(Source.REVERSAL)
+                .instrumentAttributeVersionId(reversalRecord.instrumentAttributeVersionId())
+                .amount(NumberUtil.getNumber(reversalRecord.totalAmount()).negate())
+                .batchId(reversalRecord.batchId())
                 .build();
     }
 

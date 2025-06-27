@@ -1,7 +1,9 @@
 package com.reserv.dataloader.batch.writer;
 
-import com.fyntrac.common.cache.collection.CacheList;
+import com.fyntrac.common.component.InstrumentReplayQueue;
+import com.fyntrac.common.component.InstrumentReplaySet;
 import com.fyntrac.common.component.TenantDataSourceProvider;
+import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.RecordFactory;
@@ -10,7 +12,6 @@ import com.fyntrac.common.entity.*;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.*;
 import com.fyntrac.common.utils.DateUtil;
-import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.StepExecution;
@@ -20,7 +21,6 @@ import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
-import java.time.ZoneId;
 import java.util.*;
 
 @Slf4j
@@ -34,14 +34,17 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
     private final TransactionService transactionService;
     private String tenantId;
     private String transactionActivityKey;
-    private TransactionActivityList keyList;
     private AttributeService attributeService;
     private Collection<Attributes> attributes;
     private AccountingPeriodService accountingPeriodService;
-    private final TransactionActivityReversalService transactionActivityReversalService;
     private long batchId;
     private Long runId;
-    private CacheList<Records.TransactionActivityReplayRecord> transactionActivityReplayRecordCacheList;
+    private final ExecutionStateService executionStateService;
+    private ExecutionState executionState;
+    private final InstrumentReplaySet instrumentReplaySet;
+    private final TransactionActivityQueue transactionActivityQueue;
+    private final InstrumentReplayQueue instrumentReplayQueue;
+    private Long jobId;
 
     public TransactionActivityItemWriter(MongoItemWriter<TransactionActivity> delegate,
                                  TenantDataSourceProvider dataSourceProvider,
@@ -50,8 +53,11 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
             , InstrumentAttributeService instrumentAttributeService
             , AttributeService attributeService
             , AccountingPeriodService accountingPeriodService
-            , TransactionActivityReversalService transactionActivityReversalService
-            , TransactionService transactionService) {
+            , TransactionService transactionService
+    , ExecutionStateService executionStateService
+    , InstrumentReplaySet instrumentReplaySet
+    , TransactionActivityQueue transactionActivityQueue
+    , InstrumentReplayQueue instrumentReplayQueue) {
         this.delegate = delegate;
         this.dataSourceProvider = dataSourceProvider;
         this.tenantContextHolder = tenantContextHolder;
@@ -59,9 +65,11 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
         this.instrumentAttributeService = instrumentAttributeService;
         this.attributeService = attributeService;
         this.accountingPeriodService = accountingPeriodService;
-        this.transactionActivityReplayRecordCacheList = new CacheList<Records.TransactionActivityReplayRecord>();
-        this.transactionActivityReversalService = transactionActivityReversalService;
         this.transactionService = transactionService;
+        this.executionStateService = executionStateService;
+        this.instrumentReplaySet = instrumentReplaySet;
+        this.transactionActivityQueue = transactionActivityQueue;
+        this.instrumentReplayQueue = instrumentReplayQueue;
     }
 
     @BeforeStep
@@ -72,30 +80,17 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
         this.tenantId = jobParameters.getString("tenantId");
         this.batchId = jobParameters.getLong("batchId");
         this.runId = jobParameters.getLong("run.id");
+        this.jobId = jobParameters.getLong("jobId");
         this.transactionActivityKey = com.fyntrac.common.utils.Key.aggregationKey(tenantId, runId);
-
+        executionState = this.executionStateService.getExecutionState();
         if(this.transactionActivityKey == null) {
             return;
-        }
-        boolean isKeyExists = this.memcachedRepository.ifExists(this.transactionActivityKey);
-        if(!isKeyExists) {
-            keyList =  new TransactionActivityList();
-            this.memcachedRepository.putInCache(this.transactionActivityKey, keyList);
-        }else{
-            keyList = this.memcachedRepository.getFromCache(this.transactionActivityKey, TransactionActivityList.class);
         }
         attributes = attributeService.getReclassableAttributes();
     }
 
     @Override
     public void write(Chunk<? extends TransactionActivity> activity) throws Exception {
-        String dataKey = Key.replayMessageList(this.tenantId, this.runId);
-
-        if (this.memcachedRepository.ifExists(dataKey)) {
-            this.transactionActivityReplayRecordCacheList = this.memcachedRepository.getFromCache(dataKey, CacheList.class);
-        } else {
-            this.transactionActivityReplayRecordCacheList = new CacheList<Records.TransactionActivityReplayRecord>();
-        }
 
         String tenant = tenantContextHolder.getTenant();
         if (tenant == null || tenant.isEmpty()) {
@@ -128,64 +123,31 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
 
             this.setAttributes(transactionActivity);
 
-            String key = tenant + "TA" + transactionActivity.hashCode();
-            keyList.add(key);
             transactionActivity.setBatchId(batchId);
-            this.memcachedRepository.putInCache(key, transactionActivity);
             Transactions transaction = this.transactionService.getTransaction(transactionActivity.getTransactionName().toUpperCase());
-            if(transaction.getIsReplayable() == 1) {
-                Collection<TransactionActivity> reversalActivity = isReplayActivity(transactionActivity);
-                if (reversalActivity != null) {
-                    for (TransactionActivity revActivity : reversalActivity) {
-                        String revKey = tenant + "TA" + revActivity.hashCode();
-                        keyList.add(revKey);
-                        this.memcachedRepository.putInCache(revKey, revActivity);
-                    }
-                    reversalActivityList.addAll(reversalActivity);
+            transactionActivity.setIsReplayable(transaction.getIsReplayable());
+            if(executionState != null && (transactionActivity.getEffectiveDate() < executionState.getExecutionDate())) {
+                // add into replay List
+                if(transactionActivity.getIsReplayable() != 0) {
+                    Records.InstrumentReplayRecord replayRecord = RecordFactory.createInstrumentReplayRecord(transactionActivity.getInstrumentId()
+                            , transactionActivity.getPostingDate(), transactionActivity.getEffectiveDate());
+                    instrumentReplaySet.add(tenantId, this.jobId, replayRecord);
+                    instrumentReplayQueue.add(tenantId, this.jobId, replayRecord);
+                }else{
+                    transactionActivity.setEffectiveDate(transactionActivity.getPostingDate());
+                    transactionActivity.setTransactionDate(DateUtil.convertIntDateToUtc(transactionActivity.getPostingDate()));
                 }
             }
+            this.transactionActivityQueue.add(tenantId, jobId, transactionActivity);
         }
 
         delegate.setTemplate(mongoTemplate);
 
-        // Combine original activities and reversal activities into a new List
-        List<TransactionActivity> combinedActivities = new ArrayList<>();
-
-        // Assuming Chunk has a method to retrieve elements as List<TransactionActivity>
-        if (activity instanceof Chunk) {
-            // This cast may be unsafe but assuming you know Chunk implementation
-            combinedActivities.addAll(activity.getItems()); // Replace getItems() with actual method
-        } else {
-            // Fallback - iterate and add manually
-            for (TransactionActivity ta : activity) {
-                combinedActivities.add(ta);
-            }
-        }
-
-        combinedActivities.addAll(reversalActivityList);
-
         // Create new Chunk with combined list and write
-        Chunk<TransactionActivity> combinedChunk = new Chunk<>(combinedActivities);
-        delegate.write(combinedChunk);
-
-        this.memcachedRepository.replaceInCache(this.transactionActivityKey, keyList, 43200);
-        this.memcachedRepository.putInCache(dataKey, this.transactionActivityReplayRecordCacheList);
+        delegate.write(activity);
     }
 
 
-    private Collection<TransactionActivity> isReplayActivity(TransactionActivity activity) {
-        boolean isReplayActiity = this.instrumentAttributeService.existsReplay(activity.getInstrumentId(), activity.getAttributeId(),  activity.getEffectiveDate());
-        if(isReplayActiity) {
-            try {
-                Records.TransactionActivityReplayRecord replayRecord = RecordFactory.createTransactionActivityReplayRecord(activity.getInstrumentId(), activity.getAttributeId(), activity.getEffectiveDate());
-                this.transactionActivityReplayRecordCacheList.add(replayRecord);
-                return this.transactionActivityReversalService.bookReversal(activity);
-            }catch (IllegalStateException e){
-                log.warn(e.getLocalizedMessage());
-            }
-        }
-        return null;
-    }
     private void setAttributes(TransactionActivity transactionActivity) {
         InstrumentAttribute instrumentAttribute = this.getLatestInstrumentAttribute(transactionActivity);
         long instrumentAttributeVersionId = 0;

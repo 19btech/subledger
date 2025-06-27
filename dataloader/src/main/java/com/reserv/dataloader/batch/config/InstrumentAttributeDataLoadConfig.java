@@ -1,14 +1,22 @@
 package com.reserv.dataloader.batch.config;
 
+import com.fyntrac.common.component.InstrumentReplayQueue;
+import com.fyntrac.common.component.InstrumentReplaySet;
+import com.fyntrac.common.component.InstrumentReplaySet;
+import com.fyntrac.common.component.TenantDataSourceProvider;
+import com.fyntrac.common.entity.InstrumentAttribute;
+import com.fyntrac.common.repository.MemcachedRepository;
+import com.fyntrac.common.service.AccountingPeriodService;
+import com.fyntrac.common.service.ExecutionStateService;
+import com.fyntrac.common.service.InstrumentAttributeService;
 import com.reserv.dataloader.batch.listener.InstrumentAttributeJobCompletionListener;
 import com.reserv.dataloader.batch.mapper.HeaderColumnNameMapper;
 import com.reserv.dataloader.batch.processor.InstrumentAttributeItemProcessor;
 import com.reserv.dataloader.batch.writer.InstrumentAttributeWriter;
-import  com.fyntrac.common.service.AccountingPeriodService;
-import  com.fyntrac.common.component.TenantDataSourceProvider;
-import com.fyntrac.common.service.InstrumentAttributeService;
-import com.fyntrac.common.entity.InstrumentAttribute;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
@@ -30,9 +38,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.data.mongodb.core.MongoTemplate;
-import com.fyntrac.common.repository.MemcachedRepository;
+
+import java.io.IOException;
+import java.io.Reader;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -46,18 +57,27 @@ public class InstrumentAttributeDataLoadConfig {
     private MemcachedRepository memcachedRepository;
     private InstrumentAttributeService instrumentAttributeService;
     private AccountingPeriodService accountingPeriodService;
+    private ExecutionStateService executionStateService;
+    private final InstrumentReplaySet instrumentReplaySet;
+    private final InstrumentReplayQueue instrumentReplayQueue;
 
     public InstrumentAttributeDataLoadConfig(JobRepository jobRepository, MongoTemplate mongoTemplate,
                                              TenantDataSourceProvider dataSourceProvider,
                                              MemcachedRepository memcachedRepository,
                                              InstrumentAttributeService instrumentAttributeService,
-                                             AccountingPeriodService accountingPeriodService) {
+                                             AccountingPeriodService accountingPeriodService,
+                                             ExecutionStateService executionStateService,
+                                             InstrumentReplaySet instrumentReplaySet,
+                                             InstrumentReplayQueue instrumentReplayQueue) {
         this.jobRepository = jobRepository;
         this.dataSourceProvider = dataSourceProvider;
         this.mongoTemplate = mongoTemplate;
         this.memcachedRepository = memcachedRepository;
         this.instrumentAttributeService = instrumentAttributeService;
         this.accountingPeriodService = accountingPeriodService;
+        this.executionStateService = executionStateService;
+        this.instrumentReplaySet = instrumentReplaySet;
+        this.instrumentReplayQueue = instrumentReplayQueue;
     }
 
     @Bean("instrumentAttributeUploadJob")
@@ -71,13 +91,18 @@ public class InstrumentAttributeDataLoadConfig {
     }
 
     @Bean
-    public Step instrumentAttributeImportStep() {
+    public Step instrumentAttributeImportStep() throws IOException {
         return new StepBuilder("instrumentAttributeImportStep", jobRepository)
                 .<Map<String,Object>,InstrumentAttribute>chunk(10, new ResourcelessTransactionManager())
-                .reader(instrumentAttributeReader("", ""))
+                .reader(genericReader(""))
                 .processor(instrumentAttributeMapItemProcessor())
                 .writer(instrumentAttributeWriter(dataSourceProvider
-                        , this.memcachedRepository, this.instrumentAttributeService, this.accountingPeriodService))
+                        , this.memcachedRepository
+                        , this.instrumentAttributeService
+                        , this.accountingPeriodService
+                        , this.executionStateService
+                        , this.instrumentReplaySet
+                , this.instrumentReplayQueue))
                 .build();
     }
 
@@ -88,55 +113,59 @@ public class InstrumentAttributeDataLoadConfig {
 
     @StepScope
     @Bean
-    public FlatFileItemReader<Map<String, Object>> instrumentAttributeReader(@Value("#{jobParameters[filePath]}") String fileName
-                                                                            ,@Value("#{jobParameters[columnName]}") String columnNames) {
+    public FlatFileItemReader<Map<String, Object>> genericReader(@Value("#{jobParameters[filePath]}") String filePath) throws IOException {
 
 
         FlatFileItemReader<Map<String, Object>> reader = new FlatFileItemReader<>();
-        reader.setResource(new FileSystemResource(fileName));
-        DefaultLineMapper<Map<String, Object>> lineMapper = new DefaultLineMapper<>();
+        reader.setResource(new FileSystemResource(filePath));
+        reader.setLinesToSkip(1); // Skip the header
+
+        // Read actual header line using Apache Commons CSV to get clean column names
+        List<String> headerNames = getHeaderNames(filePath);
+
+        // Setup line tokenizer
         DelimitedLineTokenizer tokenizer = new DelimitedLineTokenizer();
-        String[] columns = columnNames.split(",");
-        List<String> colList = new ArrayList<>(0);
-        Map<String, String> colMap = new HashMap<>(0);
+        tokenizer.setDelimiter(",");
+        tokenizer.setQuoteCharacter('"'); // Handles quoted fields correctly
+        tokenizer.setStrict(false); // Allow rows with missing fields
+        tokenizer.setNames(headerNames.toArray(new String[0]));
 
-        for(String col : columns) {
-            String[] c = col.split(":");
-            colList.add(c[0]);
-            colMap.put(c[0],c[1]);
-        }
-
-        tokenizer.setNames(colList.toArray(new String[0]));
+        // Line mapper
+        DefaultLineMapper<Map<String, Object>> lineMapper = new DefaultLineMapper<>();
         lineMapper.setLineTokenizer(tokenizer);
         lineMapper.setFieldSetMapper(new HeaderColumnNameMapper());
-//        lineMapper.setFieldSetMapper(fields -> {
-//            Map<String, Object> map = Map.of(
-//                    "effectiveDate", fields.readString("effectiveDate"),
-//                    "instrumentId", fields.readString("instrumentId"),
-//                    "attributeId", fields.readString("attributeId"),
-//                    "key1", fields.readString("key1"),
-//                    "key2", fields.readString("key2"),
-//                    "key3", fields.readString("key3")
-//            );
-//            return map;
-//        });
-        reader.setLinesToSkip(1); // Skip the first line
+
         reader.setLineMapper(lineMapper);
         return reader;
 
     }
 
+    private List<String> getHeaderNames(String filePath) throws IOException {
+        try (Reader reader = Files.newBufferedReader(Paths.get(filePath));
+             CSVParser parser = new CSVParser(reader, CSVFormat.DEFAULT.withQuote('"'))) {
+
+            CSVRecord headerRecord = parser.iterator().next();
+            List<String> headers = new ArrayList<>();
+            for (String header : headerRecord) {
+                headers.add(header.trim());
+            }
+            return headers;
+        }
+    }
 
     @Bean
     public ItemWriter<InstrumentAttribute> instrumentAttributeWriter(TenantDataSourceProvider dataSourceProvider,
                                                                      MemcachedRepository memcachedRepository
                                                             , InstrumentAttributeService instrumentAttributeService
-                                                            , AccountingPeriodService accountingPeriodService) {
+                                                            , AccountingPeriodService accountingPeriodService
+    , ExecutionStateService executionStateService
+    , InstrumentReplaySet instrumentReplaySet, InstrumentReplayQueue instrumentReplayQueue
+                                                                     ) {
         MongoItemWriter<InstrumentAttribute> delegate = new MongoItemWriterBuilder<InstrumentAttribute>()
                 .template(mongoTemplate)
                 .collection("InstrumentAttribute")
                 .build();
 
-        return new InstrumentAttributeWriter(delegate, dataSourceProvider,  memcachedRepository, instrumentAttributeService, accountingPeriodService);
+        return new InstrumentAttributeWriter(delegate, dataSourceProvider,  memcachedRepository, instrumentAttributeService, accountingPeriodService, executionStateService, instrumentReplaySet, instrumentReplayQueue);
     }
 }

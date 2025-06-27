@@ -4,6 +4,7 @@ import com.fyntrac.common.cache.collection.CacheMap;
 import  com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.InstrumentActivityState;
 import com.fyntrac.common.entity.InstrumentAttribute;
+import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.entity.factory.InstrumentAttributeFactory;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.repository.InstrumentAttributeRepository;
@@ -14,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -43,7 +46,7 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         this.instrumentAttributeFactory = instrumentAttributeFactory;
     }
 
-    public List<InstrumentAttribute> getLastOpenInstrumentAttributes(String attributeId, String instrumentId) {
+    public List<InstrumentAttribute> getLastOpenInstrumentAttributes(String instrumentId, String attributeId) {
         return instrumentAttributeRepository.findByAttributeIdAndInstrumentIdAndEndDateIsNull(attributeId, instrumentId);
     }
 
@@ -57,7 +60,7 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         return this.dataService.fetchData(query, InstrumentAttribute.class);
     }
 
-    public InstrumentAttribute getFirstVersionOfInstrumentAttributes(String attributeId, String instrumentId) {
+    public InstrumentAttribute getFirstVersionOfInstrumentAttributes(String instrumentId, String attributeId) {
         Query query = new Query();
         query.addCriteria(Criteria.where("attributeId").is(attributeId));
         query.addCriteria(Criteria.where("instrumentId").is(instrumentId));
@@ -71,6 +74,25 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         Query query = new Query();
         query.addCriteria(Criteria.where("attributeId").is(attributeId));
         query.addCriteria(Criteria.where("instrumentId").is(instrumentId));
+        query.addCriteria(Criteria.where("endDate").is(null));
+
+        return this.dataService.fetchData(query, tenantId, InstrumentAttribute.class);
+    }
+
+    // Define a method in your service class
+    public List<InstrumentAttribute> getOpenInstrumentAttributesByInstrumentId(String instrumentId, String tenantId) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("instrumentId").is(instrumentId));
+        query.addCriteria(Criteria.where("endDate").is(null));
+
+        return this.dataService.fetchData(query, tenantId, InstrumentAttribute.class);
+    }
+
+    // Define a method in your service class
+    public List<InstrumentAttribute> getOpenInstrumentAttributesByInstrumentId(String instrumentId, String attributeId,String tenantId) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("instrumentId").is(instrumentId.toUpperCase()));
+        query.addCriteria(Criteria.where("attributeId").is(attributeId.toUpperCase()));
         query.addCriteria(Criteria.where("endDate").is(null));
 
         return this.dataService.fetchData(query, tenantId, InstrumentAttribute.class);
@@ -111,6 +133,8 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         return result.isEmpty() ? null : result.get(0);
     }
 
+
+
     public InstrumentAttribute getInstrumentAttributeByVersionId(long versionId) {
         Query query = new Query();
         query.addCriteria(Criteria.where("versionId").is(versionId));
@@ -134,6 +158,13 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         return this.dataService.save(ia);
     }
 
+    public Collection<InstrumentAttribute> save(List<InstrumentAttribute> instrumentAttributes) {
+        return this.dataService.saveAll(instrumentAttributes, InstrumentAttribute.class);
+    }
+
+    public Collection<InstrumentAttribute> bulkSave(Set<InstrumentAttribute> instrumentAttributes, String tenantId) {
+        return this.dataService.bulkSave(instrumentAttributes,tenantId, InstrumentAttribute.class);
+    }
     @Override
     public Collection<InstrumentAttribute> fetchAll() {
         return  this.dataService.fetchAllData(InstrumentAttribute.class);
@@ -266,6 +297,16 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         return  this.dataService.fetchData(query, InstrumentAttribute.class);
     }
 
+    public List<String> getInstrumentIds(Date endDate, int pageNumber, int chunkSize) {
+        List<InstrumentAttribute> instruments = getInstruments(endDate, pageNumber, chunkSize);
+        List<String> instrumentIds = new ArrayList<>();
+        for (InstrumentAttribute instrument : instruments) {
+            instrumentIds.add(instrument.getInstrumentId());
+        }
+
+        return instrumentIds;
+    }
+
     public Set<String> getColumnNames() {
 
         MongoTemplate mongoTemplate = this.dataService.getMongoTemplate();
@@ -301,6 +342,47 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
 
         // Check if the record exists
         return template.exists(query, InstrumentActivityState.class);
+    }
+
+    public List<InstrumentAttribute> getDistinctInstrumentsByInstrumentId(Date endDate, int pageNumber, int chunkSize) {
+        Aggregation aggregation = Aggregation.newAggregation(
+                Aggregation.match(Criteria.where("endDate").is(endDate)),
+                Aggregation.sort(Sort.by(Sort.Direction.ASC, "instrumentId")), // Optional sort
+                Aggregation.group("instrumentId")
+                        .first(Aggregation.ROOT).as("instrumentAttribute"), // Take full document
+                Aggregation.replaceRoot("instrumentAttribute"), // Restore original structure
+                Aggregation.skip((long) pageNumber * chunkSize),
+                Aggregation.limit(chunkSize)
+        );
+
+        // Get the MongoTemplate instance
+        MongoTemplate mongoTemplate = this.dataService.getMongoTemplate();
+
+        AggregationResults<InstrumentAttribute> results =
+                mongoTemplate.aggregate(aggregation, "InstrumentAttribute", InstrumentAttribute.class);
+
+        return results.getMappedResults();
+    }
+
+    public Integer getLatestActivityPostingDate(String tenantId) {
+        // Execute the query to get the result
+        InstrumentAttribute result = this.get(tenantId, "postingDate");
+
+        // Return the periodId or 0 if no result is found
+        return result != null ? result.getPostingDate() : 0;
+    }
+
+    public InstrumentAttribute get(String tenantId, String ... properties) {
+        // Fetch the MongoTemplate for the specified tenant
+        MongoTemplate mongoTemplate = this.dataService.getMongoTemplate(tenantId);
+
+        // Create a query to find the maximum periodId
+        Query query = new Query();
+        query.with(Sort.by(Sort.Direction.DESC, properties)); // Sort by periodId in descending order
+        query.limit(1); // Limit the result to only one document
+
+        // Execute the query to get the result
+        return  mongoTemplate.findOne(query, InstrumentAttribute.class);
     }
 
 }

@@ -3,7 +3,6 @@ package com.reserv.dataloader.service;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.ExecutionState;
 import com.fyntrac.common.service.TransactionActivityService;
-import io.jsonwebtoken.lang.Assert;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.*;
 import org.springframework.batch.core.launch.JobLauncher;
@@ -21,13 +20,13 @@ public class AggregationExecutionService {
     private JobLauncher jobLauncher;
 
     @Autowired
-    private Job instrumentAggregationJob;
+    private Job instrumentLevelLtdJob;
 
     @Autowired
-    private Job attributeAggregationJob;
+    private Job attributeLevelLtdJob;
 
     @Autowired
-    private Job metricAggregationJob;
+    private Job metricLevelLtdJob;
 
     @Autowired
     private Job attributeLevelPostAggregationJob;
@@ -47,26 +46,22 @@ public class AggregationExecutionService {
 
         Long runId = System.currentTimeMillis();
 
-
-        int lastExecutionDate = executionState.getLastExecutionDate() == null ? 0 : executionState.getLastExecutionDate();
-        int activityPostingDate = executionState.getActivityPostingDate() == null ? 0 : executionState.getActivityPostingDate();
-        int lastActivityPostingDate = executionState.getLastActivityPostingDate() == null ? 0 : executionState.getLastActivityPostingDate();
-
         Integer previousMaxPostingDate = this.transactionActivityService.getPreviousMaxPostingDate(msg.aggregationDate());
         previousMaxPostingDate = previousMaxPostingDate == null ? 0 : previousMaxPostingDate;
         JobParameters jobParameters = new JobParametersBuilder()
                 .addLong("run.id", runId)
-                .addString("aggregation-key", msg.aggregationKey())
                 .addLong("execution-date", msg.aggregationDate())
                 .addLong("previousMaxPostingDate", (long) previousMaxPostingDate)
+                .addLong("jobId", msg.jobId())
+                .addString("tenantId", msg.tenantId())
                 .toJobParameters();
 
         // Run the first 3 jobs sequentially
-        JobExecution attributeJobExecution = jobLauncher.run(attributeAggregationJob, jobParameters);
+        JobExecution attributeJobExecution = jobLauncher.run(attributeLevelLtdJob, jobParameters);
         if (!attributeJobExecution.getStatus().isUnsuccessful()) {
-            JobExecution instrumentJobExecution = jobLauncher.run(instrumentAggregationJob, jobParameters);
+            JobExecution instrumentJobExecution = jobLauncher.run(instrumentLevelLtdJob, jobParameters);
             if (!instrumentJobExecution.getStatus().isUnsuccessful()) {
-                JobExecution metricJobExecution = jobLauncher.run(metricAggregationJob, jobParameters);
+                JobExecution metricJobExecution = jobLauncher.run(metricLevelLtdJob, jobParameters);
                 if (!metricJobExecution.getStatus().isUnsuccessful()) {
 
 
@@ -76,9 +71,10 @@ public class AggregationExecutionService {
                         long postingDate = msg.aggregationDate();
                         JobParameters postAggregationJobParameters = new JobParametersBuilder()
                                 .addLong("run.id", System.currentTimeMillis())
-                                .addString("aggregation -key", msg.aggregationKey())
                                 .addLong("executionDate", postingDate)
                                 .addLong("fromDate", (long) previousMaxPostingDate)
+                                .addLong("jobId", msg.jobId())
+                                .addString("tenantId", msg.tenantId())
                                 .toJobParameters();
 
                         // ✅ All 3 jobs succeeded — now run the final job

@@ -1,5 +1,7 @@
 package com.reserv.dataloader.batch.tasklet;
 
+import com.fyntrac.common.component.TransactionActivityQueue;
+import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.aggregation.AggregationService;
@@ -10,6 +12,7 @@ import com.fyntrac.common.entity.AggregationRequest;
 import com.fyntrac.common.entity.TransactionActivityList;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.DataService;
+import com.reserv.dataloader.aggregate.InstrumentLevelAggregator;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
@@ -33,6 +36,7 @@ public class AttributeLevelAggregatorTasklet extends BaseAggregatorTasklet imple
                                            , AccountingPeriodService accountingPeriodService
                                            , AggregationService aggregationService
                                            , AttributeLevelAggregationService attributeLevelAggregationService
+                                           , TransactionActivityQueue transactionActivityQueue
             , String tenantId) {
         super(memcachedRepository
                 , dataService
@@ -40,6 +44,7 @@ public class AttributeLevelAggregatorTasklet extends BaseAggregatorTasklet imple
                 , executionStateService
                 , accountingPeriodService
                 , aggregationService
+                , transactionActivityQueue
                 , tenantId);
         this.attributeLevelAggregationService = attributeLevelAggregationService;
     }
@@ -53,6 +58,8 @@ public class AttributeLevelAggregatorTasklet extends BaseAggregatorTasklet imple
         String key = contribution.getStepExecution().getJobParameters().getString(this.KEY);
         int executionDate = contribution.getStepExecution().getJobParameters().getLong("execution-date").intValue();
         int previousMaxPostingDate = contribution.getStepExecution().getJobParameters().getLong("previousMaxPostingDate").intValue();
+        String tenantId = contribution.getStepExecution().getJobParameters().getString("tenantId");
+        long jobId = contribution.getStepExecution().getJobParameters().getLong("jobId");
         AggregationRequest aggregationRequest = AggregationRequest.builder()
                 .isAggregationComplete(Boolean.FALSE)
                 .isInprogress(Boolean.FALSE)
@@ -60,6 +67,8 @@ public class AttributeLevelAggregatorTasklet extends BaseAggregatorTasklet imple
                 .requestType(AggregationRequestType.ATTRIBUTE_LEVEL_AGG)
                 .lastPostingDate(previousMaxPostingDate)
                 .postingDate(executionDate)
+                .tenantId(tenantId)
+                .jobId(jobId)
                 .key(key).build();
 
             // Read TransactionActivity objects from Memcached
@@ -72,30 +81,18 @@ public class AttributeLevelAggregatorTasklet extends BaseAggregatorTasklet imple
     @Override
     public void aggregateTransactionActivities(AggregationRequest aggregationRequest) throws InterruptedException, ExecutionException {
 
-        String key = aggregationRequest.getKey();
+        String tenantId = aggregationRequest.getTenantId();
+        long jobId = aggregationRequest.getJobId();
 
-        TransactionActivityList transactionActivities = this.memcachedRepository.getFromCache(key, TransactionActivityList.class);
-
-        List<List<String>>chunks = chunkList(transactionActivities.get(), CHUNK_SIZE);
-
+        int totalChunks = this.transactionActivityQueue.getTotalChunks(tenantId, jobId, this.CHUNK_SIZE);
         ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 
-        List<Future<List<String>>> futures = new ArrayList<>();
-        for (List<String> chunk : chunks) {
-            AttributeLevelAggregator aggregator = new AttributeLevelAggregator(this.memcachedRepository, this.dataService,  this.settingsService, this.accountingPeriodService, this.aggregationService, this.attributeLevelAggregationService,aggregationRequest,this.tenantId);
-            futures.add(executor.submit(new AggregationTask(aggregator
-                    ,chunk)));
-        }
-        executor.shutdown();
-
-        List<String> cleanupObjs = new ArrayList<>(0);
-        for (Future<List<String>> future : futures) {
-            cleanupObjs.addAll(future.get());
+        for (int i = 0; i < totalChunks; i++) {
+            List<TransactionActivity> chunk = this.transactionActivityQueue.readChunk(tenantId, jobId, this.CHUNK_SIZE, i);
+            executor.submit(new AggregationTask(new AttributeLevelAggregator(this.memcachedRepository, this.dataService, this.settingsService, this.accountingPeriodService, this.aggregationService,this.attributeLevelAggregationService,aggregationRequest,this.tenantId, jobId)
+                    ,chunk));
         }
 
-//        for(String cleanupObj:cleanupObjs){
-//            this.memcachedRepository.delete(cleanupObj);
-//        }
     }
 }
 

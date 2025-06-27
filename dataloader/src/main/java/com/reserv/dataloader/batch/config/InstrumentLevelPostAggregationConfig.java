@@ -125,6 +125,9 @@ public class InstrumentLevelPostAggregationConfig {
             if (!items.isEmpty()) {
                 Set<InstrumentLevelLtd> resultSet = new LinkedHashSet<>();
                 for (InstrumentLevelLtd item : items) {
+                    if(item.getMetricName() == null || item.getMetricName().isEmpty() || item.getMetricName().isBlank()) {
+                        continue;
+                    }
                     resultSet.add(item);
                 }
                 this.dataService.getMongoTemplate().insert(resultSet, "InstrumentLevelLtd");

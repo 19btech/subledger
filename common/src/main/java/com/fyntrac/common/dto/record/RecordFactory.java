@@ -1,15 +1,20 @@
 package com.fyntrac.common.dto.record;
 
 import com.fyntrac.common.entity.*;
+import com.fyntrac.common.enums.InstrumentAttributeVersionType;
+import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.enums.TestStep;
 import com.fyntrac.common.enums.UploadStatus;
+import com.fyntrac.common.utils.DateUtil;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.format.annotation.NumberFormat;
 import org.springframework.stereotype.Component;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.text.ParseException;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
@@ -43,21 +48,27 @@ public class RecordFactory {
         }
     }
 
-    public static Records.GeneralLedgerMessageRecord createGeneralLedgerMessageRecord(String tenantId, String dataKey){
-        return createRecord(()->new Records.GeneralLedgerMessageRecord(tenantId, dataKey));
+    public static Records.GeneralLedgerMessageRecord createGeneralLedgerMessageRecord(String tenantId, long jobId){
+        return createRecord(()->new Records.GeneralLedgerMessageRecord(tenantId, jobId));
     }
 
     public static Records.TransactionActivityRecord createTransactionActivityRecord(TransactionActivity transactionActivity, String tenantId){
-        return createRecord(() -> new Records.TransactionActivityRecord(
-                tenantId,
-                transactionActivity.getId(),
-                transactionActivity.getTransactionDate(),
-                transactionActivity.getInstrumentId(),
-                transactionActivity.getTransactionName(),
-                transactionActivity.getAmount(),
-                transactionActivity.getAttributeId(),
-                transactionActivity.getPeriodId(),
-                transactionActivity.getOriginalPeriodId()));
+        return createRecord(() -> {
+            try {
+                return new Records.TransactionActivityRecord(
+                        tenantId,
+                        transactionActivity.getId(),
+                        transactionActivity.getTransactionDate(),
+                        transactionActivity.getInstrumentId(),
+                        transactionActivity.getTransactionName(),
+                        transactionActivity.getAmount(),
+                        transactionActivity.getAttributeId(),
+                        transactionActivity.getPeriodId(),
+                        transactionActivity.getOriginalPeriodId());
+            } catch (ParseException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 
     public static Records.InstrumentAttributeRecord createInstrumentAttributeRecord(InstrumentAttribute instrumentAttribute){
@@ -101,8 +112,15 @@ public class RecordFactory {
         return createRecord(() -> new Records.ExcelModelRecord(model, excelModel));
     }
 
-    public static Records.MetricRecord createMetricRecord(String metricName, String instrumentid, String attributeId, int accountingPeriod, BigDecimal beginningBalance, BigDecimal activity, BigDecimal endingBalance) {
-        return createRecord(() -> new Records.MetricRecord(metricName, instrumentid, attributeId, accountingPeriod, beginningBalance, activity, endingBalance));
+    public static Records.MetricRecord createMetricRecord(String metricName, String instrumentid, String attributeId, int accountingPeriod,int postingDate, BigDecimal beginningBalance, BigDecimal activity, BigDecimal endingBalance) {
+        return createRecord(() -> new Records.MetricRecord(metricName
+                , instrumentid
+                , attributeId
+                , accountingPeriod
+                , DateUtil.convertToDateFromYYYYMMDD(postingDate)
+                , beginningBalance
+                , activity
+                , endingBalance));
     }
 
     public static Records.MetricRecord createMetricRecord(AttributeLevelLtd ltd) {
@@ -110,6 +128,7 @@ public class RecordFactory {
                 , ltd.getInstrumentId()
                 , ltd.getAttributeId()
                 , ltd.getAccountingPeriodId()
+                , DateUtil.convertToDateFromYYYYMMDD(ltd.getPostingDate())
                 , ltd.getBalance().getBeginningBalance()
                 , ltd.getBalance().getActivity()
                 , ltd.getBalance().getEndingBalance()));
@@ -120,6 +139,7 @@ public class RecordFactory {
                 , ltd.getInstrumentId()
                 , ""
                 , ltd.getAccountingPeriodId()
+                , DateUtil.convertToDateFromYYYYMMDD(ltd.getPostingDate())
                 , ltd.getBalance().getBeginningBalance()
                 , ltd.getBalance().getActivity()
                 , ltd.getBalance().getEndingBalance()));
@@ -130,6 +150,7 @@ public class RecordFactory {
                 , ""
                 , ""
                 , ltd.getAccountingPeriodId()
+                , DateUtil.convertToDateFromYYYYMMDD(ltd.getPostingDate())
                 , ltd.getBalance().getBeginningBalance()
                 , ltd.getBalance().getActivity()
                 , ltd.getBalance().getEndingBalance()));
@@ -161,11 +182,161 @@ public class RecordFactory {
         return createRecord(() -> new Records.ExecutionDateRecord(executionDate, lastExecutionDate, replayDate));
     }
 
-    public static Records.ExecuteAggregationMessageRecord createExecutionAggregationRecord(String tenantId, String aggregationKey, Long aggregationDate) {
-        return createRecord(() -> new Records.ExecuteAggregationMessageRecord(tenantId, aggregationKey, aggregationDate));
+    public static Records.ExecuteAggregationMessageRecord createExecutionAggregationRecord(String tenantId, long jobId, Long aggregationDate) {
+        return createRecord(() -> new Records.ExecuteAggregationMessageRecord(tenantId, jobId, aggregationDate));
     }
 
     public static Records.ExcelTestStepRecord createExcelTestStepRecord(TestStep step, String type, String input) {
         return createRecord(() -> new Records.ExcelTestStepRecord(step, type, input));
     }
+
+    public static Records.MetricAttributeRow createMetricAttributeRow(int rowNumber, String metricName, String attributeId) {
+        return createRecord(() -> new Records.MetricAttributeRow(rowNumber, metricName, attributeId));
+    }
+
+    public static Records.TransactionAttributeRow createTransactionAttributeRow(int rowNumber, String TransactionName, String attributeId) {
+        return createRecord(() -> new Records.TransactionAttributeRow(rowNumber, TransactionName, attributeId));
+    }
+
+    public static Records.TransactionActivityModelRecord createTransactionActivityModelRecord(
+            String id,
+            Date transactionDate,
+            String instrumentId,
+            String transactionName,
+            @NumberFormat(pattern = "#.####")
+            BigDecimal amount,
+            String attributeId,
+            int originalPeriodId,
+            long instrumentAttributeVersionId,
+            AccountingPeriod accountingPeriod,
+            long batchId,
+            Source source,
+            String sourceId,
+            Integer postingDate,
+            Integer effectiveDate,
+            Map<String, Object> attributes) {
+        return createRecord(() -> new Records.TransactionActivityModelRecord(id
+                , transactionDate
+                , instrumentId
+                , transactionName
+                , amount
+                , attributeId
+                , originalPeriodId
+                , instrumentAttributeVersionId
+        , accountingPeriod
+        , batchId, source, sourceId, DateUtil.convertToDateFromYYYYMMDD(postingDate),effectiveDate, attributes));
+    }
+
+    public static Records.TransactionActivityModelRecord createTransactionActivityModelRecord(TransactionActivity activity) {
+        return createRecord(() -> {
+            try {
+                return new Records.TransactionActivityModelRecord(activity.getId()
+                        , activity.getTransactionDate()
+                        , activity.getInstrumentId()
+                        , activity.getTransactionName()
+                        , activity.getAmount()
+                        , activity.getAttributeId()
+                        , activity.getOriginalPeriodId()
+                        , activity.getInstrumentAttributeVersionId()
+                        , activity.getAccountingPeriod()
+                        , activity.getBatchId()
+                        , activity.getSource()
+                        , activity.getSourceId()
+                        , DateUtil.convertToDateFromYYYYMMDD(activity.getPostingDate())
+                        ,activity.getEffectiveDate()
+                        , activity.getAttributes());
+            } catch (ParseException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    public static Records.InstrumentAttributeModelRecord createInstrumentAttributeModelRecord( InstrumentAttributeVersionType type,
+                                                                                               String id,
+                                                                                               Date effectiveDate,
+                                                                                               String instrumentId,
+                                                                                               String attributeId,
+                                                                                               long batchId,
+                                                                                               Date endDate,
+                                                                                               int periodId,
+                                                                                               long versionId,
+                                                                                               long previousVersionId,
+                                                                                               Source source,
+                                                                                               String sourceId,
+                                                                                               Map<String, Object> attributes,
+                                                                                               Integer postingDate) {
+        return createRecord(() -> new Records.InstrumentAttributeModelRecord(
+                type,
+                id,
+                effectiveDate,
+                instrumentId,
+                attributeId,
+        batchId,
+        endDate,
+        periodId,
+        versionId,
+        previousVersionId,
+        source,
+        sourceId,
+        attributes, DateUtil.convertToDateFromYYYYMMDD(postingDate)));
+
+    }
+
+    public static Records.InstrumentAttributeModelRecord createInstrumentAttributeModelRecord( InstrumentAttributeVersionType type,
+                                                                                               InstrumentAttribute instrumentAttribute) {
+        return createRecord(() -> new Records.InstrumentAttributeModelRecord(
+                type,
+                instrumentAttribute.getId(),
+                instrumentAttribute.getEffectiveDate(),
+                instrumentAttribute.getInstrumentId(),
+                instrumentAttribute.getAttributeId(),
+                instrumentAttribute.getBatchId(),
+                instrumentAttribute.getEndDate(),
+                instrumentAttribute.getPeriodId(),
+                instrumentAttribute.getVersionId(),
+                instrumentAttribute.getPreviousVersionId(),
+                instrumentAttribute.getSource(),
+                instrumentAttribute.getSourceId(),
+                instrumentAttribute.getAttributes(), DateUtil.convertToDateFromYYYYMMDD(instrumentAttribute.getPostingDate())));
+
+    }
+
+    public static Records.InstrumentAttributeRecord createInstrumentAttributeRecord( Date effectiveDate
+                                                                              ,String instrumentId
+                                                                              ,String attributeId
+                                                                              ,Date endDate
+                                                                              ,int periodId
+                                                                              ,long versionId
+                                                                              ,Map<String, Object> attributes
+    , AccountingPeriod accountingPeriod) {
+
+        return createRecord(() -> new Records.InstrumentAttributeRecord(
+                effectiveDate,
+                instrumentId,
+                attributeId,
+                endDate,
+                periodId,
+                versionId,
+                attributes));
+
+    }
+
+    public static Records.InstrumentReplayRecord createInstrumentReplayRecord(String instrumentId, int postingDate, int effectiveDate) {
+        return createRecord(() -> new Records.InstrumentReplayRecord(instrumentId, postingDate, effectiveDate));
+    }
+
+    public static Records.AttributeLevelLtdRecord createAttributeLevelLtdRecord(String metricName, String instrumentId, String attributeId, int postingDate, int accountingPeriod, BigDecimal amount) {
+        return createRecord(() -> new Records.AttributeLevelLtdRecord(metricName, instrumentId,attributeId, postingDate, accountingPeriod, amount));
+
+    }
+
+    public static Records.InstrumentLevelLtdRecord createInstrumentLevelLtdRecord(String metricName, String instrumentId, int postingDate, int accountingPeriod, BigDecimal amount) {
+        return createRecord(() -> new Records.InstrumentLevelLtdRecord(metricName, instrumentId, postingDate, accountingPeriod, amount));
+
+    }
+    public static Records.MetricLevelLtdRecord createMetricLevelLtdRecord(String metricName, int postingDate, int accountingPeriod, BigDecimal amount) {
+        return createRecord(() -> new Records.MetricLevelLtdRecord(metricName, postingDate, accountingPeriod, amount));
+
+    }
+
 }

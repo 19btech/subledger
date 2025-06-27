@@ -22,7 +22,7 @@ public class GeneralLedgerMessageProducer {
     public void bookTempGL(Records.GeneralLedgerMessageRecord glActivity){
         String traceId = UUID.randomUUID().toString();
         var msgId = pulsarTemplate.send(topic,glActivity);
-        log.info("EventPublisher::publishRawMessage publish the event {}, {}", glActivity.tenantId(), glActivity.dataKey());
+        log.info("EventPublisher::publishRawMessage publish the event {}, {}", glActivity.tenantId(), glActivity.jobId());
         log.info("EventPublisher::publishRawMessage MessageId {}", msgId);
     }
 }

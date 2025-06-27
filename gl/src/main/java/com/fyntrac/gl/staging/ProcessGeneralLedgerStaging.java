@@ -1,18 +1,10 @@
 package com.fyntrac.gl.staging;
 
+import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.dto.record.Records;
-import com.fyntrac.common.entity.TransactionActivity;
-import com.fyntrac.common.entity.SubledgerMapping;
-import com.fyntrac.common.entity.AccountTypes;
-import com.fyntrac.common.entity.ChartOfAccount;
-import com.fyntrac.common.entity.GeneralLedgerEnteryStage;
-import com.fyntrac.common.entity.GeneralLedgerAccountBalanceStage;
-import com.fyntrac.common.entity.GeneralLedgerAccountBalance;
-import com.fyntrac.common.entity.AccountingPeriod;
-import com.fyntrac.common.entity.Batch;
+import com.fyntrac.common.entity.*;
 import com.fyntrac.common.enums.AccountType;
 import com.fyntrac.common.enums.EntryType;
-import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.service.GeneralLedgerAccountService;
 import com.fyntrac.common.utils.StringUtil;
@@ -43,10 +35,10 @@ import java.util.concurrent.Executors;
 public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
 
     private final DataService dataService;
-    private final MemcachedRepository memcachedRepository;
     private final GeneralLedgerCommonService glCommonService;
     private final DatasourceService datasourceService;
     private final GeneralLedgerAccountService generalLedgerAccountService;
+    private final TransactionActivityQueue transactionActivityQueue;
 
     @Value("${fyntrac.chunk.size}")
     private int chunkSize;
@@ -54,27 +46,24 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
     @Value("${fyntrac.thread.pool.size}")
     private int threadPoolSize;
 
-    private com.fyntrac.common.entity.TransactionActivityList keyList;
-
     /**
      * Constructor for dependency injection.
      *
      * @param datasourceService    the service to manage data sources
      * @param dataService          the service to handle data persistence
-     * @param memcachedRepository  the repository for cached data
      * @param glCommonService      the common service for general ledger operations
      */
     @Autowired
     public ProcessGeneralLedgerStaging(DatasourceService datasourceService,
                                        DataService<GeneralLedgerEnteryStage> dataService,
-                                       MemcachedRepository memcachedRepository,
                                        GeneralLedgerCommonService glCommonService,
-                                       GeneralLedgerAccountService generalLedgerAccountService) {
+                                       GeneralLedgerAccountService generalLedgerAccountService,
+                                        TransactionActivityQueue transactionActivityQueue) {
         this.datasourceService = datasourceService;
         this.dataService = dataService;
-        this.memcachedRepository = memcachedRepository;
         this.glCommonService = glCommonService;
         this.generalLedgerAccountService = generalLedgerAccountService;
+        this.transactionActivityQueue = transactionActivityQueue;
     }
 
     /**
@@ -86,22 +75,18 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
      */
     public void process(Records.GeneralLedgerMessageRecord messageRecord) throws ExecutionException, InterruptedException {
         try {
-            keyList = this.memcachedRepository.getFromCache(messageRecord.dataKey(), com.fyntrac.common.entity.TransactionActivityList.class);
-            if (keyList == null || keyList.get().isEmpty()) {
-                log.warn("No data found in cache for dataKey: {}", messageRecord.dataKey());
-                return;
-            }
 
             String tenantId = messageRecord.tenantId();
+            long jobId = messageRecord.jobId();
             this.datasourceService.addDatasource(tenantId);
             this.generalLedgerAccountService.setTenantId(tenantId);
-            List<String> dataSet = keyList.get();
 
             ExecutorService executor = Executors.newFixedThreadPool(this.threadPoolSize);
 
-            List<List<String>> chunks = chunkList(dataSet);
+            int totalChunks = transactionActivityQueue.getTotalChunks(tenantId, jobId, chunkSize);
 
-            for (List<String> chunk : chunks) {
+            for (int i = 0; i < totalChunks; i++) {
+                List<TransactionActivity> chunk = transactionActivityQueue.readChunk(tenantId, jobId, chunkSize, i);
                 executor.submit(() -> {
                     try {
                         processTransactionActivityChunk(tenantId, chunk);
@@ -111,6 +96,7 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
                     }
                 });
             }
+
 
             executor.shutdown();
             while (!executor.isTerminated()) {
@@ -122,24 +108,6 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
         } catch (Exception e) {
             log.error("Error in process method for messageRecord: {}", messageRecord, e);
             throw new RuntimeException("Error in process method", e);
-        } finally {
-            if (keyList != null) {
-                List<String> dataSet = keyList.get();
-                for (String key : dataSet) {
-                    try {
-                        this.memcachedRepository.delete(key);
-                    } catch (Exception e) {
-                        log.error("Error deleting key from cache: {}", key, e);
-                        throw e; // Rethrow to ensure the error is propagated
-                    }
-                }
-                try {
-                    this.memcachedRepository.delete(messageRecord.dataKey());
-                } catch (Exception e) {
-                    log.error("Error deleting messageRecord dataKey from cache: {}", messageRecord.dataKey(), e);
-                    throw e; // Rethrow to ensure the error is propagated
-                }
-            }
         }
     }
 
@@ -151,17 +119,16 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
      * @throws RuntimeException if any error occurs during chunk processing
      */
     @Transactional
-    private void processTransactionActivityChunk(String tenantId, List<String> chunk) {
+    private void processTransactionActivityChunk(String tenantId, List<TransactionActivity> chunk) {
         Set<GeneralLedgerEnteryStage> gleList = new HashSet<>(0);
         Collection<GeneralLedgerAccountBalanceStage> accountBalanceList = new ArrayList<>(0);
         try {
             log.info("Processing chunk: {}", chunk);
 
-            for (String transactionActivityKey : chunk) {
+            for (TransactionActivity transactionActivity : chunk) {
                 try {
-                    TransactionActivity transactionActivity = this.memcachedRepository.getFromCache(transactionActivityKey, com.fyntrac.common.entity.TransactionActivity.class);
                     if (transactionActivity == null) {
-                        log.warn("No TransactionActivity found for key: {}", transactionActivityKey);
+                        log.warn("No TransactionActivity found for key: {}", transactionActivity.toString());
                         continue;
                     }
 
@@ -234,7 +201,7 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
                         }
                     }
                 } catch (Exception e) {
-                    log.error("Error processing transaction activity key: {}", transactionActivityKey, e);
+                    log.error("Error processing transaction activity key: {}", transactionActivity.toString(), e);
                     throw new RuntimeException("Error processing transaction activity", e);
                 }
 

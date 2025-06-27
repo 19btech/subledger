@@ -1,5 +1,6 @@
 package com.reserv.dataloader.service;
 
+import com.fyntrac.common.entity.Model;
 import com.fyntrac.common.enums.InstrumentAttributeVersionType;
 import com.reserv.dataloader.exception.*;
 import com.fyntrac.common.service.aggregation.AggregationService;
@@ -63,12 +64,23 @@ public class ModelUploadService {
                 && validateMetrics(model)
                 // && validateExecutionDate(model)
                 && validateInstrumentAttributeVersionType(model, DataloaderExcelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME)
-                && excelFileService.validateInstrumentAttributeColumns(model, DataloaderExcelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME)
-                && excelFileService.validateTransactionActivityColumns(model, DataloaderExcelFileService.TRANSACTION_SHEET_NAME)
+                && validateAttributes(model)
+                && validateTransactionActivitySheet(model)
                 && excelFileService.validateTransactionActivityColumns(model, DataloaderExcelFileService.OUTPUT_TRANSACTION_SHEET_NAME)
                 && excelFileService.validateMetricColumns(model));
     }
 
+    private boolean validateAttributes(Workbook model) throws Exception {
+        return excelFileService.validateInstrumentAttributeColumns(model, DataloaderExcelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME);
+    }
+
+    private boolean validateTransactionActivitySheet(Workbook model) throws Exception {
+        return excelFileService.validateTransactionActivityColumns(model, DataloaderExcelFileService.TRANSACTION_SHEET_NAME);
+    }
+
+    private boolean validateTransactionActivityOutputSheet(Workbook model) throws Exception {
+        return excelFileService.validateTransactionActivityColumns(model, DataloaderExcelFileService.OUTPUT_TRANSACTION_SHEET_NAME);
+    }
     public boolean validateModel(MultipartFile model) throws Exception {
         Workbook workbook = ExcelFileUtil.convertMultipartFileToWorkbook(model);
         return this.validateModel(workbook);
