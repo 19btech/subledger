@@ -24,13 +24,19 @@ public class AttributeLevelLtd implements Serializable, BaseLevelLtd {
     private static final long serialVersionUID = 4630237140330001617L;
     @Id
     private String id;
+    @NotNull
     @Indexed
     private String metricName;
+    @NotNull
+    @Indexed
     private String instrumentId;
+    @NotNull
+    @Indexed
     private String attributeId;
     @Indexed
     private int accountingPeriodId;
     @NotNull
+    @Indexed
     private Integer postingDate;
     BaseLtd balance;
 

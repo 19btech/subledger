@@ -5,6 +5,7 @@ import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.*;
 import com.fyntrac.common.enums.AggregationLevel;
 import com.fyntrac.common.enums.InstrumentAttributeVersionType;
+import com.fyntrac.common.exception.InstrumentAttributeVersionTypeException;
 import com.fyntrac.common.service.*;
 import com.fyntrac.common.service.aggregation.AttributeLevelAggregationService;
 import com.fyntrac.common.service.aggregation.InstrumentLevelAggregationService;
@@ -12,6 +13,7 @@ import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.MongoDocumentConverter;
 import com.fyntrac.model.utils.ExcelUtil;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class ExcelModelExecutor {
 
     private final TransactionActivityService transactionService;
@@ -69,15 +72,30 @@ public class ExcelModelExecutor {
 
         context.setExecutionState(executionState);
         context.setIInstrumentAttributes(new ArrayList<>(0));
-        loadFirstInstrumentAttributes(context);
-        loadLastInstrumentAttributes(context);
         loadTransactions(context, workbook);
         loadExecutionDate(context, workbook);
 
+
+        List<String> instrumentAttributeVersionTypes = this.excelFileService.readExcelSheet(workbook, this.excelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME);
+
+        for(String versionType : instrumentAttributeVersionTypes) {
+                try {
+                    InstrumentAttributeVersionType iavt = InstrumentAttributeVersionType.valueOf(versionType.toUpperCase());
+                    if(iavt.equals(InstrumentAttributeVersionType.FIRST_VERSION)) {
+                        loadFirstInstrumentAttributes(context);
+                    }else if(iavt.equals(InstrumentAttributeVersionType.LAST_CLOSED_VERSION)) {
+                        loadLastInstrumentAttributes(context);
+                    }
+                    log.info("InstrumentAttribute verion type: " + iavt);
+                } catch (IllegalArgumentException e) {
+                    log.error("Invalid enum value: " + versionType);
+                    throw new InstrumentAttributeVersionTypeException("InstrumentAttribute verion type['" + versionType + "' not a valid version type in sheet ["+ this.excelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME +"], please correct model first then upload again");
+                }
+
+        }
+
         addInstrumentAttribute(context);
         loadMetrics(context, workbook);
-
-
         // Pass the appropriate execution date
         return ExcelModelProcessor.processExcel(context.getInstrumentId(), context.getCurrentInstrumentAttribute(), context.getExecutionDate(), context.getAccountingPeriod(), workbook, context.getITransactions(), context.getIMetrics(), context.getIInstrumentAttributes(), context.getIExecutionDate() );
     }

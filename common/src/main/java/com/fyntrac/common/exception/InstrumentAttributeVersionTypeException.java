@@ -1,4 +1,4 @@
-package com.reserv.dataloader.exception;
+package com.fyntrac.common.exception;
 
 public class InstrumentAttributeVersionTypeException extends Exception {
     public InstrumentAttributeVersionTypeException(String errorMessage) {

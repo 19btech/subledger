@@ -14,6 +14,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import java.io.Serial;
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.ParseException;
 import java.util.Date;
 import java.util.Map;
@@ -23,10 +24,13 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.FieldType;
 import org.springframework.format.annotation.NumberFormat;
 
+import javax.validation.constraints.DecimalMax;
+import javax.validation.constraints.DecimalMin;
+import javax.validation.constraints.Digits;
 import javax.validation.constraints.NotNull;
 
 @Data
-@Builder
+@Builder(builderClassName = "TransactionActivityBuilder")
 @AllArgsConstructor
 @NoArgsConstructor
 @Document(collection = "TransactionActivity")
@@ -37,23 +41,31 @@ public class TransactionActivity implements Serializable {
 
     @Id
     private String id;
+    @NotNull
     @Indexed
-    @Field(targetType = FieldType.DATE_TIME)
-    private Date transactionDate;
     private String instrumentId;
+    @NotNull
+    @Indexed
     private String transactionName;
     @NumberFormat(pattern = "#.####")
+    @Digits(integer = 20, fraction = 4)
+    @DecimalMax(value = "99999999999999999999.9999")
+    @DecimalMin(value = "0.0000")
     private BigDecimal amount;
+    @NotNull
+    @Indexed
     private String attributeId;
     private int originalPeriodId;
     private long instrumentAttributeVersionId;
     private AccountingPeriod accountingPeriod;
+    private int periodId;
     private long batchId;
     private Source source;
     private String sourceId;
     @NotNull
     @Indexed
     private Integer postingDate;
+    @NotNull
     @Indexed
     private Integer effectiveDate;
     @Field("attributes")
@@ -71,63 +83,82 @@ public class TransactionActivity implements Serializable {
         return DateUtil.convertIntDateToUtc(this.effectiveDate);
     }
 
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount != null ? amount.setScale(4, RoundingMode.HALF_UP) : null;
+    }
+
+    public static class TransactionActivityBuilder {
+        public TransactionActivityBuilder amount(BigDecimal amount) {
+            this.amount = amount != null ? amount.setScale(4, RoundingMode.HALF_UP) : null;
+            return this;
+        }
+    }
+
     @Override
     public String toString() {
-        StringBuilder json = new StringBuilder();
-        json.append("{");
+        StringBuilder json = new StringBuilder("{");
         json.append("\"id\":\"").append(id).append("\",");
-        json.append("\"transactionDate\":\"").append(transactionDate).append("\",");
+        try {
+            json.append("\"transactionDate\":\"").append(getTransactionDate()).append("\",");
+        } catch (ParseException e) {
+            throw new RuntimeException(e);
+        }
         json.append("\"instrumentId\":\"").append(instrumentId).append("\",");
         json.append("\"transactionName\":\"").append(transactionName).append("\",");
-        json.append("\"amount\":").append(amount).append(","); // Corrected to "amount"
+        json.append("\"amount\":").append(amount).append(",");
         json.append("\"attributeId\":\"").append(attributeId).append("\",");
-        json.append("\"periodId\":").append(accountingPeriod).append(",");
+        json.append("\"periodId\":").append(accountingPeriod != null ? accountingPeriod.getPeriodId() : null).append(",");
         json.append("\"originalPeriodId\":").append(originalPeriodId).append(",");
         json.append("\"batchId\":").append(batchId).append(",");
         json.append("\"postingDate\":").append(postingDate).append(",");
         json.append("\"effectiveDate\":").append(effectiveDate).append(",");
-        json.append("\"source\":").append(sourceId).append(",");
+        json.append("\"sourceId\":\"").append(sourceId).append("\",");
         json.append("\"instrumentAttributeVersionId\":").append(instrumentAttributeVersionId).append(",");
 
-        // Add attributes
         json.append("\"attributes\":{");
-        for (Map.Entry<String, Object> entry : attributes.entrySet()) {
-            String attributeName = entry.getKey();
-            Object attributeValue = entry.getValue();
-            json.append("\"").append(attributeName).append("\":\"").append(attributeValue).append("\",");
+        if (attributes != null && !attributes.isEmpty()) {
+            for (Map.Entry<String, Object> entry : attributes.entrySet()) {
+                json.append("\"").append(entry.getKey()).append("\":\"").append(entry.getValue()).append("\",");
+            }
+            json.setLength(json.length() - 1); // Remove trailing comma
         }
-        // Remove the last comma if attributes are present
-        if (!attributes.isEmpty()) {
-            json.setLength(json.length() - 1); // Remove last comma
-        }
-        json.append("}");
-        json.append("}");
-        return json.toString();
-    }
+        json.append("}}");
 
-    @Override
-    public int hashCode() {
-        return Objects.hash(id, transactionDate, instrumentId, transactionName, amount, attributeId, this.accountingPeriod.getPeriodId(), originalPeriodId, instrumentAttributeVersionId, attributes);
+        return json.toString();
     }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof TransactionActivity)) return false;
-        TransactionActivity that = (TransactionActivity) o;
-        return this.accountingPeriod.getPeriodId() == that.accountingPeriod.getPeriodId() &&
-                that.amount.compareTo(amount) == 0 &&
-                originalPeriodId == that.originalPeriodId &&
+        if (!(o instanceof TransactionActivity that)) return false;
+        return originalPeriodId == that.originalPeriodId &&
                 instrumentAttributeVersionId == that.instrumentAttributeVersionId &&
                 Objects.equals(id, that.id) &&
-                Objects.equals(transactionDate, that.transactionDate) &&
+                Objects.equals(postingDate, that.postingDate) &&
+                Objects.equals(effectiveDate, that.effectiveDate) &&
                 Objects.equals(instrumentId, that.instrumentId) &&
                 Objects.equals(transactionName, that.transactionName) &&
+                compareBigDecimals(amount, that.amount) &&
                 Objects.equals(attributeId, that.attributeId) &&
+                Objects.equals(accountingPeriod != null ? accountingPeriod.getPeriodId() : null,
+                        that.accountingPeriod != null ? that.accountingPeriod.getPeriodId() : null) &&
                 Objects.equals(attributes, that.attributes);
     }
 
-    public int getPeriodId() {
-        return this.accountingPeriod.getPeriodId();
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, postingDate, effectiveDate, instrumentId, transactionName, scaleSafe(amount),
+                attributeId, accountingPeriod != null ? accountingPeriod.getPeriodId() : null,
+                originalPeriodId, instrumentAttributeVersionId, attributes);
+    }
+
+    private boolean compareBigDecimals(BigDecimal a, BigDecimal b) {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        return a.setScale(4, RoundingMode.HALF_UP).compareTo(b.setScale(4, RoundingMode.HALF_UP)) == 0;
+    }
+
+    private BigDecimal scaleSafe(BigDecimal value) {
+        return value != null ? value.setScale(4, RoundingMode.HALF_UP) : null;
     }
 }

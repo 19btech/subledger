@@ -23,13 +23,16 @@ public class InstrumentLevelLtd implements Serializable, BaseLevelLtd {
     private static final long serialVersionUID = -7398942930729219386L;
     @Id
     private String id;
+    @NotNull
     @Indexed
     private String metricName;
+    @NotNull
     @Indexed
     private String instrumentId;
     @Indexed(unique = false)
     private int accountingPeriodId;
     @NotNull
+    @Indexed
     private Integer postingDate;
     BaseLtd balance;
 

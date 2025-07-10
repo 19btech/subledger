@@ -166,7 +166,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 if(sortedSubChunk.size() > i+1) {
                     InstrumentAttribute nextAttribute = sortedSubChunk.get(i + 1);
                     // Set endDate of the current attribute to effectiveDate of the next attribute
-                    currentAttribute.setEndDate(nextAttribute.getEffectiveDate());
+                    currentAttribute.setEndDate(DateUtil.convertToUtc(nextAttribute.getEffectiveDate()));
                     nextAttribute.setPreviousVersionId(currentAttribute.getVersionId());
                     this.addReclassMessage(batchId, currentAttribute, nextAttribute);
                 }
@@ -174,7 +174,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 if(i== 0) {
                     List<InstrumentAttribute> openInstrumentAttributes = this.instrumentAttributeService.getOpenInstrumentAttributes(currentAttribute.getAttributeId(), currentAttribute.getInstrumentId());
                     for(InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
-                        openInstrumentAttribute.setEndDate(currentAttribute.getEffectiveDate());
+                        openInstrumentAttribute.setEndDate(DateUtil.convertToUtc(currentAttribute.getEffectiveDate()));
                         currentAttribute.setPreviousVersionId(openInstrumentAttribute.getVersionId());
                         openVersion.add(openInstrumentAttribute);
                         this.addReclassMessage(batchId, openInstrumentAttribute, currentAttribute);

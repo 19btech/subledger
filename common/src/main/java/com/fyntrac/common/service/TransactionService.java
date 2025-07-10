@@ -50,6 +50,9 @@ public class TransactionService extends CacheBasedService<Transactions>{
         }else {
             map = new CacheMap<>();
             transaction = this.dataService.findOne(query, Transactions.class);
+            if(transaction == null) {
+                return null;
+            }
             map.put(transaction.getName().toUpperCase(), transaction);
             this.memcachedRepository.putInCache(key, map);
         }

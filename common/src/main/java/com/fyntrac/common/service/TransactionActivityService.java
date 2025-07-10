@@ -247,10 +247,8 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
                 String parseTransactionDate = transactionDateObj.toString().trim().toUpperCase();
                 if (!parseTransactionDate.isEmpty()) {
                     Date effectiveDate =  DateUtil.convertToUtc(
-                            new SimpleDateFormat("M/dd/yyyy").parse(parseTransactionDate)
+                            new SimpleDateFormat("MM/dd/yyyy").parse(parseTransactionDate)
                     );
-                    builder.transactionDate(DateUtil.convertToUtc(
-                            new SimpleDateFormat("M/dd/yyyy").parse(parseTransactionDate)));
                     builder.effectiveDate(DateUtil.dateInNumber(effectiveDate));
 
                 }

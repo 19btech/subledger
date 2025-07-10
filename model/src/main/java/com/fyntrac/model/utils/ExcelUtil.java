@@ -21,6 +21,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.LineNumberReader;
 import java.io.UnsupportedEncodingException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -458,11 +459,18 @@ public class ExcelUtil {
                         // Optionally, you can set a date format for the cell
                         CellStyle cellStyle = sheet.getWorkbook().createCellStyle();
                         DataFormat format = sheet.getWorkbook().createDataFormat();
-                        cellStyle.setDataFormat(format.getFormat("M/dd/yyyy"));
+                        cellStyle.setDataFormat(format.getFormat("MM/dd/yyyy"));
                         excelRow.getCell(colIndex).setCellStyle(cellStyle);
                     } else if (cellValue instanceof Number) {
                         // Set the cell value as a Number
                         excelRow.createCell(colIndex).setCellValue(((Number) cellValue).doubleValue());
+                    }else if (cellValue instanceof String strVal) {
+                        String trimmed = strVal.trim();
+                        if (trimmed.matches("-?\\d+(\\.\\d+)?")) {
+                            excelRow.createCell(colIndex).setCellValue(Double.parseDouble(trimmed));
+                        } else {
+                            excelRow.createCell(colIndex).setCellValue(strVal);
+                        }
                     }else if (cellValue == null) {
                         // Handle null value
                         excelRow.createCell(colIndex).setCellValue(""); // Set to empty string or use "N/A"
@@ -525,6 +533,10 @@ public class ExcelUtil {
             if (attrObj == null || txnObj == null) continue;
 
             String key = (attrObj.toString().trim() + "_" + txnObj.toString().trim()).toLowerCase();
+            if(!compositeKeyToRowMap.containsKey(key)) {
+                continue;
+            }
+
             Integer rowIndex = compositeKeyToRowMap.get(key).poll();
             if (rowIndex == null) continue;
 
@@ -692,7 +704,7 @@ public class ExcelUtil {
             String attr = (attributeIdCol != null) ? getCellValue(row.getCell(attributeIdCol)) : "";
             String txn = (metricNameCol != null) ? getCellValue(row.getCell(metricNameCol)) : "";
 
-            if (!attr.isEmpty() && !txn.isEmpty()) {
+            if (!txn.isEmpty()) {
                 String key = (attr + "_" + txn).toLowerCase();
                 compositeKeyToRowMap
                         .computeIfAbsent(key, k -> new LinkedList<>())
@@ -710,11 +722,16 @@ public class ExcelUtil {
         for (int i = 0; i < jsonData.size(); i++) {
             Map<String, Object> data = jsonData.get(i);
             Object attrObj = getIgnoreCase(data, "AttributeId");
+            String attributeId = (attrObj == null || attrObj.toString().trim().isEmpty()) ? "" : attrObj.toString().trim();
+
             Object txnObj = getIgnoreCase(data, "MetricName");
 
-            if (attrObj == null || txnObj == null) continue;
+            if (txnObj == null) continue;
 
-            String key = (attrObj.toString().trim() + "_" + txnObj.toString().trim()).toLowerCase();
+            String key = (attributeId.trim() + "_" + txnObj.toString().trim()).toLowerCase();
+            if(!compositeKeyToRowMap.containsKey(key)) {
+                continue;
+            }
             Integer rowIndex = compositeKeyToRowMap.get(key).poll();
             if (rowIndex == null) continue;
 
@@ -740,7 +757,6 @@ public class ExcelUtil {
         }
     }
 
-    // Fills a row with provided data based on header mapping
     private static void fillRow(Sheet sheet, Row row, Map<String, Object> data, Map<String, Integer> headerMap) {
         if (row == null) return;
 
@@ -754,57 +770,100 @@ public class ExcelUtil {
             Cell cell = row.getCell(colIndex);
             if (cell == null) cell = row.createCell(colIndex);
 
-            if (value instanceof String str && NumberUtil.isValidNumber(str)) {
-                double numberValue = new java.math.BigDecimal(str).doubleValue();
-                row.createCell(colIndex).setCellValue(numberValue);
+            if (value instanceof String strVal) {
+                String trimmed = strVal.trim();
+                if (trimmed.matches("-?\\d+(\\.\\d+)?")) {
+                    double parsed = Double.parseDouble(trimmed);
+                    if (parsed == Math.rint(parsed)) {
+                        cell.setCellValue((long) parsed);
+                    } else {
+                        cell.setCellValue(parsed);
+                    }
+                } else if (value instanceof String str && isValidDate(str)) {
+                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
+                    LocalDate localDate = LocalDate.parse(str, formatter);
+                    Date dateValue = Date.from(localDate.atStartOfDay(ZoneOffset.UTC).toInstant());
+
+                    cell.setCellValue(com.fyntrac.common.utils.DateUtil.stripTime(dateValue));
+
+                    CellStyle cellStyle = sheet.getWorkbook().createCellStyle();
+                    DataFormat format = sheet.getWorkbook().createDataFormat();
+                    cellStyle.setDataFormat(format.getFormat("MM/dd/yyyy"));
+                    cell.setCellStyle(cellStyle);
+
+                }else {
+                    cell.setCellValue(strVal);
+                }
+
+            } else if (value instanceof BigDecimal bigDecimal) {
+                double d = bigDecimal.doubleValue();
+                if (bigDecimal.scale() <= 0 || d == Math.rint(d)) {
+                    cell.setCellValue(bigDecimal.longValue());
+                } else {
+                    cell.setCellValue(d);
+                }
+
+                // Apply number format
+                CellStyle style = sheet.getWorkbook().createCellStyle();
+                DataFormat format = sheet.getWorkbook().createDataFormat();
+                style.setDataFormat(format.getFormat("#,##0.##"));
+                cell.setCellStyle(style);
+
+            } else if (value instanceof Double d) {
+                if (d == Math.rint(d)) {
+                    cell.setCellValue(d.longValue());
+                } else {
+                    cell.setCellValue(d);
+                }
+
+                CellStyle style = sheet.getWorkbook().createCellStyle();
+                DataFormat format = sheet.getWorkbook().createDataFormat();
+                style.setDataFormat(format.getFormat("#,##0.##"));
+                cell.setCellStyle(style);
+
+            } else if (value instanceof Long l) {
+                cell.setCellValue(l);
+
             } else if (value instanceof Date dateValue) {
-
-                cell = row.createCell(colIndex);
                 cell.setCellValue(com.fyntrac.common.utils.DateUtil.stripTime(dateValue));
 
-                // Format the cell to only show date (no time)
-                // Create a cell style with date format
-                CreationHelper createHelper = sheet.getWorkbook().getCreationHelper();
                 CellStyle cellStyle = sheet.getWorkbook().createCellStyle();
-                cellStyle.setDataFormat(createHelper.createDataFormat().getFormat("M/dd/yyyy"));
+                DataFormat format = sheet.getWorkbook().createDataFormat();
+                cellStyle.setDataFormat(format.getFormat("MM/dd/yyyy"));
                 cell.setCellStyle(cellStyle);
 
-            } else if (value instanceof String str && isValidDate(str)) {
-                // Parse the string into a LocalDate
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("M/dd/yyyy");
-                LocalDate localDate = LocalDate.parse(str, formatter);
+            } else if (value == null) {
+                cell.setCellValue(""); // or "N/A"
 
-                // Convert LocalDate to Date at UTC midnight (removes time offset)
-                Date dateValue = Date.from(localDate.atStartOfDay(ZoneOffset.UTC).toInstant());
-
-                cell = row.createCell(colIndex);
-                cell.setCellValue(com.fyntrac.common.utils.DateUtil.stripTime(dateValue));
-
-                // Create a cell style with date format
-                CreationHelper createHelper = sheet.getWorkbook().getCreationHelper();
-                CellStyle cellStyle = sheet.getWorkbook().createCellStyle();
-                cellStyle.setDataFormat(createHelper.createDataFormat().getFormat("M/dd/yyyy"));
-                cell.setCellStyle(cellStyle);
-            }
-            else if (value == null) {
-                // Handle null value
-                row.createCell(colIndex).setCellValue(""); // Set to empty string or use "N/A"
             } else {
-                // Set other types of values as string
-                row.createCell(colIndex).setCellValue(value.toString());
+                cell.setCellValue(value.toString());
             }
         }
     }
 
     public static boolean isValidDate(String dateStr) {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("M/dd/yyyy", Locale.US);
-        try {
-            // Parse the string to check if it's a valid date
-            LocalDate.parse(dateStr, formatter);
-            return true;
-        } catch (DateTimeParseException e) {
-            return false;
+        // List of possible date formats (add more if needed)
+        String[] possibleFormats = {
+                "M/d/yyyy",   // e.g., 2/1/2022, 02/13/2022
+                "M/d/yy",     // e.g., 2/1/22, 02/13/22
+                "MM/dd/yyyy", // e.g., 02/01/2022
+                "MM/dd/yy",   // e.g., 02/01/22
+                "MM/dd/yyyy",  // e.g., 2/01/2022
+                "M/dd/yy",    // e.g., 2/01/22
+                "MM/d/yyyy",  // e.g., 02/1/2022
+                "MM/d/yy"     // e.g., 02/1/22
+        };
+
+        for (String format : possibleFormats) {
+            try {
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format, Locale.US);
+                LocalDate.parse(dateStr, formatter);
+                return true; // Successfully parsed
+            } catch (DateTimeParseException e) {
+                // Try next format
+            }
         }
+        return false; // All formats failed
     }
 
     // Helper: get cell value as trimmed string

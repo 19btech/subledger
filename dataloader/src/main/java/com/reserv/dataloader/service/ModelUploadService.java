@@ -2,6 +2,7 @@ package com.reserv.dataloader.service;
 
 import com.fyntrac.common.entity.Model;
 import com.fyntrac.common.enums.InstrumentAttributeVersionType;
+import com.fyntrac.common.exception.InstrumentAttributeVersionTypeException;
 import com.reserv.dataloader.exception.*;
 import com.fyntrac.common.service.aggregation.AggregationService;
 import com.reserv.dataloader.utils.ExcelFileUtil;
@@ -152,7 +153,7 @@ public class ModelUploadService {
             return Boolean.TRUE;
         }
         String date = executionDates.get(0);
-        Date executionDate = DateUtil.parseDate(date, new SimpleDateFormat("dd-MMM-yyyy"));
+        Date executionDate = DateUtil.parseDate(date, new SimpleDateFormat("MM/dd/yyyy"));
         return validateExeutionDate(executionDate);
     }
     public boolean validateExeutionDate(Date executionDate) throws AccountingPeriodClosedException {

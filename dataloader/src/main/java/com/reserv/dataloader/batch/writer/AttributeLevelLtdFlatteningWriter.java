@@ -7,6 +7,7 @@ import com.fyntrac.common.entity.AttributeLevelLtd;
 import com.fyntrac.common.entity.BaseLtd;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.aggregation.AttributeLevelAggregationService;
+import com.fyntrac.common.utils.DateUtil;
 import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
@@ -127,7 +128,7 @@ public class AttributeLevelLtdFlatteningWriter implements ItemWriter<List<Record
                             .instrumentId(record.instrumentId())
                             .attributeId(record.attributeId())
                             .postingDate(record.postingDate())
-                            .accountingPeriodId(record.accountingPeriod())
+                            .accountingPeriodId(DateUtil.getAccountingPeriodId(record.postingDate()))
                             .balance(balance)
                             .build();
                 } else {
@@ -182,7 +183,12 @@ public class AttributeLevelLtdFlatteningWriter implements ItemWriter<List<Record
     private record GroupKey(String metricName, String instrumentId, String attributeId) implements java.io.Serializable {}
 
     private String buildKey(Records.AttributeLevelLtdRecord r, String tenantId, long jobId) {
-        return String.format("tenantId:jobId:attr:ltd:%s:%d:%s:%s:%s:%d",tenantId, jobId, r.metricName(), r.instrumentId(), r.attributeId(), r.postingDate());
+        String rawKey = String.format("tenantId:jobId:attr:ltd:%s:%d:%s:%s:%s:%d",tenantId, jobId, r.metricName(), r.instrumentId(), r.attributeId(), r.postingDate());
+        return sanitizeKey(rawKey);
+    }
+
+    private String sanitizeKey(String rawKey) {
+        return rawKey.replaceAll("[\\s:]", "_"); // replace spaces and colons with underscores
     }
 
     private AttributeLevelLtd getFromMemcached(String key) {

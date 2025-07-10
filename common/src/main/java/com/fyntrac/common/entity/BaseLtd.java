@@ -11,38 +11,34 @@ import java.math.RoundingMode;
 
 @Slf4j
 @Data
-@Builder(builderClassName = "BaseLtdBuilder")
+@Builder
 public class BaseLtd implements Serializable {
     private static final long serialVersionUID = -7956532636381889893L;
 
     @NumberFormat(pattern = "#.####")
     private BigDecimal activity;
+
     @NumberFormat(pattern = "#.####")
     private BigDecimal beginningBalance;
+
     @NumberFormat(pattern = "#.####")
     private BigDecimal endingBalance;
 
     public BaseLtd(BigDecimal activity, BigDecimal beginningBalance, BigDecimal endingBalance) {
-        this.activity = activity.setScale(4, RoundingMode.HALF_UP);
-        this.beginningBalance = beginningBalance.setScale(4, RoundingMode.HALF_UP);
-        this.endingBalance = endingBalance.setScale(4, RoundingMode.HALF_UP);
+        setActivity(activity);
+        setBeginningBalance(beginningBalance);
+        setEndingBalance(endingBalance);
     }
 
-    // Custom builder configuration to update endingBalance
-    public static class BaseLtdBuilder {
-        public BaseLtdBuilder activity(BigDecimal activity) {
-            this.activity = activity.setScale(4, RoundingMode.HALF_UP);
-            return this;
-        }
+    public void setActivity(BigDecimal activity) {
+        this.activity = activity != null ? activity.setScale(4, RoundingMode.HALF_UP) : null;
+    }
 
-        public BaseLtdBuilder beginningBalance(BigDecimal beginningBalance) {
-            this.beginningBalance = beginningBalance.setScale(4, RoundingMode.HALF_UP);
-            return this;
-        }
+    public void setBeginningBalance(BigDecimal beginningBalance) {
+        this.beginningBalance = beginningBalance != null ? beginningBalance.setScale(4, RoundingMode.HALF_UP) : null;
+    }
 
-        public BaseLtd build() {
-            BigDecimal endingBalance = this.beginningBalance.add(this.activity).setScale(4, RoundingMode.HALF_UP);
-            return new BaseLtd(this.activity, this.beginningBalance, endingBalance);
-        }
+    public void setEndingBalance(BigDecimal endingBalance) {
+        this.endingBalance = endingBalance != null ? endingBalance.setScale(4, RoundingMode.HALF_UP) : null;
     }
 }

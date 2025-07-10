@@ -1,14 +1,15 @@
 package com.reserv.dataloader.testdriver;
 
+import com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.Model;
-import com.fyntrac.common.entity.ModelConfig;
 import com.fyntrac.common.entity.Settings;
 import com.fyntrac.common.enums.AggregationLevel;
 import com.fyntrac.common.enums.ModelStatus;
 import com.fyntrac.common.enums.TestStep;
 import com.fyntrac.common.service.DataService;
+import com.reserv.dataloader.testdriver.validator.OutputSheetValidator;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Assertions;
@@ -19,6 +20,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.http.*;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -53,7 +55,10 @@ public class ExcelTestDriver {
     private static String modelURI;
     Properties properties = new Properties();
     @Autowired
-    DataService dataService;
+    private DataService dataService;
+    @Autowired
+    private TenantDataSourceProvider dataSourceProvider;
+    private Model model;
 
     @BeforeEach
     public void setUp() throws Throwable {
@@ -81,7 +86,8 @@ public class ExcelTestDriver {
         String strDate = properties.getProperty(TEST_ACCOUNTING_PERIOD_START_DATE);
         Date accountingPeriodDate = com.fyntrac.common.utils.DateUtil.parseDate(strDate, DateTimeFormatter.ofPattern("MM/dd/yyyy"));
         generateAccountingPeriod(accountingPeriodDate);
-
+        // this.dataService.setTenantId(tenantId);
+        this.model=null;
     }
 
     @Test
@@ -109,10 +115,20 @@ public class ExcelTestDriver {
 
         // Add 10-second delay
         try {
-            Thread.sleep(100_000); // 10,000 milliseconds = 10 seconds
+            Thread.sleep(50_000); // 10,000 milliseconds = 10 seconds
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt(); // Restore interrupt status
             throw new RuntimeException("Thread was interrupted during sleep", e);
+        }
+
+        //Validate output
+        MongoTemplate mongoTemplate =  this.dataSourceProvider.getDataSource(tenantId);
+
+        OutputSheetValidator outputSheetValidator = new OutputSheetValidator(mongoTemplate);
+        try {
+            outputSheetValidator.validate(this.readFile(testFile));
+        }catch (RuntimeException e){
+            Assertions.fail("Data comparision failed: " + e.getMessage(), e);
         }
     }
 
@@ -125,13 +141,12 @@ public class ExcelTestDriver {
                 //Upload Activity method
                 loadData(step.input());
             } else if (testStep == TestStep.MODEL_UPLOAD) {
-                Model model = uploadModel(step.input());
-                model.getModelConfig().setAggregationLevel(AggregationLevel.ATTRIBUTE);
+                model = uploadModel(step.input());
+            } else if (testStep == TestStep.MODEL_CONFIGURATION) {
+                model.getModelConfig().setAggregationLevel(AggregationLevel.valueOf(step.input()));
                 model.getModelConfig().setCurrentVersion(Boolean.TRUE);
                 model.setModelStatus(ModelStatus.ACTIVE);
                 configureModel(model);
-            } else if (testStep == TestStep.MODEL_CONFIGURATION) {
-
             } else if (testStep == TestStep.MODEL_EXECUTION) {
                 //Model execution
                 String executionDate = step.input();
@@ -139,7 +154,7 @@ public class ExcelTestDriver {
 
                 // Add 10-second delay
                 try {
-                    Thread.sleep(20_000); // 10,000 milliseconds = 10 seconds
+                    Thread.sleep(30_000); // 10,000 milliseconds = 10 seconds
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt(); // Restore interrupt status
                     throw new RuntimeException("Thread was interrupted during sleep", e);

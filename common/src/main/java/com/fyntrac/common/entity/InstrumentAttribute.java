@@ -27,8 +27,13 @@ public class InstrumentAttribute implements Serializable {
     private static final long serialVersionUID = -251193653214449266L;
     @Id
     private String id;
+    @NotNull
     private Date effectiveDate;
+    @NotNull
+    @Indexed
     private String instrumentId;
+    @NotNull
+    @Indexed
     private String attributeId;
     private long batchId;
     @Field(write = Field.Write.ALWAYS)

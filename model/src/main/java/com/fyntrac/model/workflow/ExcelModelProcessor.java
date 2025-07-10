@@ -164,7 +164,7 @@ public class ExcelModelProcessor {
                     if (formatString != null) {
                         String normalizedFormat = formatString.toLowerCase();
 
-                        if (normalizedFormat.contains("m/dd/yyyy")) {
+                        if (normalizedFormat.contains("MM/dd/yyyy")) {
                             // Return date as formatted string instead of Date object or numeric
                             Date date = cell.getDateCellValue();
                             String formattedDate = new SimpleDateFormat(formatString).format(date);

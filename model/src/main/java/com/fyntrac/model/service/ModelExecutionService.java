@@ -131,11 +131,29 @@ public class ModelExecutionService {
         }
 
         // Step 2: Camunda Process Engine Initialization
+        int maxRetries = 5;
+        int attempts = 0;
+        CacheList<String> cacheList = null;
 
-        CacheList<String> cacheList = this.memcachedRepository.getFromCache(key, CacheList.class);
-        if (cacheList == null || cacheList.getList() == null || cacheList.getList().isEmpty()) {
-            log.warn("No instruments found in cache for key: {}", key);
-            return; // Exit early if no instruments are found
+        while (attempts < maxRetries) {
+            attempts++;
+            try {
+                cacheList = this.memcachedRepository.getFromCache(key, CacheList.class);
+                if (cacheList != null && cacheList.getList() != null && !cacheList.getList().isEmpty()) {
+                    break; // Successfully fetched non-empty list, exit retry loop
+                }
+                log.warn("Attempt {}: Cache miss or empty list for key: {}", attempts, key);
+            } catch (Exception e) {
+                log.error("Attempt {}: Error accessing cache for key {}: {}", attempts, key, e.getMessage());
+            }
+
+            // Optional: Add a delay between retries
+            try {
+                Thread.sleep(100); // 100ms delay between retries
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt(); // Restore interrupted state
+                break;
+            }
         }
 
         int acctPeriod = com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(executionDate);
@@ -262,10 +280,18 @@ public class ModelExecutionService {
                 this.insertInstrumentAttribute(modelOutputData, context.getExecutionDate(), context.getTenantId());
                 List<TransactionActivity> filledTransactions = new ArrayList<>(0);
                 Set<TransactionActivity> transactions = new HashSet<>(0);
-                for(Map<String, Object> activity : modelOutputData.transactionActivityList()) {
+
+                for (Map<String, Object> activity : modelOutputData.transactionActivityList()) {
+                    Object instrumentIdObj = activity.get("instrumentId");
+                    if (instrumentIdObj == null || instrumentIdObj.toString().trim().isEmpty()) {
+                        log.warn("Skipping activity due to missing or empty instrumentId: {}", activity);
+                        continue;
+                    }
+
                     TransactionActivity transactionActivity = this.transactionActivityService.fillTrascationActivity(activity, accountingPeriod);
                     filledTransactions.add(transactionActivity);
                 }
+
 
 
                 for (InstrumentAttribute attr : currentOpenInstrumentAttributes) {
@@ -290,7 +316,7 @@ public class ModelExecutionService {
                     // this.commonAggregationService.aggregate(transactionActivities, previousPostingDate);
                     LocalDateTime dateTime = LocalDateTime.now();
                     int timestamp = (int) (dateTime.toEpochSecond(ZoneOffset.UTC));
-                    String key = String.format("%s-%s", tenantId, "TA");
+                    String key = String.format("%s-%s-%d", tenantId, "TA", DateUtil.dateInNumber(executionDate));
 
                  long jobId = System.currentTimeMillis();
                     if (transactionActivities != null) {
@@ -389,8 +415,8 @@ public class ModelExecutionService {
         }
 
 
-        String value = DateUtil.formatDateToString(executionDate, "M/dd/yyyy"); // "6/18/2025"; // M/dd/yyyy
-        LocalDate localDate = LocalDate.parse(value, DateTimeFormatter.ofPattern("M/dd/yyyy"));
+        String value = DateUtil.formatDateToString(executionDate, "MM/dd/yyyy"); // "6/18/2025"; // MM/dd/yyyy
+        LocalDate localDate = LocalDate.parse(value, DateTimeFormatter.ofPattern("MM/dd/yyyy"));
         Date postingDate = Date.from(localDate.atStartOfDay(ZoneOffset.UTC).toInstant());
 
         // Apply updates
@@ -488,7 +514,6 @@ public class ModelExecutionService {
 
             if (transactionActivity.getTransactionDate() == null) {
                 transactionActivity.setEffectiveDate(DateUtil.dateInNumber(executionDate));
-                transactionActivity.setTransactionDate(DateUtil.convertToUtc(executionDate));
             }
 
             transactionActivity.setPostingDate(DateUtil.dateInNumber(executionDate));

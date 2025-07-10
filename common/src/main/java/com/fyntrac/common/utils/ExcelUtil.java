@@ -265,7 +265,7 @@ public class ExcelUtil {
 
 
     protected static String getDateValue(Cell cell) {
-        DateFormat df = new SimpleDateFormat("M/dd/yyyy");
+        DateFormat df = new SimpleDateFormat("MM/dd/yyyy");
         Date date = cell.getDateCellValue();
         return  df.format(date);
     }
@@ -296,7 +296,7 @@ public class ExcelUtil {
                     if (DateUtil.isCellDateFormatted(cell)) {
                         Date date = cell.getDateCellValue();
                         // Format the date as needed, e.g., "yyyy-MM-dd"
-                        SimpleDateFormat dateFormat = new SimpleDateFormat("M/dd/yyyy");
+                        SimpleDateFormat dateFormat = new SimpleDateFormat("MM/dd/yyyy");
                         data.append("\"" + dateFormat.format(date) + "\"");
                     } else {
                         data.append(cellValue.getNumberValue() + "");

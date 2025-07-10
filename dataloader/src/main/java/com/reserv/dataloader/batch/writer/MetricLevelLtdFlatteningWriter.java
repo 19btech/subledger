@@ -9,6 +9,7 @@ import com.fyntrac.common.entity.InstrumentLevelLtd;
 import com.fyntrac.common.entity.MetricLevelLtd;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
+import com.fyntrac.common.utils.DateUtil;
 import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
@@ -124,7 +125,7 @@ public class MetricLevelLtdFlatteningWriter implements ItemWriter<List<Records.M
                     ltd = MetricLevelLtd.builder()
                             .metricName(record.metricName())
                             .postingDate(record.postingDate())
-                            .accountingPeriodId(record.accountingPeriod())
+                            .accountingPeriodId(DateUtil.getAccountingPeriodId(record.postingDate()))
                             .balance(balance)
                             .build();
                 } else {
@@ -178,7 +179,12 @@ public class MetricLevelLtdFlatteningWriter implements ItemWriter<List<Records.M
     private record GroupKey(String metricName) implements java.io.Serializable {}
 
     private String buildKey(Records.MetricLevelLtdRecord r, String tenantId, long jobId) {
-        return String.format("tenantId:jobId:metric:ltd:%s:%d:%s:%d",tenantId, jobId, r.metricName(),  r.postingDate());
+        String rawKey = String.format("tenantId:jobId:metric:ltd:%s:%d:%s:%d",tenantId, jobId, r.metricName(),  r.postingDate());
+        return sanitizeKey(rawKey);
+    }
+
+    private String sanitizeKey(String rawKey) {
+        return rawKey.replaceAll("[\\s:]", "_"); // replace spaces and colons with underscores
     }
 
     private MetricLevelLtd getFromMemcached(String key) {

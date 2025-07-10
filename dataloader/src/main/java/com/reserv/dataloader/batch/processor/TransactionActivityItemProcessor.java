@@ -10,6 +10,7 @@ import org.springframework.batch.item.ItemProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.SimpleDateFormat;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
@@ -34,7 +35,7 @@ public class TransactionActivityItemProcessor implements ItemProcessor<Map<Strin
             if (key.equalsIgnoreCase("ACTIVITYUPLOADID")) {
                 continue;
             } else if (key.equalsIgnoreCase("TRANSACTIONDATE")) {
-                LocalDate localDate = LocalDate.parse((String) value, DateTimeFormatter.ofPattern("M/dd/yyyy"));
+                LocalDate localDate = LocalDate.parse((String) value, DateTimeFormatter.ofPattern("MM/dd/yyyy"));
                 transactionDate = Date.from(localDate.atStartOfDay(ZoneOffset.UTC).toInstant());
                 effectiveDate = DateUtil.dateInNumber(transactionDate);
             } else if (key.equalsIgnoreCase("INSTRUMENTID")) {
@@ -53,13 +54,10 @@ public class TransactionActivityItemProcessor implements ItemProcessor<Map<Strin
         }
 
         assert transactionDate != null;
-        Instant instant = transactionDate.toInstant();
-        LocalDateTime localDateTime = instant.atZone(ZoneId.of("UTC")).toLocalDateTime();
         return TransactionActivity.builder().effectiveDate(effectiveDate)
                 .transactionName(transactionName)
         .instrumentId(instrumentId)
-                .transactionDate(Date.from(localDateTime.atZone(ZoneId.of("UTC")).toInstant()))
-                .amount(amount)
+                .amount(amount.setScale(4, RoundingMode.HALF_UP))
                 .attributeId(attributeId)
         .source(Source.ETL)
         .postingDate(postingDate).build();

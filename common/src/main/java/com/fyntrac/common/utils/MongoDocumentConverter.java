@@ -143,14 +143,14 @@ public class MongoDocumentConverter {
                 if (value == null) {
                     continue;
                 } else if (isPrimitiveOrWrapper(value) || value instanceof Date) {
-                    if (value instanceof String || value instanceof Number) {
-                        String str = ((String) value).trim();
+                    if (value instanceof String str) {
+                        str = str.trim();
                         if (str.matches("-?\\d+")) {
-                            // Integer number
                             value = Integer.parseInt(str);
                         } else if (str.matches("-?\\d*\\.\\d+")) {
-                            // Decimal number
                             value = Double.parseDouble(str);
+                        } else {
+                            value = str; // keep as String if not a number
                         }
                     }
 

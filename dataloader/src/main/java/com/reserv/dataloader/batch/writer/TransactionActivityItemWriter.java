@@ -86,6 +86,7 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
         if(this.transactionActivityKey == null) {
             return;
         }
+        this.instrumentAttributeService.getDataService().setTenantId(tenantId);
         attributes = attributeService.getReclassableAttributes();
     }
 
@@ -126,6 +127,7 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
             transactionActivity.setBatchId(batchId);
             Transactions transaction = this.transactionService.getTransaction(transactionActivity.getTransactionName().toUpperCase());
             transactionActivity.setIsReplayable(transaction.getIsReplayable());
+            transactionActivity.setPeriodId(transactionActivity.getAccountingPeriod().getPeriodId());
             if(executionState != null && (transactionActivity.getEffectiveDate() < executionState.getExecutionDate())) {
                 // add into replay List
                 if(transactionActivity.getIsReplayable() != 0) {
@@ -135,7 +137,6 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
                     instrumentReplayQueue.add(tenantId, this.jobId, replayRecord);
                 }else{
                     transactionActivity.setEffectiveDate(transactionActivity.getPostingDate());
-                    transactionActivity.setTransactionDate(DateUtil.convertIntDateToUtc(transactionActivity.getPostingDate()));
                 }
             }
             this.transactionActivityQueue.add(tenantId, jobId, transactionActivity);
@@ -162,10 +163,9 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
     }
 
     private InstrumentAttribute getLatestInstrumentAttribute(TransactionActivity transactionActivity) {
-        return this.instrumentAttributeService.getInstrumentAttributeByPeriodId(this.tenantId
+        return this.instrumentAttributeService.getOpenInstrumentAttributesByInstrumentId(transactionActivity.getInstrumentId()
                 , transactionActivity.getAttributeId()
-                , transactionActivity.getInstrumentId()
-                , transactionActivity.getPeriodId());
+                , this.tenantId).getFirst();
     }
 
     private Map<String, Object> getReclassableAttributes(Map<String, Object> instrumentAttributes) {

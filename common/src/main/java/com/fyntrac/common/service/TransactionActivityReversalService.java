@@ -122,7 +122,6 @@ public class TransactionActivityReversalService {
                 .transactionName(activity.getTransactionName()) // Use getter method
                 .originalPeriodId(activity.getOriginalPeriodId()) // Use getter method
                 .attributes(activity.getAttributes())
-                .transactionDate(DateUtil.convertToUtc(activity.getTransactionDate()))
                 .source(Source.REVERSAL)
                 .instrumentAttributeVersionId(activity.getInstrumentAttributeVersionId())
                 .amount(NumberUtil.getNumber(reversalRecord.totalAmount()).negate())
@@ -145,7 +144,6 @@ public class TransactionActivityReversalService {
                 .transactionName(reversalRecord.transactionType()) // Use getter method
                 .originalPeriodId(reversalRecord.originalPeriodId()) // Use getter method
                 .attributes(reversalRecord.attributes())
-                .transactionDate(DateUtil.convertToUtc(reversalRecord.transactionDate()))
                 .source(Source.REVERSAL)
                 .instrumentAttributeVersionId(reversalRecord.instrumentAttributeVersionId())
                 .amount(NumberUtil.getNumber(reversalRecord.totalAmount()).negate())
@@ -166,7 +164,6 @@ public class TransactionActivityReversalService {
                     .accountingPeriod(activity.getAccountingPeriod())
                     .postingDate(activity.getPostingDate())
                     .effectiveDate(ta.effectiveDate())
-                    .transactionDate(DateUtil.convertToDateFromYYYYMMDD(ta.effectiveDate()))
                     .instrumentId(activity.getInstrumentId()) // Use getter method
                     .attributeId(activity.getAttributeId()) // Use getter method
                     .transactionName(ta.transactionType()) // Use getter method
@@ -194,7 +191,6 @@ public class TransactionActivityReversalService {
                     .accountingPeriod(activity.getAccountingPeriod())
                     .postingDate(activity.getPostingDate())
                     .effectiveDate(ta.getEffectiveDate())
-                    .transactionDate(DateUtil.convertToDateFromYYYYMMDD(ta.getEffectiveDate()))
                     .instrumentId(activity.getInstrumentId()) // Use getter method
                     .attributeId(activity.getAttributeId()) // Use getter method
                     .transactionName(ta.getTransactionName()) // Use getter method
