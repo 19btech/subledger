@@ -17,14 +17,47 @@ services:
       ports:
         - "11211:11211"
   dataloader:
-    image: 19btech/dataloader:latest
+    image: ghcr.io/19btech/fyntrac/docker/dataloader:latest  # Removed the extra ':latest'
     container_name: fyntrac-dataloader
     working_dir: /dataloader  # Set the working directory in the container
     ports:
-      - "8089:8089"  # Map the port (adjust as needed)
+    - "8089:8089"  # Map the port (adjust as needed)
     entrypoint: ["java", "-cp", "/app/resources:/app/classes:/app/libs/*", "com.reserv.dataloader.DataloaderApplication"]  # Command to run the jar file
     environment:
-      - SPRING_PROFILES_ACTIVE=test # Command to run the jar file
+    - SPRING_PROFILES_ACTIVE=test  # Set the active Spring profile
     depends_on:
-      - mongodb
-      - memcached
+    - mongodb
+    - memcached
+  model:
+    image: ghcr.io/19btech/fyntrac/docker/model:latest  # Removed the extra ':latest'
+    container_name: fyntrac-model
+    working_dir: /model  # Set the working directory in the container
+    ports:
+      - "8089:8089"  # Map the port (adjust as needed)
+    entrypoint: [ "java", "-cp", "/app/resources:/app/classes:/app/libs/*", "com.fyntrac.model.ModelApplication" ]  # Command to run the jar file
+    environment:
+      - SPRING_PROFILES_ACTIVE=test  # Set the active Spring profile
+    depends_on:
+      - dataloader
+  gl:
+    image: ghcr.io/19btech/fyntrac/docker/gl:latest  # Removed the extra ':latest'
+    container_name: fyntrac-gl
+    working_dir: /model  # Set the working directory in the container
+    ports:
+      - "8089:8089"  # Map the port (adjust as needed)
+    entrypoint: [ "java", "-cp", "/app/resources:/app/classes:/app/libs/*", "com.fyntrac.gl.GlApplication" ]  # Command to run the jar file
+    environment:
+      - SPRING_PROFILES_ACTIVE=test  # Set the active Spring profile
+    depends_on:
+      - model
+  reporting:
+    image: ghcr.io/19btech/fyntrac/docker/reporting:latest  # Removed the extra ':latest'
+    container_name: fyntrac-reporting
+    working_dir: /model  # Set the working directory in the container
+    ports:
+      - "8089:8089"  # Map the port (adjust as needed)
+    entrypoint: [ "java", "-cp", "/app/resources:/app/classes:/app/libs/*", "com.fyntrac.reporting.ReportingApplication" ]  # Command to run the jar file
+    environment:
+      - SPRING_PROFILES_ACTIVE=test  # Set the active Spring profile
+    depends_on:
+      - gl

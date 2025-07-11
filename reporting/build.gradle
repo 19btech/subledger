@@ -3,7 +3,7 @@ plugins {
 	id 'maven-publish'
 	id 'org.springframework.boot' version '3.4.2'
 	id 'io.spring.dependency-management' version '1.1.7'
-	id 'com.bmuschko.docker-java-application' version '8.1.0'
+	id 'com.bmuschko.docker-java-application' version '9.3.4'
 }
 
 group = 'com.fyntrac'
@@ -82,4 +82,52 @@ bootJar {
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+docker {
+	url = 'unix:///run/docker.sock'
+
+	javaApplication {
+		baseImage = 'openjdk:21-slim'
+		mainClassName = 'com.fyntrac.reporting.ReportingApplication' // Corrected property name
+		ports = [9191] // Specify any ports your application uses
+
+		images = ["ghcr.io/19btech/fyntrac/docker/reporting:${project.version}"]
+	}
+}
+
+tasks.register('pushDockerImage') {
+	dependsOn dockerBuildImage
+
+	doLast {
+		def tag = project.version.toString()
+		def imageName = "ghcr.io/19btech/fyntrac/docker/reporting:${tag}"
+
+		// Docker login using GIT_USER and GIT_KEY
+		def gitUser = System.getenv("GIT_USER")
+		def gitKey = System.getenv("GIT_KEY")
+
+		if (!gitUser || !gitKey) {
+			throw new GradleException("GIT_USER or GIT_KEY environment variables not set")
+		}
+
+		def loginProcess = new ProcessBuilder("sh", "-c", "echo ${gitKey} | docker login ghcr.io -u ${gitUser} --password-stdin")
+				.redirectErrorStream(true)
+				.start()
+
+		loginProcess.inputStream.eachLine { println it }
+		if (loginProcess.waitFor() != 0) {
+			throw new GradleException("Docker login to GitHub failed")
+		}
+
+		// Push the image
+		def pushProcess = new ProcessBuilder("docker", "push", imageName)
+				.redirectErrorStream(true)
+				.start()
+
+		pushProcess.inputStream.eachLine { println it }
+		if (pushProcess.waitFor() != 0) {
+			throw new GradleException("Failed to push Docker image with tag: ${tag}")
+		}
+	}
 }

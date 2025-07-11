@@ -3,7 +3,7 @@ plugins {
 	id 'maven-publish'
 	id 'org.springframework.boot' version '3.3.4'
 	id 'io.spring.dependency-management' version '1.1.6'
-	id 'com.bmuschko.docker-java-application' version '8.1.0'
+	id 'com.bmuschko.docker-java-application' version '9.3.4'
 }
 
 group = 'com.reserv'
@@ -47,12 +47,19 @@ publishing {
 }
 
 docker {
+	url = 'unix:///run/docker.sock'
+
 	javaApplication {
-		baseImage = 'openjdk:21-jdk-alpine'
-		mainClassName = 'com.reserv.dataloader.DataloaderApplication' // Corrected property name
-		ports = [8089] // Specify any ports your application uses
+		baseImage = 'openjdk:21-slim'
+		mainClassName = 'com.reserv.dataloader.DataloaderApplication'
+		ports = [8089]
+
+		images = ["ghcr.io/19btech/fyntrac/docker/dataloader:${project.version}"]
 	}
 }
+
+
+
 
 repositories {
 	mavenCentral()  // Central Maven repository
@@ -111,11 +118,38 @@ tasks.named('test') {
 }
 
 tasks.register('pushDockerImage') {
-	dependsOn dockerBuildImage // Ensure the image is built before pushing
+	dependsOn dockerBuildImage
+
 	doLast {
-		def imageName = 'fyntrac/dataloader:0.0.1-snapshot'
-		def processBuilder = new ProcessBuilder('docker', 'push', imageName)
-		processBuilder.redirectErrorStream(true) // Redirect error stream to output stream
-		def process = processBuilder.start()
+		def tag = project.version.toString()
+		def imageName = "ghcr.io/19btech/fyntrac/docker/dataloader:${tag}"
+
+		// Docker login using GIT_USER and GIT_KEY
+		def gitUser = System.getenv("GIT_USER")
+		def gitKey = System.getenv("GIT_KEY")
+
+		if (!gitUser || !gitKey) {
+			throw new GradleException("GIT_USER or GIT_KEY environment variables not set")
+		}
+
+		def loginProcess = new ProcessBuilder("sh", "-c", "echo ${gitKey} | docker login ghcr.io -u ${gitUser} --password-stdin")
+				.redirectErrorStream(true)
+				.start()
+
+		loginProcess.inputStream.eachLine { println it }
+		if (loginProcess.waitFor() != 0) {
+			throw new GradleException("Docker login to GitHub failed")
+		}
+
+		// Push the image
+		def pushProcess = new ProcessBuilder("docker", "push", imageName)
+				.redirectErrorStream(true)
+				.start()
+
+		pushProcess.inputStream.eachLine { println it }
+		if (pushProcess.waitFor() != 0) {
+			throw new GradleException("Failed to push Docker image with tag: ${tag}")
+		}
 	}
 }
+
