@@ -4,10 +4,10 @@ services:
     container_name: mongodb
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: R3s3rv#313
+      MONGO_INITDB_ROOT_PASSWORD: "R3s3rv#313"
       MONGO_INITDB_DATABASE: master
     volumes:
-      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     ports:
       - "27017:27017"
 
@@ -20,9 +20,9 @@ services:
   pulsar:
     image: apachepulsar/pulsar:latest
     container_name: pulsar
-    command: bin/pulsar standalone
+    command: ["bin/pulsar", "standalone"]
     environment:
-      PULSAR_MEM: " -Xms512m -Xmx512m -XX:MaxDirectMemorySize=1g"
+      PULSAR_MEM: "-Xms512m -Xmx512m -XX:MaxDirectMemorySize=1g"
     ports:
       - "6650:6650"
       - "8080:8080"
@@ -34,6 +34,7 @@ services:
     depends_on:
       - mongodb
       - memcached
+
   pulsar-manager:
     image: apachepulsar/pulsar-manager:v0.2.0
     container_name: pulsar-manager
@@ -43,57 +44,9 @@ services:
     depends_on:
       - pulsar
     environment:
-      SPRING_CONFIGURATION_FILE: /pulsar-manager/pulsar-manager/application.properties
+      SPRING_CONFIGURATION_FILE: "/pulsar-manager/pulsar-manager/application.properties"
     networks:
       - pulsar
-
-  dataloader:
-    image: ghcr.io/19btech/fyntrac/docker/dataloader:latest
-    container_name: fyntrac-dataloader
-    working_dir: /dataloader
-    ports:
-      - "8089:8089"
-    entrypoint: ["java", "-cp", "/app/resources:/app/classes:/app/libs/*", "com.reserv.dataloader.DataloaderApplication"]
-    environment:
-      - SPRING_PROFILES_ACTIVE=test
-    depends_on:
-      - pulsar
-
-  model:
-    image: ghcr.io/19btech/fyntrac/docker/model:latest
-    container_name: fyntrac-model
-    working_dir: /model
-    ports:
-      - "8089:8089"
-    entrypoint: ["java", "-cp", "/app/resources:/app/classes:/app/libs/*", "com.fyntrac.model.ModelApplication"]
-    environment:
-      - SPRING_PROFILES_ACTIVE=test
-    depends_on:
-      - dataloader
-
-  gl:
-    image: ghcr.io/19btech/fyntrac/docker/gl:latest
-    container_name: fyntrac-gl
-    working_dir: /model
-    ports:
-      - "8089:8089"
-    entrypoint: ["java", "-cp", "/app/resources:/app/classes:/app/libs/*", "com.fyntrac.gl.GlApplication"]
-    environment:
-      - SPRING_PROFILES_ACTIVE=test
-    depends_on:
-      - model
-
-  reporting:
-    image: ghcr.io/19btech/fyntrac/docker/reporting:latest
-    container_name: fyntrac-reporting
-    working_dir: /model
-    ports:
-      - "8089:8089"
-    entrypoint: ["java", "-cp", "/app/resources:/app/classes:/app/libs/*", "com.fyntrac.reporting.ReportingApplication"]
-    environment:
-      - SPRING_PROFILES_ACTIVE=test
-    depends_on:
-      - gl
 
 networks:
   pulsar:
@@ -101,3 +54,4 @@ networks:
 
 volumes:
   pulsar-data:
+
