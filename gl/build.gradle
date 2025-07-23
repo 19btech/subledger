@@ -1,7 +1,7 @@
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '3.3.4'
-	id 'io.spring.dependency-management' version '1.1.6'
+	id 'org.springframework.boot' version '3.4.2'
+	id 'io.spring.dependency-management' version '1.1.7'
 	id 'maven-publish'
 	id 'com.bmuschko.docker-java-application' version '9.3.4'
 }
@@ -9,8 +9,13 @@ plugins {
 group = 'com.fyntrac'
 version = '0.0.1-SNAPSHOT'
 
-def gituser = System.getenv('GIT_USER')  // Your GitHub username
-def gittoken = System.getenv('GIT_KEY') // Ensure you set this in your environment variables for security
+ext {
+	projectname = 'gl'
+	pulsarVersion = '3.3.4'
+	gituser = System.getenv('GIT_USER')
+	gittoken = System.getenv('GIT_KEY')
+}
+
 
 java {
 	toolchain {
@@ -24,6 +29,13 @@ configurations {
 	}
 }
 
+configurations.configureEach {
+	resolutionStrategy.eachDependency {
+		if (it.requested.group == 'org.apache.pulsar') {
+			it.useVersion pulsarVersion
+		}
+	}
+}
 publishing {
 	publications {
 		mavenJava(MavenPublication) {
@@ -59,8 +71,8 @@ repositories {
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-pulsar'
-	implementation 'org.apache.pulsar:pulsar-client-admin:3.2.0'
-	implementation 'org.apache.pulsar:pulsar-common:3.2.0'
+	implementation "org.apache.pulsar:pulsar-client-admin:${pulsarVersion}"
+	implementation "org.apache.pulsar:pulsar-common:${pulsarVersion}"
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
@@ -72,6 +84,10 @@ dependencies {
 	testImplementation 'org.junit.jupiter:junit-jupiter-api'  // Explicit declaration
 	testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'   // Explicit declaration
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+bootJar {
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 tasks.named('test') {

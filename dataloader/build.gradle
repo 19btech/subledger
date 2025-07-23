@@ -1,17 +1,20 @@
 plugins {
 	id 'java'
+	id 'org.springframework.boot' version '3.4.2'
+	id 'io.spring.dependency-management' version '1.1.7'
 	id 'maven-publish'
-	id 'org.springframework.boot' version '3.3.4'
-	id 'io.spring.dependency-management' version '1.1.6'
 	id 'com.bmuschko.docker-java-application' version '9.3.4'
 }
 
 group = 'com.reserv'
 version = '0.0.1-SNAPSHOT'
-def projectname = 'dataloader'
 
-def gituser = System.getenv('GIT_USER')  // Your GitHub username
-def gittoken = System.getenv('GIT_KEY') // Ensure you set this in your environment variables for security
+ext {
+	projectname = 'dataloader'
+	pulsarVersion = '3.3.4'
+	gituser = System.getenv('GIT_USER')
+	gittoken = System.getenv('GIT_KEY')
+}
 
 
 java {
@@ -23,6 +26,14 @@ java {
 configurations {
 	compileOnly {
 		extendsFrom annotationProcessor
+	}
+}
+
+configurations.configureEach {
+	resolutionStrategy.eachDependency {
+		if (it.requested.group == 'org.apache.pulsar') {
+			it.useVersion pulsarVersion
+		}
 	}
 }
 
@@ -78,8 +89,8 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-pulsar'
-	implementation 'org.apache.pulsar:pulsar-client-admin:3.2.0'
-	implementation 'org.apache.pulsar:pulsar-common:3.2.0'
+	implementation "org.apache.pulsar:pulsar-client-admin:${pulsarVersion}"
+	implementation "org.apache.pulsar:pulsar-common:${pulsarVersion}"
 	implementation 'com.fyntrac:commons:0.0.1-SNAPSHOT'
 	implementation 'org.apache.poi:poi:5.4.1'
 	// implementation 'org.apache.poi:poi-ooxml:5.3.0'
