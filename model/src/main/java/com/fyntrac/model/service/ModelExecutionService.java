@@ -385,12 +385,11 @@ public class ModelExecutionService {
                         inputAttr.getAttributes()
                 );
 
-                // Mark existing attribute as ended
-                existingOpenAttr.setEndDate(executionDate);
-
                 // Add both old (closed) and new (updated) to the list
                 newInstrumentAttributes.add(existingOpenAttr);
                 newInstrumentAttributes.add(newAttr);
+                // Mark existing attribute as ended
+                existingOpenAttr.setEndDate(newAttr.getEffectiveDate());
             } else {
                 log.warn("No open InstrumentAttribute found for instrumentId={} and attributeId={}",
                         inputAttr.getInstrumentId(), inputAttr.getAttributeId());

@@ -7,7 +7,9 @@ import org.springframework.batch.item.ItemProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.HashMap;
@@ -98,8 +100,9 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
 
             // Try date format
             try {
-                Date parsedDate = DateUtil.parseDate(trimmed);
-                return parsedDate;
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
+                LocalDate localDate = LocalDate.parse(trimmed, formatter);
+                return Date.from(localDate.atStartOfDay(ZoneOffset.UTC).toInstant());
             } catch (Exception ignored) {}
 
             // Default to string
