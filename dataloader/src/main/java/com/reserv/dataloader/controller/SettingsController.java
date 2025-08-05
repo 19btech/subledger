@@ -1,5 +1,6 @@
 package com.reserv.dataloader.controller;
 
+import com.fyntrac.common.entity.DashboardConfiguration;
 import com.fyntrac.common.entity.Settings;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,7 +52,7 @@ public class SettingsController {
     }
 
     @GetMapping("/get/settings")
-    public ResponseEntity<Settings> getAllTransactions() {
+    public ResponseEntity<Settings> getSettings() {
         try {
             Settings settings = settingsService.fetch();
             return new ResponseEntity<>(settings, HttpStatus.OK);
@@ -95,6 +96,17 @@ public class SettingsController {
             return new ResponseEntity<>(Boolean.TRUE, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes
+            log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @PostMapping("/dashboard-configuration/save")
+    public ResponseEntity<DashboardConfiguration> saveDashboardConfiguration(@RequestBody DashboardConfiguration dc) {
+        try{
+            DashboardConfiguration dashboardConfiguration = this.settingsService.saveDashboardConfiguration(dc);
+            return new ResponseEntity<>(dashboardConfiguration, HttpStatus.OK);
+        }catch (Exception e){
             log.error(e.getLocalizedMessage());
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }

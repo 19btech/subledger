@@ -1,8 +1,10 @@
 package com.fyntrac.common.service;
 
 import com.fyntrac.common.entity.AccountingPeriod;
+import com.fyntrac.common.entity.DashboardConfiguration;
 import com.fyntrac.common.entity.Settings;
 import com.fyntrac.common.utils.DateUtil;
+import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -54,6 +56,23 @@ public class SettingsService {
             return s;
         }
     }
+
+    public DashboardConfiguration saveDashboardConfiguration(DashboardConfiguration dc) {
+        try {
+            Settings settings = this.fetch();
+            settings.setDashboardConfiguration(dc);
+            this.dataService.save(settings);
+            return settings.getDashboardConfiguration();
+        } catch (Throwable t) {
+            // You can replace this with a proper logger if available
+            log.error("Failed to save DashboardConfiguration: " + StringUtil.getStackTrace(t));
+            t.printStackTrace();
+
+            // Optionally, rethrow or return a default/failure object
+            throw new RuntimeException("Unable to save DashboardConfiguration", t);
+        }
+    }
+
 
     public Settings fetch() {
         List<Settings> settingsList = dataService.fetchAllData(Settings.class);

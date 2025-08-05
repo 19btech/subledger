@@ -48,6 +48,14 @@ public class StringUtil {
         return sw.toString(); // Convert the StringWriter to a string
     }
 
+    public static String getStackTrace(Throwable t) {
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        t.printStackTrace(pw); // Print the stack trace to the PrintWriter
+        return sw.toString(); // Convert the StringWriter to a string
+    }
+
+
     public static String toProperString(String input) {
         if (input == null || input.isEmpty()) {
             return ""; // Return an empty string if the input is null or empty
