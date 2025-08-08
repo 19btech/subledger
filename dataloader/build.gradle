@@ -7,7 +7,7 @@ plugins {
 }
 
 group = 'com.reserv'
-version = '0.0.1-SNAPSHOT'
+version = '0.0.1-snapshot'
 
 ext {
 	projectname = 'dataloader'
@@ -57,9 +57,10 @@ publishing {
 	}
 }
 
-docker {
-	url = 'unix:///run/docker.sock'
 
+docker {
+	// url = 'unix:///run/docker.sock'
+    url = 'unix:///var/run/docker.sock'
 	javaApplication {
 		baseImage = 'openjdk:21-slim'
 		mainClassName = 'com.reserv.dataloader.DataloaderApplication'

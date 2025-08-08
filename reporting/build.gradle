@@ -7,7 +7,7 @@ plugins {
 }
 
 group = 'com.fyntrac'
-version = '0.0.1-SNAPSHOT'
+version = '0.0.1-snapshot'
 
 ext {
     projectname = 'reporting'
@@ -87,8 +87,8 @@ tasks.named('test') {
 }
 
 docker {
-	url = 'unix:///run/docker.sock'
-
+	// url = 'unix:///run/docker.sock'
+    url = 'unix:///var/run/docker.sock'
 	javaApplication {
 		baseImage = 'openjdk:21-slim'
 		mainClassName = 'com.fyntrac.reporting.ReportingApplication' // Corrected property name
