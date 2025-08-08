@@ -25,6 +25,25 @@ public class StringUtil {
         return camelCase.toString();
     }
 
+    public static String toTitleCase(String input) {
+        if (input == null || input.isBlank()) {
+            return input;
+        }
+
+        String[] words = input.trim().toLowerCase().split("\\s+");
+        StringBuilder titleCase = new StringBuilder();
+
+        for (String word : words) {
+            if (!word.isEmpty()) {
+                titleCase.append(Character.toUpperCase(word.charAt(0)))
+                        .append(word.substring(1))
+                        .append(" ");
+            }
+        }
+
+        return titleCase.toString().trim();
+    }
+
     public static int parseBoolean(String value) {
         return ("true".equalsIgnoreCase(value) ||
                 "1".equals(value) ||

@@ -25,6 +25,7 @@ public class DashboardConfiguration implements Serializable {
     private String widgetOneMetric;
     private String widgetTwoMetric;
     private String widgetThreeMetric;
+    private String widgetFourMetric;
     private String trendAnalysisGraphMetric;
     private String[] activityGraphMetrics;
 
@@ -35,6 +36,7 @@ public class DashboardConfiguration implements Serializable {
                 "\"widgetOneMetric\": \"" + widgetOneMetric + "\"," +
                 "\"widgetTwoMetric\": \"" + widgetTwoMetric + "\"," +
                 "\"widgetThreeMetric\": \"" + widgetThreeMetric + "\"," +
+                "\"widgetFourMetric\": \"" + widgetFourMetric + "\"," +
                 "\"trendAnalysisGraphMetric\": \"" + trendAnalysisGraphMetric + "\"," +
                 "\"activityGraphMetrics\": " + Arrays.toString(activityGraphMetrics) +
                 "}";

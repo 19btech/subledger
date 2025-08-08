@@ -22,7 +22,7 @@ public class JournalEntryReportController {
     @GetMapping("/get/attributes")
     public ResponseEntity<List<Records.DocumentAttribute>> getReportAttribute() {
         try {
-            List<Records.DocumentAttribute> reportAttributes = this.journalEntryReportingService.getReportAttributes();
+            List<Records.DocumentAttribute> reportAttributes = this.journalEntryReportingService.getReportAttributes("GeneralLedgerEnteryStage");
             return new ResponseEntity<>(reportAttributes, HttpStatus.OK);
         } catch (Exception e) {
         // Log the exception for debugging purposes

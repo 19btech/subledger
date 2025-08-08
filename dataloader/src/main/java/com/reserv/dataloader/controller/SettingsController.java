@@ -2,6 +2,7 @@ package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.entity.DashboardConfiguration;
 import com.fyntrac.common.entity.Settings;
+import com.fyntrac.common.enums.Currency;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -10,7 +11,9 @@ import org.springframework.web.bind.annotation.*;
 import com.fyntrac.common.service.SettingsService;
 
 import java.text.ParseException;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/dataloader/setting")
@@ -63,6 +66,36 @@ public class SettingsController {
         }
     }
 
+    @GetMapping("/get/currencies")
+    public ResponseEntity<List<String>> getCurrencies() {
+        try {
+            List<String> currencyList = Arrays.stream(Currency.values())
+                    .map(Currency::getCode)
+                    .sorted()
+                    .toList();
+            return new ResponseEntity<>(currencyList, HttpStatus.OK);
+        } catch (Exception e) {
+            // Log the exception for debugging purposes
+            log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @PostMapping("/save/currency")
+    public ResponseEntity saveCurrency(@RequestBody String currency) {
+        try {
+            String cleanCode = currency.replaceAll("^\"|\"$", "");
+            if(cleanCode != null && !cleanCode.isEmpty()){
+                settingsService.saveCurrency(cleanCode);
+            }
+            return new ResponseEntity(HttpStatus.OK);
+        } catch (Exception e) {
+            // Log the exception for debugging purposes
+            log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
     @GetMapping("/get/closed/accounting-periods")
     public ResponseEntity<Collection<String>> getClosedAccountingPeriods() {
         try {
@@ -102,10 +135,10 @@ public class SettingsController {
     }
 
     @PostMapping("/dashboard-configuration/save")
-    public ResponseEntity<DashboardConfiguration> saveDashboardConfiguration(@RequestBody DashboardConfiguration dc) {
+    public ResponseEntity<Boolean> saveDashboardConfiguration(@RequestBody DashboardConfiguration dc) {
         try{
             DashboardConfiguration dashboardConfiguration = this.settingsService.saveDashboardConfiguration(dc);
-            return new ResponseEntity<>(dashboardConfiguration, HttpStatus.OK);
+            return new ResponseEntity<>(Boolean.TRUE,HttpStatus.OK);
         }catch (Exception e){
             log.error(e.getLocalizedMessage());
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);

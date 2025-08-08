@@ -1,5 +1,6 @@
 package com.fyntrac.common.entity;
 
+import com.fyntrac.common.enums.Currency;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -23,4 +24,5 @@ public class Settings {
     private Date reportingPeriod;
     private int restatementMode;
     private DashboardConfiguration dashboardConfiguration;
+    private Currency currency;
 }

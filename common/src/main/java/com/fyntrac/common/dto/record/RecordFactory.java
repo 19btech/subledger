@@ -339,4 +339,19 @@ public class RecordFactory {
 
     }
 
+    public static Records.TrendAnalysisRecord createTrendAnalysisRecord(String metricName, String[] accountingPeriods, BigDecimal[] endingBalances) {
+        return createRecord(() -> new Records.TrendAnalysisRecord(metricName, accountingPeriods, endingBalances));
+    }
+
+    public static Records.RankedMetricRecord createRankedMetricRecord(int rank, String metricName, BigDecimal balance) {
+        return createRecord(()-> new Records.RankedMetricRecord(rank,metricName,balance));
+    }
+
+    public static Records.MonthOverMonthActivityRecord createMonthOverMonthActivityRecord(Integer accountingPeriodId, String metricName, BigDecimal activityAmount) {
+        return createRecord(()-> new Records.MonthOverMonthActivityRecord(accountingPeriodId, metricName, activityAmount));
+    }
+
+    public static Records.MonthOverMonthMetricActivityRecord createMonthOverMonthMetricActivityRecord(List<Map<String, String>> monthOverMonthSeries, List<Map<String, Object>> momData) {
+        return createRecord(()-> new Records.MonthOverMonthMetricActivityRecord(monthOverMonthSeries, momData));
+    }
 }

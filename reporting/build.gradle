@@ -8,10 +8,12 @@ plugins {
 
 group = 'com.fyntrac'
 version = '0.0.1-SNAPSHOT'
-def projectname = 'reporting'
 
-def gituser = System.getenv('GIT_USER')  // Your GitHub username
-def gittoken = System.getenv('GIT_KEY') // Ensure you set this in your environment variables for security
+ext {
+    projectname = 'reporting'
+    gituser = System.getenv('GIT_USER') ?: project.findProperty("GIT_USER")
+    gittoken = System.getenv('GIT_KEY') ?: project.findProperty("GIT_KEY")
+}
 
 
 java {
@@ -55,14 +57,14 @@ docker {
 }
 
 repositories {
-	mavenCentral()  // Central Maven repository
-	maven {
-		url = uri("https://maven.pkg.github.com/${gituser}/subledger")  // Use an environment variable for username
-		credentials {
-			username = gituser  // Use the variable for username
-			password = gittoken  // Use the variable for token
-		}
-	}
+    mavenCentral()  // Central Maven repository
+    maven {
+        url = uri("https://maven.pkg.github.com/${gituser}/subledger")  // Use an environment variable for username
+        credentials {
+            username = gituser  // Use the variable for username
+            password = gittoken  // Use the variable for token
+        }
+    }
 }
 
 dependencies {

@@ -225,4 +225,19 @@ public class Records {
 
     }
 
+    public record TrendAnalysisRecord(String metricName, String[] accountingPeriods, BigDecimal[] endingBalances) implements Serializable {
+        private static final long serialVersionUID = 9154995883257602702L;
+    }
+
+    public record RankedMetricRecord(int rank, String metricName, BigDecimal balance) implements Serializable {
+        private static final long serialVersionUID = 605044639104245053L;
+    }
+
+    public record MonthOverMonthActivityRecord(Integer accountingPeriodId, String metricName, BigDecimal activityAmount) implements Serializable {
+        private static final long serialVersionUID = -5096405985388460563L;
+    }
+
+    public record MonthOverMonthMetricActivityRecord(List<Map<String, String>> monthOverMonthSeries, List<Map<String, Object>> momData) implements Serializable {
+        private static final long serialVersionUID = -4585296236786537726L;
+    }
 }

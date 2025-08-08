@@ -31,6 +31,7 @@ public class AggregationController {
     @GetMapping("/get/all")
     public ResponseEntity<Collection<Aggregation>> getAllAggregates() {
         try {
+            Records.TrendAnalysisRecord text;
             Collection<Aggregation> transactions = this.aggregationService.fetchAll();
             return new ResponseEntity<>(transactions, HttpStatus.OK);
         } catch (Exception e) {

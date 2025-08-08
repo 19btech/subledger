@@ -3,6 +3,7 @@ package com.fyntrac.common.service;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.DashboardConfiguration;
 import com.fyntrac.common.entity.Settings;
+import com.fyntrac.common.enums.Currency;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -108,5 +109,16 @@ public class SettingsService {
 
     public void refreshSchema() {
         dataService.truncateDatabase();
+    }
+
+    public Settings saveCurrency(String code) {
+        Settings s = fetch();
+        if(s != null && code !=null) {
+            Currency currency = Currency.fromCode(code);
+            s.setCurrency(currency);
+            dataService.save(s);
+
+        }
+        return s;
     }
 }
