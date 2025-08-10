@@ -7,7 +7,7 @@ plugins {
 }
 
 group = 'com.fyntrac'
-version = '0.0.1-snapshot'
+version = '0.0.2-SNAPSHOT'
 
 ext {
     projectname = 'reporting'
@@ -48,13 +48,6 @@ publishing {
 	}
 }
 
-docker {
-	javaApplication {
-		baseImage = 'openjdk:21-jdk-alpine'
-		mainClassName = 'com.fyntrac.reporting.ReportingApplication' // Corrected property name
-		ports = [9494] // Specify any ports your application uses
-	}
-}
 
 repositories {
     mavenCentral()  // Central Maven repository
@@ -70,7 +63,7 @@ repositories {
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
-	implementation 'com.fyntrac:commons:0.0.1-SNAPSHOT'
+    implementation "com.fyntrac:commons:${project.version}"
 	implementation 'net.spy:spymemcached:2.12.3'
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
@@ -92,7 +85,7 @@ docker {
 	javaApplication {
 		baseImage = 'openjdk:21-slim'
 		mainClassName = 'com.fyntrac.reporting.ReportingApplication' // Corrected property name
-		ports = [9191] // Specify any ports your application uses
+		ports = [8484] // Specify any ports your application uses
 
 		images = ["ghcr.io/19btech/fyntrac/docker/reporting:${project.version}"]
 	}

@@ -7,7 +7,7 @@ plugins {
 }
 
 group = 'com.fyntrac'
-version = '0.0.1-snapshot'
+version = '0.0.2-SNAPSHOT'
 
 ext {
 	projectname = 'gl'
@@ -77,7 +77,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'net.spy:spymemcached:2.12.3'
-	implementation 'com.fyntrac:commons:0.0.1-SNAPSHOT'
+    implementation "com.fyntrac:commons:${project.version}"
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
@@ -101,7 +101,7 @@ docker {
 	javaApplication {
 		baseImage = 'openjdk:21-slim'
 		mainClassName = 'com.fyntrac.gl.GlApplication' // Corrected property name
-		ports = [9191] // Specify any ports your application uses
+		ports = [8083] // Specify any ports your application uses
 
 		images = ["ghcr.io/19btech/fyntrac/docker/gl:${project.version}"]
 	}

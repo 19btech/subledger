@@ -7,7 +7,7 @@ plugins {
 }
 
 group = 'com.fyntrac'
-version = '0.0.1-SNAPSHOT'
+version = '0.0.2-SNAPSHOT'
 
 ext {
 	projectname = 'common'

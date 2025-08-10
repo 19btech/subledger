@@ -240,4 +240,46 @@ public class Records {
     public record MonthOverMonthMetricActivityRecord(List<Map<String, String>> monthOverMonthSeries, List<Map<String, Object>> momData) implements Serializable {
         private static final long serialVersionUID = -4585296236786537726L;
     }
+
+    public record FlatAttributeLevelLtdRecord(
+            @Field("_id")
+            String id,
+            String metricName,
+            String instrumentId,
+            String attributeId,
+            Integer accountingPeriodId,
+            Integer postingDate,
+            @Field("balance.activity") BigDecimal activity,
+            @Field("balance.beginningBalance") BigDecimal beginningBalance,
+            @Field("balance.endingBalance") BigDecimal endingBalance
+    )  implements Serializable {
+        private static final long serialVersionUID = -7010894295118952584L;
+    }
+
+    public record FlatInstrumentLevelLtdRecord(
+            @Field("_id")
+            String id,
+            String metricName,
+            String instrumentId,
+            Integer accountingPeriodId,
+            Integer postingDate,
+            @Field("balance.activity") BigDecimal activity,
+            @Field("balance.beginningBalance") BigDecimal beginningBalance,
+            @Field("balance.endingBalance") BigDecimal endingBalance
+    )  implements Serializable {
+        private static final long serialVersionUID = -7010894295118952584L;
+    }
+
+    public record FlatMetricLevelLtdRecord(
+            @Field("_id")
+            String id,
+            String metricName,
+            Integer accountingPeriodId,
+            Integer postingDate,
+            @Field("balance.activity") BigDecimal activity,
+            @Field("balance.beginningBalance") BigDecimal beginningBalance,
+            @Field("balance.endingBalance") BigDecimal endingBalance
+    )  implements Serializable {
+        private static final long serialVersionUID = -2108325930955107947L;
+    }
 }
