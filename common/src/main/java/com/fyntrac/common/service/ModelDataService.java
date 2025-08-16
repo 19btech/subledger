@@ -1,4 +1,4 @@
-package com.fyntrac.model.service;
+package com.fyntrac.common.service;
 
 import com.fyntrac.common.entity.Model;
 import com.fyntrac.common.entity.ModelFile;
@@ -27,9 +27,9 @@ public class ModelDataService {
 
     @Autowired
     public ModelDataService(TransactionService transactionService
-    , InstrumentAttributeService instrumentAttributeService
-    , DataService<Model> dataService
-    , DataService<ModelFile> modelFileDataService) {
+            , InstrumentAttributeService instrumentAttributeService
+            , DataService<Model> dataService
+            , DataService<ModelFile> modelFileDataService) {
         this.transactionService = transactionService;
         this.instrumentAttributeService = instrumentAttributeService;
         this.dataService = dataService;
@@ -65,3 +65,4 @@ public class ModelDataService {
     }
 
 }
+
