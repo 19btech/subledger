@@ -3,25 +3,29 @@ package com.fyntrac.model.service;
 import com.fyntrac.common.cache.collection.CacheList;
 import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.config.TenantContextHolder;
+import com.fyntrac.common.dto.record.RecordFactory;
+import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.*;
 import com.fyntrac.common.enums.ErrorCode;
 import com.fyntrac.common.enums.InstrumentAttributeVersionType;
 import com.fyntrac.common.enums.SequenceNames;
 import com.fyntrac.common.enums.Source;
+import com.fyntrac.common.model.ModelWorkflowContext;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.*;
 import com.fyntrac.common.utils.DateUtil;
-import com.fyntrac.model.exception.LoadExcelModelExecption;
+import com.fyntrac.common.utils.StringUtil;
+import com.fyntrac.common.exception.LoadExcelModelExecption;
 import com.fyntrac.model.pulsar.producer.AggregationMessageProducer;
 import com.fyntrac.model.pulsar.producer.GeneralLedgerMessageProducer;
-import com.fyntrac.model.workflow.ExcelModelExecutor;
-import com.fyntrac.model.workflow.ModelExecutionType;
-import com.fyntrac.model.workflow.ModelWorkflowContext;
-import com.fyntrac.common.dto.record.RecordFactory;
-import com.fyntrac.common.dto.record.Records;
-import com.fyntrac.common.utils.StringUtil;
+import com.fyntrac.common.utils.ExcelModelUtil;
+import com.fyntrac.common.enums.ModelExecutionType;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.springframework.stereotype.Service;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.math.BigDecimal;
 import java.text.ParseException;
 import java.time.LocalDate;
@@ -34,12 +38,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
-
-import com.fyntrac.model.utils.ExcelUtil;
-import org.apache.pulsar.shade.com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.tomcat.util.collections.CaseInsensitiveKeyMap;
-import org.springframework.stereotype.Service;
-
+import com.fyntrac.common.model.ExcelModelExecutor;
 @Service
 @Slf4j
 public class ModelExecutionService {
@@ -239,6 +238,83 @@ public class ModelExecutionService {
             transactionActivities.addAll(transactions);
         }
         return  transactionActivities;
+    }
+
+    public File generateDiagnostic(String tenantId,
+                                   Date executionDate,
+                                   int lastActivityPostingDate,
+                                   AccountingPeriod accountingPeriod,
+                                   String instrumentId,
+                                   Records.ModelRecord model) throws Throwable {
+
+        // Fetch instrument attributes
+        List<InstrumentAttribute> currentOpenInstrumentAttributes =
+                this.instrumentAttributeService.getOpenInstrumentAttributesByInstrumentId(instrumentId, tenantId);
+
+        List<Records.InstrumentAttributeModelRecord> currentOpenInstruments = new ArrayList<>();
+        for (InstrumentAttribute instrumentAttribute : currentOpenInstrumentAttributes) {
+            Records.InstrumentAttributeModelRecord record =
+                    RecordFactory.createInstrumentAttributeModelRecord(
+                            InstrumentAttributeVersionType.CURRENT_OPEN_VERSION,
+                            instrumentAttribute
+                    );
+            currentOpenInstruments.add(record);
+        }
+
+        // Build workflow context
+        ModelWorkflowContext context = ModelWorkflowContext.builder()
+                .currentInstrumentAttribute(currentOpenInstruments)
+                .executionType(com.fyntrac.common.enums.ModelExecutionType.CHAINED)
+                .accountingPeriod(accountingPeriod)
+                .executionDate(executionDate)
+                .instrumentId(instrumentId)
+                .tenantId(tenantId)
+                .lastActivityPostingDate(lastActivityPostingDate)
+                .excelModel(model)
+                .build();
+
+        // Generate workbook
+        Workbook workbook = this.excelModelExecutor.generateDiagnostic(context);
+
+        // Create output file
+        String fileName = "processed_output_" + instrumentId + ".xlsx";
+        File outputFile = new File(fileName);
+
+        // Save the file
+        try (FileOutputStream fos = new FileOutputStream(outputFile)) {
+            workbook.write(fos);
+        }
+
+        // Close the workbook explicitly
+        workbook.close();
+
+        // Return the saved file
+        return outputFile;
+    }
+
+
+    public Records.ModelOutputData processInstrument(String tenantId, Date executionDate,
+                                                                     int lastActivityPostingDate,
+                                                                     AccountingPeriod accountingPeriod,
+                                                                     String instrumentId,
+                                                                     Records.ModelRecord model) throws Throwable {
+        List<InstrumentAttribute> currentOpenInstrumentAttributes = this.instrumentAttributeService.getOpenInstrumentAttributesByInstrumentId(instrumentId, tenantId);
+        List<Records.InstrumentAttributeModelRecord> currentOpentInstruments = new ArrayList<>(0);
+        for(InstrumentAttribute instrumentAttribute :  currentOpenInstrumentAttributes) {
+            Records.InstrumentAttributeModelRecord instrumentAttributeModelRecord = RecordFactory.createInstrumentAttributeModelRecord(InstrumentAttributeVersionType.CURRENT_OPEN_VERSION,instrumentAttribute);
+            currentOpentInstruments.add(instrumentAttributeModelRecord);
+        }
+
+        ModelWorkflowContext context = ModelWorkflowContext.builder()
+                .currentInstrumentAttribute(currentOpentInstruments)
+                .executionType(ModelExecutionType.CHAINED)
+                .accountingPeriod(accountingPeriod)
+                .executionDate(executionDate)
+                .instrumentId(instrumentId)
+                .tenantId(tenantId)
+                .lastActivityPostingDate(lastActivityPostingDate)
+                .excelModel(model).build();
+        return this.excelModelExecutor.execute(context);
     }
 
     private void processInstrument(String tenantId, Date executionDate,
@@ -543,7 +619,7 @@ public class ModelExecutionService {
             try {
                 Records.ExcelModelRecord excelModel = RecordFactory.createExcelModelRecord(
                         modelRecord.model(),
-                        ExcelUtil.convertBinaryToWorkbook(modelRecord.modelFile().getFileData())
+                        ExcelModelUtil.convertBinaryToWorkbook(modelRecord.modelFile().getFileData())
                 );
                 excelModelsMap.put(priority++, excelModel);
             } catch (Exception e) {

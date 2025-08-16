@@ -354,4 +354,8 @@ public class RecordFactory {
     public static Records.MonthOverMonthMetricActivityRecord createMonthOverMonthMetricActivityRecord(List<Map<String, String>> monthOverMonthSeries, List<Map<String, Object>> momData) {
         return createRecord(()-> new Records.MonthOverMonthMetricActivityRecord(monthOverMonthSeries, momData));
     }
+
+    public static Records.DiagnosticReportRequestRecord createRiagnosticReportRequestRecord(String instrumentId, String modelId) {
+        return createRecord(()-> new Records.DiagnosticReportRequestRecord(instrumentId,modelId));
+    }
 }

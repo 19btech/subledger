@@ -1,17 +1,15 @@
-package com.fyntrac.model.workflow;
+package com.fyntrac.common.model;
 
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.ExecutionState;
-import com.fyntrac.common.entity.InstrumentAttribute;
 import lombok.Builder;
 import lombok.Data;
 
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-
+import com.fyntrac.common.enums.ModelExecutionType;
 @Data
 @Builder
 public class ModelWorkflowContext {

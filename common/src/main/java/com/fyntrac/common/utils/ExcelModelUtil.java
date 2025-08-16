@@ -1,26 +1,12 @@
-package com.fyntrac.model.utils;
+package com.fyntrac.common.utils;
 
 import com.fyntrac.common.enums.AccountingRules;
 import com.fyntrac.common.exception.ExcelFormulaCellException;
-import com.fyntrac.common.utils.NumberUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.bson.types.Binary;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.LineNumberReader;
-import java.io.UnsupportedEncodingException;
+import java.io.*;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,7 +26,7 @@ import java.util.zip.ZipInputStream;
 
 
 @Slf4j
-public class ExcelUtil {
+public class ExcelModelUtil {
 
 
     public  static File saveFileToTempFolder(String filePath, String fileName, byte[] fildData) throws Exception{
@@ -182,7 +168,7 @@ public class ExcelUtil {
                                 writer.append(cell.getBooleanCellValue() + "");
                                 break;
                             case NUMERIC:
-                                writer.append(((DateUtil.isCellDateFormatted(cell)) ? getDateValue(cell) : getNumericValue(cell)) + "");
+                                writer.append(((org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) ? getDateValue(cell) : getNumericValue(cell)) + "");
                                 break;
                             case STRING:
                                 writer.append("\"" + String.valueOf(cell.getStringCellValue()).toUpperCase()
@@ -243,7 +229,7 @@ public class ExcelUtil {
     }
 
     protected static void setFormulaCellValue(Cell cell, BufferedWriter data, FormulaEvaluator evaluator,
-                                            int cellIndex) throws Exception {
+                                              int cellIndex) throws Exception {
         try {
             CellValue cellValue = evaluator.evaluate(cell);
             switch (cellValue.getCellType()) {
@@ -252,7 +238,7 @@ public class ExcelUtil {
                     break;
                 case NUMERIC:
                     // Check if the numeric value is a date
-                    if (DateUtil.isCellDateFormatted(cell)) {
+                    if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
                         Date date = cell.getDateCellValue();
                         // Format the date as needed, e.g., "yyyy-MM-dd"
                         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
@@ -904,4 +890,3 @@ public class ExcelUtil {
         }
     }
 }
-

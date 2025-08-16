@@ -1,17 +1,13 @@
-package com.fyntrac.model.workflow;
+package com.fyntrac.common.model;
 
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.AccountingPeriod;
-import com.fyntrac.common.entity.InstrumentAttribute;
-import com.fyntrac.common.entity.TransactionActivity;
-import com.fyntrac.common.utils.StringUtil;
-import com.fyntrac.model.utils.ExcelUtil;
+import com.fyntrac.common.utils.ExcelModelUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.formula.eval.NotImplementedException;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.apache.pulsar.shade.com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -34,30 +30,67 @@ public class ExcelModelProcessor {
             // processExcel("", workbook, iTransactionData, iAggregationData, iInstrumentAttributeData);
         }
     }
-    public static Records.ModelOutputData processExcel(String intrumentId, List<Records.InstrumentAttributeModelRecord> instrumentAttribute
-                                    , Date executionDate
-                                    , AccountingPeriod accountingPeriod
-                                    , Workbook workbook
-                                    , List<Map<String, Object>> iTransactionData
-                                    , List<Map<String, Object>> iMetricData
-                                    , List<Map<String, Object>> iInstrumentAttributeData
-                                    , List<Map<String, Object>> iExecutionDate) throws IOException {
+
+    public static Records.ModelOutputData processExcel (String intrumentId, List<Records.InstrumentAttributeModelRecord> instrumentAttribute
+            , Date executionDate
+            , AccountingPeriod accountingPeriod
+            , Workbook workbook
+            , List<Map<String, Object>> iTransactionData
+            , List<Map<String, Object>> iMetricData
+            , List<Map<String, Object>> iInstrumentAttributeData
+            , List<Map<String, Object>> iExecutionDate
+            , boolean createModelOutputFile) throws IOException {
+
+        Workbook generatedWorkbook = generateOutput(intrumentId,
+                instrumentAttribute,
+                executionDate,
+                accountingPeriod,
+                workbook,
+                iTransactionData,
+                iMetricData,
+                iInstrumentAttributeData,
+                iExecutionDate);
 
         List<Map<String, Object>> oTransactionData = new ArrayList<>(0);
         List<Map<String, Object>> oInstrumentAttributeData = new ArrayList<>(0);
+
+        // Read Output Data
+        oTransactionData = readSheetData(generatedWorkbook, "o_transaction");
+        oInstrumentAttributeData = readSheetData(generatedWorkbook, "o_instrumentattribute");
+
+
+        if(createModelOutputFile) {
+            // Save the modified file
+            String fileName = "processed_output" + intrumentId + ".xlsx";
+            try (FileOutputStream fos = new FileOutputStream(fileName)) {
+                workbook.write(fos);
+            }
+        }
+
+        return RecordFactory.createModelOutputData(oTransactionData, oInstrumentAttributeData);
+    }
+    public static Workbook generateOutput(String intrumentId, List<Records.InstrumentAttributeModelRecord> instrumentAttribute
+            , Date executionDate
+            , AccountingPeriod accountingPeriod
+            , Workbook workbook
+            , List<Map<String, Object>> iTransactionData
+            , List<Map<String, Object>> iMetricData
+            , List<Map<String, Object>> iInstrumentAttributeData
+            , List<Map<String, Object>> iExecutionDate) throws IOException {
+
 
         if (workbook != null) {
 
             // Write Input Data
             // writeSheetData(workbook, "i_transaction", iTransactionData);
-            ExcelUtil.fillExcelSheetByAttributeIdAndTransactionTypeOrOrder(iTransactionData, workbook, "i_transaction");
+            ExcelModelUtil.fillExcelSheetByAttributeIdAndTransactionTypeOrOrder(iTransactionData, workbook, "i_transaction");
             // ExcelUtil.fillExcelWithTransactionData(workbook,iTransactionData,"i_transaction");
             // writeSheetData(workbook, "i_metric", iMetricData);
-            ExcelUtil.fillExcelSheetByAttributeIdAndMetricNameOrOrder(iMetricData, workbook, "i_metric");
+            ExcelModelUtil.fillExcelSheetByAttributeIdAndMetricNameOrOrder(iMetricData, workbook, "i_metric");
             //writeSheetData(workbook, "i_instrumentattribute", iInstrumentAttributeData);
-            ExcelUtil.fillExcelSheetByAttributeIdOrOrder(iInstrumentAttributeData, workbook, "i_instrumentattribute");
+            ExcelModelUtil.fillExcelSheetByAttributeIdOrOrder(iInstrumentAttributeData, workbook, "i_instrumentattribute");
             writeSheetData(workbook, "i_executiondate", iExecutionDate);
-              // Evaluate formulas (if applicable)
+            // Evaluate formulas (if applicable)
             FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
             try {
                 // First try bulk evaluation for better performance
@@ -98,24 +131,15 @@ public class ExcelModelProcessor {
                 // Handle other workbook-level evaluation errors
                 System.err.println("Error during workbook evaluation: " + e.getMessage());
             }
-            // Read Output Data
-            oTransactionData = readSheetData(workbook, "o_transaction");
-            oInstrumentAttributeData = readSheetData(workbook, "o_instrumentattribute");
-
-            // Save the modified file
-            String fileName = "processed_output" + intrumentId + ".xlsx";
-            try (FileOutputStream fos = new FileOutputStream(fileName)) {
-                workbook.write(fos);
-            }
-
             log.info("Processing completed successfully!");
         }
-        return RecordFactory.createModelOutputData(oTransactionData, oInstrumentAttributeData);
+
+        return workbook;
     }
 
     private static void writeSheetData(Workbook workbook, String sheetName, List<Map<String, Object>> data) throws IOException {
         // ExcelUtil.mapJsonToExcel(data, workbook, sheetName);
-        ExcelUtil.mapJsonToExcel(data, workbook, sheetName);
+        ExcelModelUtil.mapJsonToExcel(data, workbook, sheetName);
     }
 
     private static List<Map<String, Object>> readSheetData(Workbook workbook, String sheetName) {

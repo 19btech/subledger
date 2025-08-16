@@ -1,6 +1,7 @@
-package com.fyntrac.model.workflow;
+package com.fyntrac.common.enums;
 
 public enum ModelExecutionType {
     INDEPENDENT,
     CHAINED;
 }
+

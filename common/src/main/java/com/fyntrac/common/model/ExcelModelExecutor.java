@@ -1,4 +1,4 @@
-package com.fyntrac.model.workflow;
+package com.fyntrac.common.model;
 
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
@@ -12,10 +12,11 @@ import com.fyntrac.common.service.aggregation.InstrumentLevelAggregationService;
 import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.MongoDocumentConverter;
-import com.fyntrac.model.utils.ExcelUtil;
+import com.fyntrac.common.utils.ExcelModelUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -34,15 +35,17 @@ public class ExcelModelExecutor {
     private final ExcelFileService excelFileService;
     private final ExecutionStateService executionStateService;
     private final InstrumentReplayStateService instrumentReplayStateService;
+    @Value("${fyntrac.model.generate.model.output.file}")
+    boolean generateModelOutputFile;
 
     @Autowired
     public ExcelModelExecutor(ExcelFileService excelFileService,
                               TransactionActivityService transactionService
-                                , InstrumentAttributeService instrumentAttributeService
-                                , InstrumentLevelAggregationService instrumentLevelLtdService
-                               , AttributeLevelAggregationService attributeLevelLtdService
-                               , MetricLevelAggregationService metricLevelLtdService
-                              , ExecutionStateService executionStateService
+            , InstrumentAttributeService instrumentAttributeService
+            , InstrumentLevelAggregationService instrumentLevelLtdService
+            , AttributeLevelAggregationService attributeLevelLtdService
+            , MetricLevelAggregationService metricLevelLtdService
+            , ExecutionStateService executionStateService
             , InstrumentReplayStateService instrumentReplayStateService
     ) {
         this.excelFileService = excelFileService;
@@ -60,7 +63,7 @@ public class ExcelModelExecutor {
         // this.workbook = excelFileService.loadWorkbook(context.getExcelFilePath());
 
         // Example of how to call loadTransaction
-        Workbook workbook = ExcelUtil.convertBinaryToWorkbook(context.excelModel.modelFile().getFileData());
+        Workbook workbook = ExcelModelUtil.convertBinaryToWorkbook(context.excelModel.modelFile().getFileData());
 
         ExecutionState executionState = executionStateService.getExecutionState();
         if(executionState == null) {
@@ -79,25 +82,72 @@ public class ExcelModelExecutor {
         List<String> instrumentAttributeVersionTypes = this.excelFileService.readExcelSheet(workbook, this.excelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME);
 
         for(String versionType : instrumentAttributeVersionTypes) {
-                try {
-                    InstrumentAttributeVersionType iavt = InstrumentAttributeVersionType.valueOf(versionType.toUpperCase());
-                    if(iavt.equals(InstrumentAttributeVersionType.FIRST_VERSION)) {
-                        loadFirstInstrumentAttributes(context);
-                    }else if(iavt.equals(InstrumentAttributeVersionType.LAST_CLOSED_VERSION)) {
-                        loadLastInstrumentAttributes(context);
-                    }
-                    log.info("InstrumentAttribute verion type: " + iavt);
-                } catch (IllegalArgumentException e) {
-                    log.error("Invalid enum value: " + versionType);
-                    throw new InstrumentAttributeVersionTypeException("InstrumentAttribute verion type['" + versionType + "' not a valid version type in sheet ["+ this.excelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME +"], please correct model first then upload again");
+            try {
+                InstrumentAttributeVersionType iavt = InstrumentAttributeVersionType.valueOf(versionType.toUpperCase());
+                if(iavt.equals(InstrumentAttributeVersionType.FIRST_VERSION)) {
+                    loadFirstInstrumentAttributes(context);
+                }else if(iavt.equals(InstrumentAttributeVersionType.LAST_CLOSED_VERSION)) {
+                    loadLastInstrumentAttributes(context);
                 }
+                log.info("InstrumentAttribute verion type: " + iavt);
+            } catch (IllegalArgumentException e) {
+                log.error("Invalid enum value: " + versionType);
+                throw new InstrumentAttributeVersionTypeException("InstrumentAttribute verion type['" + versionType + "' not a valid version type in sheet ["+ this.excelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME +"], please correct model first then upload again");
+            }
 
         }
 
         addInstrumentAttribute(context);
         loadMetrics(context, workbook);
         // Pass the appropriate execution date
-        return ExcelModelProcessor.processExcel(context.getInstrumentId(), context.getCurrentInstrumentAttribute(), context.getExecutionDate(), context.getAccountingPeriod(), workbook, context.getITransactions(), context.getIMetrics(), context.getIInstrumentAttributes(), context.getIExecutionDate() );
+        Records.ModelOutputData outputData = ExcelModelProcessor.processExcel(context.getInstrumentId(), context.getCurrentInstrumentAttribute(), context.getExecutionDate(), context.getAccountingPeriod(), workbook, context.getITransactions(), context.getIMetrics(), context.getIInstrumentAttributes(), context.getIExecutionDate(), generateModelOutputFile );
+        workbook.close();
+        return  outputData;
+    }
+
+    public Workbook generateDiagnostic(ModelWorkflowContext context) throws Throwable {
+        // Load the workbook from the context or a file
+        // this.workbook = excelFileService.loadWorkbook(context.getExcelFilePath());
+
+        // Example of how to call loadTransaction
+        Workbook workbook = ExcelModelUtil.convertBinaryToWorkbook(context.excelModel.modelFile().getFileData());
+
+        ExecutionState executionState = executionStateService.getExecutionState();
+        if(executionState == null) {
+            executionState = ExecutionState.builder()
+                    .executionDate(0)
+                    .lastExecutionDate(0)
+                    .build();
+        }
+
+        context.setExecutionState(executionState);
+        context.setIInstrumentAttributes(new ArrayList<>(0));
+        loadTransactions(context, workbook);
+        loadExecutionDate(context, workbook);
+
+
+        List<String> instrumentAttributeVersionTypes = this.excelFileService.readExcelSheet(workbook, this.excelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME);
+
+        for(String versionType : instrumentAttributeVersionTypes) {
+            try {
+                InstrumentAttributeVersionType iavt = InstrumentAttributeVersionType.valueOf(versionType.toUpperCase());
+                if(iavt.equals(InstrumentAttributeVersionType.FIRST_VERSION)) {
+                    loadFirstInstrumentAttributes(context);
+                }else if(iavt.equals(InstrumentAttributeVersionType.LAST_CLOSED_VERSION)) {
+                    loadLastInstrumentAttributes(context);
+                }
+                log.info("InstrumentAttribute verion type: " + iavt);
+            } catch (IllegalArgumentException e) {
+                log.error("Invalid enum value: " + versionType);
+                throw new InstrumentAttributeVersionTypeException("InstrumentAttribute verion type['" + versionType + "' not a valid version type in sheet ["+ this.excelFileService.INSTRUMENT_ATTRIBUTE_SHEET_NAME +"], please correct model first then upload again");
+            }
+
+        }
+
+        addInstrumentAttribute(context);
+        loadMetrics(context, workbook);
+        // Pass the appropriate execution date
+        return ExcelModelProcessor.generateOutput(context.getInstrumentId(), context.getCurrentInstrumentAttribute(), context.getExecutionDate(), context.getAccountingPeriod(), workbook, context.getITransactions(), context.getIMetrics(), context.getIInstrumentAttributes(), context.getIExecutionDate());
     }
 
     private void addInstrumentAttribute(ModelWorkflowContext context) {
@@ -112,7 +162,7 @@ public class ExcelModelExecutor {
             List<TransactionActivity> transactionActivities =  this.transactionService.fetchTransactions(upperCaseTransactions,instrumentAttribute.instrumentId(), instrumentAttribute.attributeId(),  context.getExecutionDate());
             activityList.addAll(transactionActivities);
         }
-       return  activityList;
+        return  activityList;
     }
     private void  loadTransactions(ModelWorkflowContext context, Workbook workbook) throws Throwable {
         List<String> transactionList = this.excelFileService.readExcelSheet(workbook, this.excelFileService.TRANSACTION_SHEET_NAME);
@@ -174,9 +224,9 @@ public class ExcelModelExecutor {
             }
 
             InstrumentReplayState instrumentReplayState =  this.instrumentReplayStateService.getInstrumentReplayState(context.getInstrumentId(), intExecutionDate);
-           if(instrumentReplayState != null) {
-               replayDate = DateUtil.convertToDateFromYYYYMMDD(instrumentReplayState.getMinEffectiveDate());
-           }
+            if(instrumentReplayState != null) {
+                replayDate = DateUtil.convertToDateFromYYYYMMDD(instrumentReplayState.getMinEffectiveDate());
+            }
             Records.ExecutionDateRecord executionDateRecord = RecordFactory.createExcutionDateRecord(context.getExecutionDate(), lastExecutionDate, replayDate);
             iExecutionDate.add(MongoDocumentConverter.convertToMap(executionDateRecord));
             context.setIExecutionDate(iExecutionDate);
@@ -249,14 +299,14 @@ public class ExcelModelExecutor {
         int executionDate =  context.getLastActivityPostingDate();
 
         if(context.getExecutionState().getExecutionDate() >  executionDate) {
-           executionDate = context.getExecutionState().getExecutionDate();
+            executionDate = context.getExecutionState().getExecutionDate();
         }
         switch (aggregationLevel){
             case AggregationLevel.ATTRIBUTE -> {
-                    List<AttributeLevelLtd> ltds = getAttributeLevelLtdBalance(context, metrics, executionDate);
-                    for(AttributeLevelLtd ltd : ltds) {
-                        balances.add(RecordFactory.createMetricRecord(ltd));
-                    }
+                List<AttributeLevelLtd> ltds = getAttributeLevelLtdBalance(context, metrics, executionDate);
+                for(AttributeLevelLtd ltd : ltds) {
+                    balances.add(RecordFactory.createMetricRecord(ltd));
+                }
             }
             case AggregationLevel.INSTRUMENT -> {
                 List<InstrumentLevelLtd> ltds = this.getInstrumentIdLevelLtdBalance(context, metrics, executionDate);
@@ -287,7 +337,7 @@ public class ExcelModelExecutor {
     }
 
     private void execute(ModelWorkflowContext context, Workbook workbook) throws IOException {
-        ExcelModelProcessor.processExcel(context.getInstrumentId(), context.getCurrentInstrumentAttribute(), context.getExecutionDate(), context.getAccountingPeriod(), workbook, context.getITransactions(), context.getIMetrics(), context.getIInstrumentAttributes(), context.getIExecutionDate());
+        ExcelModelProcessor.processExcel(context.getInstrumentId(), context.getCurrentInstrumentAttribute(), context.getExecutionDate(), context.getAccountingPeriod(), workbook, context.getITransactions(), context.getIMetrics(), context.getIInstrumentAttributes(), context.getIExecutionDate(), generateModelOutputFile);
     }
 
     private void valuateModel() {

@@ -282,4 +282,8 @@ public class Records {
     )  implements Serializable {
         private static final long serialVersionUID = -2108325930955107947L;
     }
+
+    public record DiagnosticReportRequestRecord(String instrumentId, String modelId) implements Serializable {
+        private static final long serialVersionUID = 4708400430638644109L;
+    }
 }
