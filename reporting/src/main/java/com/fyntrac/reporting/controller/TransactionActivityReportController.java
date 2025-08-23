@@ -1,9 +1,7 @@
 package com.fyntrac.reporting.controller;
 
 import com.fyntrac.common.dto.record.Records;
-import com.fyntrac.common.entity.GeneralLedgerEnteryStage;
 import com.fyntrac.common.entity.TransactionActivity;
-import com.fyntrac.reporting.service.JournalEntryReportingService;
 import com.fyntrac.reporting.service.TransactionActivityReportingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

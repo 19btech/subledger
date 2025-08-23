@@ -128,7 +128,7 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
         return null;
     }
 
-    public List<TransactionActivity> fetchTransactions(List<String> transactionNames, String instrumentId, String attributeId, Date transactionDate ) {
+    public List<TransactionActivity> fetchTransactions(List<String> transactionNames, String instrumentId, String attributeId, Date transactionDate) {
         // Create the query
         Query query = new Query();
         query.addCriteria(Criteria.where("instrumentId").is(instrumentId));
@@ -141,6 +141,32 @@ public class TransactionActivityService extends CacheBasedService<TransactionAct
         return this.dataService.fetchData(query, TransactionActivity.class);
     }
 
+    public List<TransactionActivity> fetchTransactions(List<String> transactionNames, String instrumentId, String attributeId, Date transactionDate, String modelId ) {
+        // Create the query
+        Query query = new Query();
+        query.addCriteria(Criteria.where("instrumentId").is(instrumentId));
+        query.addCriteria(Criteria.where("attributeId").is(attributeId));
+        query.addCriteria(Criteria.where("transactionName").in(StringUtil.removeSpaces(transactionNames)));
+        query.addCriteria(Criteria.where("postingDate").is(DateUtil.dateInNumber(transactionDate)));// Use range
+        query.addCriteria(Criteria.where("sourceId").ne(modelId));// Use range
+        // Add sorting by effectiveDate in descending order
+        query.with(Sort.by(Sort.Order.desc("effectiveDate")));
+        // Execute the query
+        return this.dataService.fetchData(query, TransactionActivity.class);
+    }
+
+    public List<TransactionActivity> fetchTransactionsByModelId(String instrumentId, String attributeId, Date transactionDate, String modelId ) {
+        // Create the query
+        Query query = new Query();
+        query.addCriteria(Criteria.where("instrumentId").is(instrumentId));
+        query.addCriteria(Criteria.where("attributeId").is(attributeId));
+        query.addCriteria(Criteria.where("postingDate").is(DateUtil.dateInNumber(transactionDate)));// Use range
+        query.addCriteria(Criteria.where("sourceId").is(modelId));// Use range
+        // Add sorting by effectiveDate in descending order
+        query.with(Sort.by(Sort.Order.desc("effectiveDate")));
+        // Execute the query
+        return this.dataService.fetchData(query, TransactionActivity.class);
+    }
 
     public Map<String, Object> getReclassableAttributes(Map<String, Object> instrumentAttributes) {
         Map<String, Object> reclassAttributes = new HashMap<>(0);

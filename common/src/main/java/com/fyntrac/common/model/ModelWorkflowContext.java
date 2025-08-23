@@ -10,6 +10,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import com.fyntrac.common.enums.ModelExecutionType;
+import org.apache.poi.ss.usermodel.Workbook;
+
 @Data
 @Builder
 public class ModelWorkflowContext {
@@ -28,4 +30,5 @@ public class ModelWorkflowContext {
     private String instrumentId;
     private String tenantId;
     private int lastActivityPostingDate;
+    private Workbook workbook;
 }

@@ -13,6 +13,7 @@ import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.model.ModelWorkflowContext;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.*;
+import com.fyntrac.common.service.aggregation.CommonAggregationService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.StringUtil;
 import com.fyntrac.common.exception.LoadExcelModelExecption;
@@ -217,105 +218,6 @@ public class ModelExecutionService {
         }
     }
 
-    private Set<TransactionActivity> getTransactionActivities(
-            List<InstrumentAttribute> currentOpenInstrumentAttributes
-            , Records.ModelOutputData modelOutputData
-            , AccountingPeriod accountingPeriod
-            , Date executionDate
-            , Records.ModelRecord model
-    ) {
-        Set<TransactionActivity> transactionActivities = new HashSet<>(0);
-        for(InstrumentAttribute instrumentAttribute : currentOpenInstrumentAttributes) {
-
-            Set<TransactionActivity> transactions = transactionActivityService.generateTransactions(
-                    modelOutputData.transactionActivityList(),
-                    instrumentAttribute,
-                    accountingPeriod,
-                    executionDate,
-                    Source.MODEL,
-                    model.model().getId()
-            );
-            transactionActivities.addAll(transactions);
-        }
-        return  transactionActivities;
-    }
-
-    public File generateDiagnostic(String tenantId,
-                                   Date executionDate,
-                                   int lastActivityPostingDate,
-                                   AccountingPeriod accountingPeriod,
-                                   String instrumentId,
-                                   Records.ModelRecord model) throws Throwable {
-
-        // Fetch instrument attributes
-        List<InstrumentAttribute> currentOpenInstrumentAttributes =
-                this.instrumentAttributeService.getOpenInstrumentAttributesByInstrumentId(instrumentId, tenantId);
-
-        List<Records.InstrumentAttributeModelRecord> currentOpenInstruments = new ArrayList<>();
-        for (InstrumentAttribute instrumentAttribute : currentOpenInstrumentAttributes) {
-            Records.InstrumentAttributeModelRecord record =
-                    RecordFactory.createInstrumentAttributeModelRecord(
-                            InstrumentAttributeVersionType.CURRENT_OPEN_VERSION,
-                            instrumentAttribute
-                    );
-            currentOpenInstruments.add(record);
-        }
-
-        // Build workflow context
-        ModelWorkflowContext context = ModelWorkflowContext.builder()
-                .currentInstrumentAttribute(currentOpenInstruments)
-                .executionType(com.fyntrac.common.enums.ModelExecutionType.CHAINED)
-                .accountingPeriod(accountingPeriod)
-                .executionDate(executionDate)
-                .instrumentId(instrumentId)
-                .tenantId(tenantId)
-                .lastActivityPostingDate(lastActivityPostingDate)
-                .excelModel(model)
-                .build();
-
-        // Generate workbook
-        Workbook workbook = this.excelModelExecutor.generateDiagnostic(context);
-
-        // Create output file
-        String fileName = "processed_output_" + instrumentId + ".xlsx";
-        File outputFile = new File(fileName);
-
-        // Save the file
-        try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-            workbook.write(fos);
-        }
-
-        // Close the workbook explicitly
-        workbook.close();
-
-        // Return the saved file
-        return outputFile;
-    }
-
-
-    public Records.ModelOutputData processInstrument(String tenantId, Date executionDate,
-                                                                     int lastActivityPostingDate,
-                                                                     AccountingPeriod accountingPeriod,
-                                                                     String instrumentId,
-                                                                     Records.ModelRecord model) throws Throwable {
-        List<InstrumentAttribute> currentOpenInstrumentAttributes = this.instrumentAttributeService.getOpenInstrumentAttributesByInstrumentId(instrumentId, tenantId);
-        List<Records.InstrumentAttributeModelRecord> currentOpentInstruments = new ArrayList<>(0);
-        for(InstrumentAttribute instrumentAttribute :  currentOpenInstrumentAttributes) {
-            Records.InstrumentAttributeModelRecord instrumentAttributeModelRecord = RecordFactory.createInstrumentAttributeModelRecord(InstrumentAttributeVersionType.CURRENT_OPEN_VERSION,instrumentAttribute);
-            currentOpentInstruments.add(instrumentAttributeModelRecord);
-        }
-
-        ModelWorkflowContext context = ModelWorkflowContext.builder()
-                .currentInstrumentAttribute(currentOpentInstruments)
-                .executionType(ModelExecutionType.CHAINED)
-                .accountingPeriod(accountingPeriod)
-                .executionDate(executionDate)
-                .instrumentId(instrumentId)
-                .tenantId(tenantId)
-                .lastActivityPostingDate(lastActivityPostingDate)
-                .excelModel(model).build();
-        return this.excelModelExecutor.execute(context);
-    }
 
     private void processInstrument(String tenantId, Date executionDate,
                                    AccountingPeriod accountingPeriod
@@ -609,27 +511,4 @@ public class ModelExecutionService {
 
         return transactionActivities;
     }
-
-
-    public Map<Integer, Records.ExcelModelRecord> loadModels(List<Records.ModelRecord> activeModels) throws Exception {
-        Map<Integer, Records.ExcelModelRecord> excelModelsMap = new HashMap<>();
-        int priority = 1;
-
-        for (Records.ModelRecord modelRecord : activeModels) {
-            try {
-                Records.ExcelModelRecord excelModel = RecordFactory.createExcelModelRecord(
-                        modelRecord.model(),
-                        ExcelModelUtil.convertBinaryToWorkbook(modelRecord.modelFile().getFileData())
-                );
-                excelModelsMap.put(priority++, excelModel);
-            } catch (Exception e) {
-                log.error("Failed to load model: " + modelRecord, e);
-                throw new LoadExcelModelExecption("Failed to load model: [" + modelRecord + "]"
-                        +  StringUtil.getStackTrace(e));
-            }
-        }
-
-        return excelModelsMap;
-    }
-
 }

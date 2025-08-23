@@ -15,8 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.aggregation.Aggregation;
-import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.aggregation.*;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -49,6 +48,23 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
     public List<InstrumentAttribute> getLastOpenInstrumentAttributes(String instrumentId, String attributeId) {
         return instrumentAttributeRepository.findByAttributeIdAndInstrumentIdAndEndDateIsNull(attributeId, instrumentId);
     }
+
+    public InstrumentAttribute getLastOpenInstrumentAttributes(String instrumentId, String attributeId, Integer postingDate, String tenantId) {
+
+        Query query = new Query();
+        query.addCriteria(Criteria.where("instrumentId").is(instrumentId));
+        query.addCriteria(Criteria.where("attributeId").is(attributeId));
+        query.addCriteria(Criteria.where("postingDate").lt(postingDate));
+        // Sort by versionId descending to get the latest
+        query.with(Sort.by(Sort.Direction.DESC, "versionId"));
+
+        // Limit to 1 document
+        query.limit(1);
+
+        InstrumentAttribute instrumentAttribute = this.dataService.findOne(query, tenantId, InstrumentAttribute.class);
+        return instrumentAttribute;
+    }
+
 
     // Define a method in your service class
     public List<InstrumentAttribute> getOpenInstrumentAttributes(String attributeId, String instrumentId) {
@@ -88,6 +104,36 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         return this.dataService.fetchData(query, tenantId, InstrumentAttribute.class);
     }
 
+
+    public List<InstrumentAttribute> getOpenInstrumentAttributesByInstrumentId(String instrumentId, String modelId, Integer posltingDate, String tenantId) {
+        // Match documents with the specified instrumentId and source not equal to modelId
+        MatchOperation matchStage = Aggregation.match(
+                Criteria.where("instrumentId").is(instrumentId)
+                        .and("postingDate").lte(posltingDate)
+                        .and("sourceId").ne(modelId)  // Changed from sourceId to source
+        );
+
+        // Sort by attributeId (ascending) and versionId (descending)
+        SortOperation sortStage = Aggregation.sort(
+                Sort.by(Sort.Order.asc("attributeId"),
+                        Sort.Order.desc("versionId"))
+        );
+
+        // Group by attributeId and get the first (latest) document for each group
+        GroupOperation groupStage = Aggregation.group("attributeId")
+                .first(Aggregation.ROOT).as("latest");
+
+        // Replace the root with the latest document
+        ReplaceRootOperation replaceRoot = Aggregation.replaceRoot("latest");
+
+        Aggregation aggregation = Aggregation.newAggregation(
+                matchStage, sortStage, groupStage, replaceRoot
+        );
+
+        return this.dataService.getMongoTemplate(tenantId)
+                .aggregate(aggregation, "InstrumentAttribute", InstrumentAttribute.class)
+                .getMappedResults();
+    }
     // Define a method in your service class
     public List<InstrumentAttribute> getOpenInstrumentAttributesByInstrumentId(String instrumentId, String attributeId,String tenantId) {
         Query query = new Query();

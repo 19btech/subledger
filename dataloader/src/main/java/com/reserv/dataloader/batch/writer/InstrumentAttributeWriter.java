@@ -25,6 +25,7 @@ import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
+import java.text.ParseException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -139,7 +140,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     }
 
 
-    private Chunk<InstrumentAttribute> setEndDate(long batchId , List<InstrumentAttribute> attributesList) {
+    private Chunk<InstrumentAttribute> setEndDate(long batchId , List<InstrumentAttribute> attributesList) throws ParseException {
 
         // Step 1: Group by attributeId and instrumentId
         Map<String, List<InstrumentAttribute>> groupedAttributes = new HashMap<>();
@@ -166,7 +167,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 if(sortedSubChunk.size() > i+1) {
                     InstrumentAttribute nextAttribute = sortedSubChunk.get(i + 1);
                     // Set endDate of the current attribute to effectiveDate of the next attribute
-                    currentAttribute.setEndDate(DateUtil.convertToUtc(nextAttribute.getEffectiveDate()));
+                    currentAttribute.setEndDate(DateUtil.convertIntDateToUtc(nextAttribute.getPostingDate()));
                     nextAttribute.setPreviousVersionId(currentAttribute.getVersionId());
                     this.addReclassMessage(batchId, currentAttribute, nextAttribute);
                 }
@@ -174,7 +175,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 if(i== 0) {
                     List<InstrumentAttribute> openInstrumentAttributes = this.instrumentAttributeService.getOpenInstrumentAttributes(currentAttribute.getAttributeId(), currentAttribute.getInstrumentId());
                     for(InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
-                        openInstrumentAttribute.setEndDate(DateUtil.convertToUtc(currentAttribute.getEffectiveDate()));
+                        openInstrumentAttribute.setEndDate(DateUtil.convertIntDateToUtc(currentAttribute.getPostingDate()));
                         currentAttribute.setPreviousVersionId(openInstrumentAttribute.getVersionId());
                         openVersion.add(openInstrumentAttribute);
                         this.addReclassMessage(batchId, openInstrumentAttribute, currentAttribute);

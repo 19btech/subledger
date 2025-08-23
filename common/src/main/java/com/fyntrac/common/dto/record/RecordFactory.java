@@ -5,6 +5,7 @@ import com.fyntrac.common.enums.InstrumentAttributeVersionType;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.enums.TestStep;
 import com.fyntrac.common.enums.UploadStatus;
+import com.fyntrac.common.model.ModelWorkflowContext;
 import com.fyntrac.common.utils.DateUtil;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.data.mongodb.core.index.Indexed;
@@ -12,6 +13,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.format.annotation.NumberFormat;
 import org.springframework.stereotype.Component;
 
+import java.io.File;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.text.ParseException;
@@ -355,7 +357,29 @@ public class RecordFactory {
         return createRecord(()-> new Records.MonthOverMonthMetricActivityRecord(monthOverMonthSeries, momData));
     }
 
-    public static Records.DiagnosticReportRequestRecord createRiagnosticReportRequestRecord(String instrumentId, String modelId) {
-        return createRecord(()-> new Records.DiagnosticReportRequestRecord(instrumentId,modelId));
+    public static Records.DiagnosticReportRequestRecord createRiagnosticReportRequestRecord(String tenant, String instrumentId, String modelId) {
+        return createRecord(()-> new Records.DiagnosticReportRequestRecord(tenant, instrumentId,modelId));
+    }
+
+    public static Records.DiagnosticReportModelDataRecord createDiagnosticReportModelDataRecord(ModelWorkflowContext excelData, File excelMode) {
+        return createRecord(()-> new Records.DiagnosticReportModelDataRecord(excelData, excelMode));
+    }
+
+    public static Records.DiagnosticReportDataRecord createDiagnosticReportDataRecord(List<Records.DocumentAttribute> transactionActivityHeader,
+                                             List<Map<String, Object>> transactionActivityData,
+                                             List<Records.DocumentAttribute> instrumentAttributeHeader,
+                                             List<Map<String, Object>> instrumentAttributeData,
+                                             List<Records.DocumentAttribute> balancesHeader,
+                                             List<Map<String, Object>> balancesData,
+                                             List<Records.DocumentAttribute> executionStateHeader,
+                                             List<Map<String, Object>> executionStateData) {
+        return createRecord(()-> new Records.DiagnosticReportDataRecord(transactionActivityHeader,
+                transactionActivityData,
+                instrumentAttributeHeader,
+                instrumentAttributeData,
+                balancesHeader,
+                balancesData,
+                executionStateHeader,
+                executionStateData));
     }
 }

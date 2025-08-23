@@ -84,7 +84,7 @@ public class MemcachedRepository {
     }
     public <T> OperationFuture<Boolean> putInCache(String key, T object) {
         try {
-            return memcachedClient.set(key, 0, object);
+            return memcachedClient.set(key, cacheTimeOut, object);
         } catch (Exception e) {
             // It's generally a bad practice to just print the stack trace and continue.
             // Instead, consider logging the exception and re-throwing it, or returning a failed future.

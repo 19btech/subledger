@@ -61,7 +61,8 @@ public class ExcelModelProcessor {
 
         if(createModelOutputFile) {
             // Save the modified file
-            String fileName = "processed_output" + intrumentId + ".xlsx";
+            String postingDate = String.format("%1$tm-%1$td-%1$tY", executionDate);
+            String fileName = String.format("processed-output-%s-%s.xlsx" ,intrumentId, postingDate);
             try (FileOutputStream fos = new FileOutputStream(fileName)) {
                 workbook.write(fos);
             }
@@ -129,7 +130,7 @@ public class ExcelModelProcessor {
                 }
             } catch (Exception e) {
                 // Handle other workbook-level evaluation errors
-                System.err.println("Error during workbook evaluation: " + e.getMessage());
+                log.error("Error during workbook evaluation: " + e.getMessage());
             }
             log.info("Processing completed successfully!");
         }

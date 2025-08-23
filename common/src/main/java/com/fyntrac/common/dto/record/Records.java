@@ -1,16 +1,18 @@
 package com.fyntrac.common.dto.record;
 
-import com.fyntrac.common.entity.*;
+import com.fyntrac.common.entity.AccountingPeriod;
+import com.fyntrac.common.entity.Batch;
+import com.fyntrac.common.entity.Model;
+import com.fyntrac.common.entity.ModelFile;
 import com.fyntrac.common.enums.InstrumentAttributeVersionType;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.enums.TestStep;
-import com.fyntrac.common.enums.UploadStatus;
+import com.fyntrac.common.model.ModelWorkflowContext;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.format.annotation.NumberFormat;
 
+import java.io.File;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.util.Collection;
@@ -283,7 +285,24 @@ public class Records {
         private static final long serialVersionUID = -2108325930955107947L;
     }
 
-    public record DiagnosticReportRequestRecord(String instrumentId, String modelId) implements Serializable {
+    public record DiagnosticReportRequestRecord(String tenant, String instrumentId, String modelId) implements Serializable {
         private static final long serialVersionUID = 4708400430638644109L;
     }
+
+    public record DiagnosticReportModelDataRecord(ModelWorkflowContext excelData, File excelMode) implements Serializable {
+        private static final long serialVersionUID = 8522699881876081280L;
+    }
+
+    public record DiagnosticReportDataRecord(List<Records.DocumentAttribute> transactionActivityHeader,
+                                             List<Map<String, Object>> transactionActivityData,
+                                             List<Records.DocumentAttribute> instrumentAttributeHeader,
+                                             List<Map<String, Object>> instrumentAttributeData,
+                                             List<Records.DocumentAttribute> balancesHeader,
+                                             List<Map<String, Object>> balancesData,
+                                             List<Records.DocumentAttribute> executionStateHeader,
+                                             List<Map<String, Object>> executionStateData) implements Serializable {
+        private static final long serialVersionUID = -212786685516433649L;
+    }
+
+
 }

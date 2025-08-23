@@ -586,6 +586,50 @@ public class ExcelModelUtil {
         };
     }
 
+    private static String getStringValue(Cell cell) {
+        if (cell == null) return "";
+
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue().trim();
+            case NUMERIC -> {
+                if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
+                    Date date = cell.getDateCellValue();
+                    SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yyyy");
+                    yield sdf.format(date);
+                } else {
+                    double d = cell.getNumericCellValue();
+                    if (d == (long) d) yield String.valueOf((long) d);
+                    else yield String.valueOf(d);
+                }
+            }
+            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+            case FORMULA -> {
+                FormulaEvaluator evaluator = cell.getSheet()
+                        .getWorkbook()
+                        .getCreationHelper()
+                        .createFormulaEvaluator();
+                CellValue evaluated = evaluator.evaluate(cell);
+                yield switch (evaluated.getCellType()) {
+                    case STRING -> evaluated.getStringValue();
+                    case NUMERIC -> {
+                        if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
+                            Date date = cell.getDateCellValue();
+                            SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yyyy");
+                            yield sdf.format(date);
+                        } else {
+                            double d = evaluated.getNumberValue();
+                            if (d == (long) d) yield String.valueOf((long) d);
+                            else yield String.valueOf(d);
+                        }
+                    }
+                    case BOOLEAN -> String.valueOf(evaluated.getBooleanValue());
+                    default -> "";
+                };
+            }
+            default -> "";
+        };
+    }
+
     public static void fillExcelSheetByAttributeIdAndTransactionTypeOrOrder(List<Map<String, Object>> jsonData, Workbook workbook, String sheetName) {
         Sheet sheet = getSheetIgnoreCase(workbook, sheetName);
         if (sheet == null) throw new IllegalArgumentException("Sheet '" + sheetName + "' not found.");
@@ -889,4 +933,68 @@ public class ExcelModelUtil {
             throw new RuntimeException("Error while converting Binary to Workbook", e);
         }
     }
+
+    public static List<Map<String, Object>> readSheetAsListOfMaps(
+            Workbook workbook, String sheetName, String requiredColumnName) {
+
+        Sheet sheet = workbook.getSheet(sheetName);
+        if (sheet == null) {
+            throw new IllegalArgumentException("Sheet with name '" + sheetName + "' not found");
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        Iterator<Row> rowIterator = sheet.iterator();
+
+        if (!rowIterator.hasNext()) {
+            return result; // empty sheet
+        }
+
+        // First row as headers
+        Row headerRow = rowIterator.next();
+        List<String> headers = new ArrayList<>();
+        for (Cell cell : headerRow) {
+            headers.add(cell.getStringCellValue().trim());
+        }
+
+        int requiredColumnIndex = -1;
+        String matchedRequiredColumnName = null;
+        if (requiredColumnName != null && !requiredColumnName.isBlank()) {
+            for (int i = 0; i < headers.size(); i++) {
+                if (headers.get(i).equalsIgnoreCase(requiredColumnName.trim())) {
+                    requiredColumnIndex = i;
+                    matchedRequiredColumnName = headers.get(i); // keep original casing
+                    break;
+                }
+            }
+            if (requiredColumnIndex == -1) {
+                throw new IllegalArgumentException(
+                        "Required column '" + requiredColumnName + "' not found in headers");
+            }
+        }
+
+        // Process rows
+        while (rowIterator.hasNext()) {
+            Row row = rowIterator.next();
+            Map<String, Object> rowMap = new LinkedHashMap<>();
+
+            for (int i = 0; i < headers.size(); i++) {
+                Cell cell = row.getCell(i, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
+                Object value = getStringValue(cell);
+                rowMap.put(headers.get(i), value);
+            }
+
+            // Only filter if requiredColumnName is set
+            if (requiredColumnIndex != -1) {
+                Object requiredValue = rowMap.get(matchedRequiredColumnName);
+                if (requiredValue == null || requiredValue.toString().isBlank()) {
+                    continue; // skip this row
+                }
+            }
+
+            result.add(rowMap);
+        }
+
+        return result;
+    }
+
 }
