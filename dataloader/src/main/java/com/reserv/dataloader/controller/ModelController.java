@@ -3,6 +3,7 @@ package com.reserv.dataloader.controller;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.ModelConfig;
 import com.fyntrac.common.enums.AggregationLevel;
+import com.fyntrac.common.enums.ModelType;
 import com.fyntrac.common.utils.StringUtil;
 import com.reserv.dataloader.service.DataloaderExcelFileService;
 import com.reserv.dataloader.service.ModelUploadService;
@@ -62,6 +63,7 @@ public class ModelController {
                 modelConfig.setLastOpenVersion(Boolean.FALSE);
                 modelConfig.setFirstVersion(Boolean.FALSE);
                 Model model = this.modelService.save(modelName
+                        , ModelType.EXCEL
                         , modelOrderId
                         , fileId
                         , Boolean.FALSE

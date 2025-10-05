@@ -9,6 +9,7 @@ import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.bson.types.Binary;
 
 import java.io.*;
@@ -21,6 +22,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 
@@ -552,6 +554,166 @@ public class ExcelUtil {
             }
             case BLANK, ERROR, _NONE -> "";
         };
+    }
+
+
+    /**
+     * Splits each sheet of an Excel InputStream into separate files.
+     *
+     * @param workbook input Excel file
+     * @param outputDir        directory where files will be written
+     * @return List of generated File objects
+     */
+
+    public static List<File> splitSheetsToFiles(Workbook workbook, String outputDir) throws Exception {
+        List<File> createdFiles = new ArrayList<>();
+        File dir = new File(outputDir);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            String sheetName = workbook.getSheetName(i);
+
+            try (Workbook newWorkbook = new XSSFWorkbook()) {
+                Sheet sheet = workbook.getSheetAt(i);
+                Sheet newSheet = newWorkbook.createSheet(sheetName);
+
+                // Copy each row and cell
+                for (int r = 0; r <= sheet.getLastRowNum(); r++) {
+                    Row row = sheet.getRow(r);
+                    if (row != null) {
+                        Row newRow = newSheet.createRow(r);
+                        for (int c = 0; c < row.getLastCellNum(); c++) {
+                            Cell cell = row.getCell(c);
+                            if (cell != null) {
+                                Cell newCell = newRow.createCell(c);
+                                copyCellValue(cell, newCell);
+                            }
+                        }
+                    }
+                }
+
+                File outFile = new File(dir, sheetName + ".xlsx");
+
+                try (FileOutputStream fos = new FileOutputStream(outFile)) {
+                    newWorkbook.write(fos);
+                }
+
+                createdFiles.add(outFile);
+            }
+        }
+
+        return createdFiles;
+    }
+
+    private static void copyCellValue(Cell oldCell, Cell newCell) {
+        switch (oldCell.getCellType()) {
+            case STRING -> newCell.setCellValue(oldCell.getStringCellValue());
+            case NUMERIC -> {
+                if (DateUtil.isCellDateFormatted(oldCell)) {
+                    newCell.setCellValue(oldCell.getDateCellValue());
+                } else {
+                    newCell.setCellValue(oldCell.getNumericCellValue());
+                }
+            }
+            case BOOLEAN -> newCell.setCellValue(oldCell.getBooleanCellValue());
+            case FORMULA -> newCell.setCellFormula(oldCell.getCellFormula());
+            case BLANK -> newCell.setBlank();
+            default -> {}
+        }
+
+        // Optionally: copy style too
+        if (oldCell.getCellStyle() != null) {
+            Workbook wb = newCell.getSheet().getWorkbook();
+            CellStyle newStyle = wb.createCellStyle();
+            newStyle.cloneStyleFrom(oldCell.getCellStyle());
+            newCell.setCellStyle(newStyle);
+        }
+    }
+    /**
+     * Splits each sheet of an Excel InputStream into separate files.
+     *
+     * @param excelInputStream input Excel file
+     * @param outputDir        directory where files will be written
+     * @return List of generated File objects
+     */
+    public static List<File> splitSheetsToFiles(InputStream excelInputStream, String outputDir) throws Exception {
+        List<File> createdFiles = new ArrayList<>();
+
+        try (Workbook workbook = new XSSFWorkbook(excelInputStream)) {
+
+            return splitSheetsToFiles(workbook, outputDir);
+        }
+    }
+    /**
+     * Extracts all sheet names from the given workbook.
+     *
+     * @param workbook the Apache POI Workbook instance
+     * @return list of sheet names
+     */
+    public static List<String> getSheetNames(Workbook workbook) {
+        List<String> sheetNames = new ArrayList<>();
+
+        if (workbook == null) {
+            return sheetNames; // return empty list if null
+        }
+
+        int numberOfSheets = workbook.getNumberOfSheets();
+        for (int i = 0; i < numberOfSheets; i++) {
+            sheetNames.add(workbook.getSheetName(i));
+        }
+
+        return sheetNames;
+    }
+
+    /**
+     * Extracts Workbooks from an InputStream which can be either
+     * a single Excel file or a ZIP containing multiple Excel files.
+     *
+     * @param inputStream the input stream of the file
+     * @param filename    the original file name (used to detect file type)
+     * @return list of Workbooks
+     * @throws IOException if file reading/parsing fails
+     */
+    public static List<Workbook> extractWorkbooks(InputStream inputStream, String filename) throws IOException {
+        List<Workbook> workbooks = new ArrayList<>();
+
+        if (inputStream == null || filename == null || filename.isBlank()) {
+            return workbooks;
+        }
+
+        // Handle Excel file directly
+        if (isExcelFile(filename)) {
+            try (InputStream is = inputStream) {
+                workbooks.add(WorkbookFactory.create(is));
+            }
+            return workbooks;
+        }
+
+        // Handle ZIP file
+        if (filename.toLowerCase().endsWith(".zip")) {
+            try (ZipInputStream zis = new ZipInputStream(inputStream)) {
+                ZipEntry entry;
+                while ((entry = zis.getNextEntry()) != null) {
+                    if (!entry.isDirectory() && isExcelFile(entry.getName())) {
+                        byte[] fileBytes = zis.readAllBytes();
+                        try (InputStream is = new ByteArrayInputStream(fileBytes)) {
+                            workbooks.add(WorkbookFactory.create(is));
+                        }
+                    }
+                    zis.closeEntry();
+                }
+            }
+            return workbooks;
+        }
+
+        throw new IOException("Unsupported file type: " + filename);
+    }
+
+    private static boolean isExcelFile(String filename) {
+        String lower = filename.toLowerCase();
+        return lower.endsWith(".xls") || lower.endsWith(".xlsx");
     }
 }
 

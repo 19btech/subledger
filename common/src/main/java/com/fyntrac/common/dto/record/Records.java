@@ -304,5 +304,11 @@ public class Records {
         private static final long serialVersionUID = -212786685516433649L;
     }
 
+    public record DataFileRecord(String name, String id) implements Serializable {
+        private static final long serialVersionUID = 2455439474427522772L;
+    }
 
+    public record InstrumentMessageRecord(String tenantId, String[] instrumentIds, String[] models) implements Serializable {
+        private static final long serialVersionUID = 4754051711821283813L;
+    }
 }

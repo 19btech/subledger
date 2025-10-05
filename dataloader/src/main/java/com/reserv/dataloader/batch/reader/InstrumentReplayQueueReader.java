@@ -15,10 +15,11 @@ import java.util.List;
 
 public class InstrumentReplayQueueReader implements ItemReader<Records.InstrumentReplayRecord> {
     private final List<Records.InstrumentReplayRecord> allRecords;
-    private int index = 0;
+    private int index;
 
     public InstrumentReplayQueueReader(String tenantId, Long jobId, InstrumentReplayQueue queue) {
         this.allRecords = new ArrayList<>();
+        index = 0;
         Records.InstrumentReplayRecord record;
         while ((record = queue.poll(tenantId, jobId)) != null) {
             allRecords.add(record);
@@ -27,11 +28,12 @@ public class InstrumentReplayQueueReader implements ItemReader<Records.Instrumen
 
     @Override
     public Records.InstrumentReplayRecord read() {
-        if (index < allRecords.size()) {
-            return allRecords.get(index++);
-        } else {
+        if (index >= allRecords.size()) {
             return null;
         }
+        Records.InstrumentReplayRecord rec = allRecords.get(index);
+        index++;
+        return rec;
     }
 }
 

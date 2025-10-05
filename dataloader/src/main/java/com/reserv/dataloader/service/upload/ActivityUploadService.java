@@ -45,7 +45,7 @@ public class ActivityUploadService {
     AttributeService attributeService;
 
     @Autowired
-    DataService dataService;
+    protected  DataService dataService;
 
     private final AccountingPeriodDataUploadService accountingPeriodService;
     private final AggregationService aggregationService;

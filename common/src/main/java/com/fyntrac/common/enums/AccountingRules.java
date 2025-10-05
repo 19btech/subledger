@@ -2,15 +2,17 @@ package com.fyntrac.common.enums;
 
 public enum AccountingRules {
     TRANSACIONS("transactions.csv",100),
-    ATTRIBUTES("attributes.csv",90),
-    AGGREGATION("aggregation.csv",80),
-    ACCOUNTTYPE("accounttype.csv",70),
-    CHARTOFACCOUNTS("chartofaccounts.csv", 60),
-    ACCOUNTMAPPINGS("accountmappings.csv",50),
-    CHARTOFACCOUNT("chartofaccount.csv",40),
-    SUBLEDGERMAPPING("subledgermapping.csv",30),
-    INSTRUMENTATTRIBUTE("instrumentattribute.csv",20),
-    TRANSACTIONACTIVITY("transactionactivity.csv",10);
+    ATTRIBUTES("attributes.csv",95),
+    AGGREGATION("aggregation.csv",90),
+    ACCOUNTTYPE("accounttype.csv",85),
+    CHARTOFACCOUNTS("chartofaccounts.csv", 80),
+    ACCOUNTMAPPINGS("accountmappings.csv",75),
+    CHARTOFACCOUNT("chartofaccount.csv",70),
+    SUBLEDGERMAPPING("subledgermapping.csv",65),
+    INSTRUMENTATTRIBUTE("instrumentattribute.csv",60),
+    TRANSACTIONACTIVITY("transactionactivity.csv",55),
+    ATTRIBUTEBALANCE("attributebalance.csv",50),
+    INSTRUMENTBALANCE("instrumentbalance.csv",45);
 
     private final String value;
     private final int priority;

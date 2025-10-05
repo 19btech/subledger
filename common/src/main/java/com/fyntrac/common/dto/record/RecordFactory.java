@@ -382,4 +382,14 @@ public class RecordFactory {
                 executionStateHeader,
                 executionStateData));
     }
+
+    public static Records.DataFileRecord createDataFileRecord(String name, String id) {
+        return createRecord(()-> new Records.DataFileRecord(name, id));
+    }
+
+    public static Records.InstrumentMessageRecord CreateInstrumentMessageRecord(String tenantId,
+                                                                                String[] instrumentIds,
+                                                                                String[] models) {
+        return createRecord(() -> new Records.InstrumentMessageRecord(tenantId, instrumentIds, models));
+    }
 }

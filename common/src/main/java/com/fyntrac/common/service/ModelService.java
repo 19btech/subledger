@@ -3,6 +3,7 @@ package com.fyntrac.common.service;
 import com.fyntrac.common.entity.Model;
 import com.fyntrac.common.entity.ModelConfig;
 import com.fyntrac.common.enums.ModelStatus;
+import com.fyntrac.common.enums.ModelType;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,7 @@ public class ModelService {
     }
 
     public Model save(String modelName
+                      , ModelType modelType
             , String modelOrderId
             , String modelFileId
             , boolean isDeleted
@@ -39,6 +41,7 @@ public class ModelService {
             , ModelConfig modelConfig) {
         Model model = Model.builder()
                 .modelName(modelName)
+                .modelType(modelType)
                 .orderId(modelOrderId)
                 .modelFileId(modelFileId)
                 .isDeleted(isDeleted == Boolean.FALSE ? 0 : 1)

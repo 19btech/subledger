@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.text.ParseException;
 import java.util.Collection;
+import java.util.Date;
 import java.util.Set;
 
 @Service
@@ -30,4 +31,12 @@ public class AccountingPeriodDataUploadService extends AccountingPeriodService {
         return dataService.saveAll(accountingPeriods, AccountingPeriod.class);
     }
 
+
+    public Collection<AccountingPeriod> generateAccountingPeriod(Date startingDate) throws ParseException {
+        AccountingPeriodGenerator accountingPeriodGenerator = new AccountingPeriodGenerator();
+        this.dataService.truncateCollection(AccountingPeriod.class);
+        Set<AccountingPeriod> accountingPeriods = accountingPeriodGenerator.generate(startingDate);
+
+        return dataService.saveAll(accountingPeriods, AccountingPeriod.class);
+    }
 }

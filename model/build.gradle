@@ -116,38 +116,25 @@ tasks.named('test') {
 	useJUnitPlatform()
 }
 
-tasks.register('pushDockerImage') {
-	dependsOn dockerBuildImage
+// Add this after your docker configuration
+tasks.named('dockerPushImage') {
+    dependsOn dockerBuildImage
 
-	doLast {
-		def tag = project.version.toString()
-		def imageName = "ghcr.io/19btech/fyntrac/docker/model:${tag}"
+    doFirst {
+        def gitUser = System.getenv("GIT_USER")
+        def gitKey = System.getenv("GIT_KEY")
 
-		// Docker login using GIT_USER and GIT_KEY
-		def gitUser = System.getenv("GIT_USER")
-		def gitKey = System.getenv("GIT_KEY")
+        if (!gitUser || !gitKey) {
+            throw new GradleException("GIT_USER or GIT_KEY environment variables not set")
+        }
 
-		if (!gitUser || !gitKey) {
-			throw new GradleException("GIT_USER or GIT_KEY environment variables not set")
-		}
+        def loginProcess = new ProcessBuilder("sh", "-c", "echo ${gitKey} | docker login ghcr.io -u ${gitUser} --password-stdin")
+                .redirectErrorStream(true)
+                .start()
 
-		def loginProcess = new ProcessBuilder("sh", "-c", "echo ${gitKey} | docker login ghcr.io -u ${gitUser} --password-stdin")
-				.redirectErrorStream(true)
-				.start()
-
-		loginProcess.inputStream.eachLine { println it }
-		if (loginProcess.waitFor() != 0) {
-			throw new GradleException("Docker login to GitHub failed")
-		}
-
-		// Push the image
-		def pushProcess = new ProcessBuilder("docker", "push", imageName)
-				.redirectErrorStream(true)
-				.start()
-
-		pushProcess.inputStream.eachLine { println it }
-		if (pushProcess.waitFor() != 0) {
-			throw new GradleException("Failed to push Docker image with tag: ${tag}")
-		}
-	}
+        loginProcess.inputStream.eachLine { println it }
+        if (loginProcess.waitFor() != 0) {
+            throw new GradleException("Docker login to GitHub failed")
+        }
+    }
 }

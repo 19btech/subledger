@@ -2,7 +2,6 @@ package com.reserv.dataloader.batch.config;
 
 import com.fyntrac.common.component.InstrumentReplayQueue;
 import com.fyntrac.common.component.InstrumentReplaySet;
-import com.fyntrac.common.component.InstrumentReplaySet;
 import com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.repository.MemcachedRepository;
@@ -10,17 +9,12 @@ import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.InstrumentAttributeService;
 import com.reserv.dataloader.batch.listener.InstrumentAttributeJobCompletionListener;
-import com.reserv.dataloader.batch.mapper.HeaderColumnNameMapper;
 import com.reserv.dataloader.batch.processor.InstrumentAttributeItemProcessor;
 import com.reserv.dataloader.batch.writer.InstrumentAttributeWriter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVParser;
-import org.apache.commons.csv.CSVRecord;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
-import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
@@ -29,22 +23,13 @@ import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.batch.item.data.builder.MongoItemWriterBuilder;
-import org.springframework.batch.item.file.FlatFileItemReader;
-import org.springframework.batch.item.file.mapping.DefaultLineMapper;
-import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
 import org.springframework.batch.support.transaction.ResourcelessTransactionManager;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
 import java.io.IOException;
-import java.io.Reader;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 
 @Configuration
@@ -60,6 +45,7 @@ public class InstrumentAttributeDataLoadConfig {
     private ExecutionStateService executionStateService;
     private final InstrumentReplaySet instrumentReplaySet;
     private final InstrumentReplayQueue instrumentReplayQueue;
+    private final BatchCommonConfig batchCommonConfig;
 
     public InstrumentAttributeDataLoadConfig(JobRepository jobRepository, MongoTemplate mongoTemplate,
                                              TenantDataSourceProvider dataSourceProvider,
@@ -68,7 +54,8 @@ public class InstrumentAttributeDataLoadConfig {
                                              AccountingPeriodService accountingPeriodService,
                                              ExecutionStateService executionStateService,
                                              InstrumentReplaySet instrumentReplaySet,
-                                             InstrumentReplayQueue instrumentReplayQueue) {
+                                             InstrumentReplayQueue instrumentReplayQueue,
+                                             BatchCommonConfig batchCommonConfig) {
         this.jobRepository = jobRepository;
         this.dataSourceProvider = dataSourceProvider;
         this.mongoTemplate = mongoTemplate;
@@ -78,6 +65,7 @@ public class InstrumentAttributeDataLoadConfig {
         this.executionStateService = executionStateService;
         this.instrumentReplaySet = instrumentReplaySet;
         this.instrumentReplayQueue = instrumentReplayQueue;
+        this.batchCommonConfig = batchCommonConfig;
     }
 
     @Bean("instrumentAttributeUploadJob")
@@ -94,8 +82,9 @@ public class InstrumentAttributeDataLoadConfig {
     public Step instrumentAttributeImportStep() throws IOException {
         return new StepBuilder("instrumentAttributeImportStep", jobRepository)
                 .<Map<String,Object>,InstrumentAttribute>chunk(10, new ResourcelessTransactionManager())
-                .reader(genericReader(""))
+                .reader(this.batchCommonConfig.genericReader(""))
                 .processor(instrumentAttributeMapItemProcessor())
+                .taskExecutor(new SimpleAsyncTaskExecutor("instrumentAttributeImportStep"))
                 .writer(instrumentAttributeWriter(dataSourceProvider
                         , this.memcachedRepository
                         , this.instrumentAttributeService
@@ -109,48 +98,6 @@ public class InstrumentAttributeDataLoadConfig {
     @Bean
     public ItemProcessor<Map<String,Object>,InstrumentAttribute> instrumentAttributeMapItemProcessor() {
         return new InstrumentAttributeItemProcessor();
-    }
-
-    @StepScope
-    @Bean
-    public FlatFileItemReader<Map<String, Object>> genericReader(@Value("#{jobParameters[filePath]}") String filePath) throws IOException {
-
-
-        FlatFileItemReader<Map<String, Object>> reader = new FlatFileItemReader<>();
-        reader.setResource(new FileSystemResource(filePath));
-        reader.setLinesToSkip(1); // Skip the header
-
-        // Read actual header line using Apache Commons CSV to get clean column names
-        List<String> headerNames = getHeaderNames(filePath);
-
-        // Setup line tokenizer
-        DelimitedLineTokenizer tokenizer = new DelimitedLineTokenizer();
-        tokenizer.setDelimiter(",");
-        tokenizer.setQuoteCharacter('"'); // Handles quoted fields correctly
-        tokenizer.setStrict(false); // Allow rows with missing fields
-        tokenizer.setNames(headerNames.toArray(new String[0]));
-
-        // Line mapper
-        DefaultLineMapper<Map<String, Object>> lineMapper = new DefaultLineMapper<>();
-        lineMapper.setLineTokenizer(tokenizer);
-        lineMapper.setFieldSetMapper(new HeaderColumnNameMapper());
-
-        reader.setLineMapper(lineMapper);
-        return reader;
-
-    }
-
-    private List<String> getHeaderNames(String filePath) throws IOException {
-        try (Reader reader = Files.newBufferedReader(Paths.get(filePath));
-             CSVParser parser = new CSVParser(reader, CSVFormat.DEFAULT.withQuote('"'))) {
-
-            CSVRecord headerRecord = parser.iterator().next();
-            List<String> headers = new ArrayList<>();
-            for (String header : headerRecord) {
-                headers.add(header.trim());
-            }
-            return headers;
-        }
     }
 
     @Bean

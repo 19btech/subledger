@@ -23,7 +23,7 @@ public class FileUploadService {
     @Value("${spring.batch.upload.files.directory}")
     private String batchFilesDirectory;
     @Autowired
-    private final TenantContextHolder tenantContextHolder;
+    protected final TenantContextHolder tenantContextHolder;
     UploadService transactionsUploadService;
     ActivityUploadService activityUploadService;
     FileUploadService(TenantContextHolder tenantContextHolder

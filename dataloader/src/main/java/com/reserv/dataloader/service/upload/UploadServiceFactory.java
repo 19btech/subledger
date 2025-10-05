@@ -19,6 +19,8 @@ public class UploadServiceFactory implements ApplicationContextAware {
     private static SubledgerMappingUploadService subledgerMappingUploadService;
     private static InstrumentAttributeUploadService instrumentAttributeUploadService;
     private static TransactionActivityUploadService transactionActivityUploadService;
+    private static AttributeBalanceUploadService attributeBalanceUploadService;
+    private static InstrumentBalanceUploadService instrumentBalanceUploadService;
 
     @Override
     public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
@@ -31,6 +33,8 @@ public class UploadServiceFactory implements ApplicationContextAware {
         subledgerMappingUploadService = applicationContext.getBean(SubledgerMappingUploadService.class);
         instrumentAttributeUploadService = applicationContext.getBean(InstrumentAttributeUploadService.class);
         transactionActivityUploadService = applicationContext.getBean(TransactionActivityUploadService.class);
+        attributeBalanceUploadService = applicationContext.getBean(AttributeBalanceUploadService.class);
+        instrumentBalanceUploadService = applicationContext.getBean(InstrumentBalanceUploadService.class);
     }
 
     public static UploadService getFileUploader(AccountingRules rule) {
@@ -52,6 +56,10 @@ public class UploadServiceFactory implements ApplicationContextAware {
                 return instrumentAttributeUploadService;
             case TRANSACTIONACTIVITY:
                 return transactionActivityUploadService;
+            case ATTRIBUTEBALANCE:
+                return attributeBalanceUploadService;
+            case INSTRUMENTBALANCE:
+                return instrumentBalanceUploadService;
             default:
                 throw new IllegalArgumentException("Unsupported file uploader for enum value: " + rule);
         }
