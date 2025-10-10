@@ -173,7 +173,8 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 }
 
                 if(i== 0) {
-                    List<InstrumentAttribute> openInstrumentAttributes = this.instrumentAttributeService.getOpenInstrumentAttributes(currentAttribute.getAttributeId(), currentAttribute.getInstrumentId());
+                    List<InstrumentAttribute> openInstrumentAttributes =
+                            this.instrumentAttributeService.getOpenInstrumentAttributes(currentAttribute.getAttributeId(), currentAttribute.getInstrumentId(), this.tenantId);
                     for(InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
                         openInstrumentAttribute.setEndDate(DateUtil.convertIntDateToUtc(currentAttribute.getPostingDate()));
                         currentAttribute.setPreviousVersionId(openInstrumentAttribute.getVersionId());

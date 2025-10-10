@@ -116,6 +116,77 @@ tasks.named('test') {
 	useJUnitPlatform()
 }
 
+// Task to list buildx builders
+tasks.register('dockerListBuilders', Exec) {
+    commandLine 'docker', 'buildx', 'ls', '--format', '{{.Name}}:{{.Driver}}:{{.Status}}'
+    standardOutput = new ByteArrayOutputStream()
+    ignoreExitValue = true
+    doLast {
+        project.ext.dockerListOutput = standardOutput.toString().trim()
+    }
+}
+
+// Task to remove old builder
+tasks.register('dockerRemoveBuilder', Exec) {
+    commandLine 'docker', 'buildx', 'rm', 'multiarch'
+    ignoreExitValue = true
+}
+
+// Task to create new builder
+tasks.register('dockerCreateBuilder', Exec) {
+    commandLine 'docker', 'buildx', 'create', '--name', 'multiarch', '--driver', 'docker-container', '--use'
+}
+
+// Task to select existing builder
+tasks.register('dockerUseBuilder', Exec) {
+    commandLine 'docker', 'buildx', 'use', 'multiarch'
+    ignoreExitValue = true
+}
+
+// Task to bootstrap Buildx
+tasks.register('dockerBootstrapBuilder', Exec) {
+    commandLine 'docker', 'buildx', 'inspect', '--bootstrap'
+}
+
+// Main setup task (pure Gradle logic, no exec calls)
+tasks.register('setupDockerBuildx') {
+    dependsOn 'dockerListBuilders'
+    doLast {
+        def output = project.ext.dockerListOutput ?: ''
+        def hasContainerDriver = output.readLines().any { line ->
+            line.contains('docker-container') && line.contains('running')
+        }
+
+        if (!hasContainerDriver) {
+            logger.lifecycle("🔧 Creating multi-platform builder with container driver...")
+            tasks.named('dockerRemoveBuilder').get().exec()
+            tasks.named('dockerCreateBuilder').get().exec()
+        } else {
+            logger.lifecycle("🔧 Using existing multi-platform builder...")
+            tasks.named('dockerUseBuilder').get().exec()
+        }
+
+        tasks.named('dockerBootstrapBuilder').get().exec()
+        logger.lifecycle("✅ Docker Buildx ready for multi-platform builds")
+    }
+}
+
+tasks.named('dockerBuildImage').configure {
+    dependsOn tasks.named('setupDockerBuildx')
+    dependsOn tasks.named('clean')
+    dependsOn tasks.named('build')
+
+    tasks.named('build').get().mustRunAfter(tasks.named('clean').get())
+
+    // ✅ Correct usage: Map of build args
+    buildArgs.set([
+            'PLATFORM'   : project.findProperty('platform') ?: 'linux/amd64,linux/arm64',
+            'BUILDER'    : 'multiarch',
+            'PROVENANCE' : 'false'
+    ])
+}
+
+
 // Add this after your docker configuration
 tasks.named('dockerPushImage') {
     dependsOn dockerBuildImage

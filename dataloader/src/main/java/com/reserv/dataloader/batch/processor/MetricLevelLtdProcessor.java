@@ -49,6 +49,6 @@ public class MetricLevelLtdProcessor
             records.add(record);
         }
 
-        return records;
+        return List.copyOf(records);
     }
 }

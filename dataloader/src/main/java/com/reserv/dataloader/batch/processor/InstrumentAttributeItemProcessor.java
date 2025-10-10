@@ -3,6 +3,9 @@ package com.reserv.dataloader.batch.processor;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.utils.DateUtil;
+import org.springframework.batch.core.StepExecution;
+import org.springframework.batch.core.StepExecutionListener;
+import org.springframework.batch.core.annotation.BeforeStep;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -13,10 +16,20 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
-public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<String, Object>, InstrumentAttribute> {
+public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<String, Object>, InstrumentAttribute>, StepExecutionListener {
 
     @Autowired
     private com.fyntrac.common.entity.factory.InstrumentAttributeFactory instrumentAttributeFactory;
+
+    private Long runId;
+    private String tenantId;
+
+    @BeforeStep
+    public void beforeStep(StepExecution stepExecution) {
+        // Access JobParameters from StepExecution
+        this.runId = stepExecution.getJobParameters().getLong("run.id");
+        this.tenantId = stepExecution.getJobParameters().getString("tenantId");
+    }
 
     @Override
     public InstrumentAttribute process(Map<String, Object> item) throws Exception {
@@ -66,6 +79,7 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
         }
 
         return instrumentAttributeFactory.create(
+                this.tenantId,
                 instrumentId,
                 attributeId,
                 effectiveDate,

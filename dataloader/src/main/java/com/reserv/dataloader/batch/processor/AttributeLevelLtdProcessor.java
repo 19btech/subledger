@@ -45,6 +45,6 @@ public class AttributeLevelLtdProcessor
             records.add(record);
         }
 
-        return records;
+        return List.copyOf(records);
     }
 }

@@ -313,28 +313,26 @@ public class DataService<T> {
        return generateSequence(tenant, sequenceName);
     }
 
-    public long generateSequence(String tenantid, String sequenceName) {
+    public long generateSequence(String tenantId, String sequenceName) {
+        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenantId);
 
-        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenantid);
+        Query query = new Query(Criteria.where("_id").is(sequenceName));
+        Update update = new Update().inc("seq", 1);
 
-        // Check if the sequence exists
-        Query query = new Query(Criteria.where("id").is(sequenceName));
-        Sequence sequence = mongoTemplate.findOne(query, Sequence.class);
+        // Atomic and thread-safe: this creates the document if it doesn't exist and increments in one step
+        FindAndModifyOptions options = FindAndModifyOptions.options()
+                .returnNew(true)
+                .upsert(true);
+
+        Sequence sequence = mongoTemplate.findAndModify(query, update, options, Sequence.class);
 
         if (sequence == null) {
-            // If the sequence does not exist, create it with an initial value of 0
-            sequence = new Sequence();
-            sequence.setId(sequenceName);
-            sequence.setSeq(0);
-            mongoTemplate.insert(sequence);
+            throw new IllegalStateException("Failed to generate sequence for " + sequenceName);
         }
-
-        // Increment the sequence and return the new value
-        Update update = new Update().inc("seq", 1);
-        sequence = mongoTemplate.findAndModify(query, update, FindAndModifyOptions.options().returnNew(true), Sequence.class);
 
         return sequence.getSeq();
     }
+
     public void generateAllSequences(MongoTemplate mongoTemplate, String tenant) {
         if(mongoTemplate == null){
             log.error("MongoTemplate is null for tenant[{}]", tenant);

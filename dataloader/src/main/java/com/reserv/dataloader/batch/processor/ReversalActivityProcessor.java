@@ -48,6 +48,6 @@ public class ReversalActivityProcessor implements ItemProcessor<Records.Instrume
         }
         System.out.println("PROCESSOR: Processing instrument " + record.instrumentId());
         System.out.println("PROCESSOR: Processing instrument Size " + result.size());
-        return result;
+        return List.copyOf(result);
     }
 }

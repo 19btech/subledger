@@ -44,4 +44,29 @@ public class InstrumentAttributeFactory {
                 .postingDate(postingDate)
                 .build();
     }
+
+    public InstrumentAttribute create(String tenantId,
+                                      String instrumentId,
+                                      String attributeId,
+                                      Date effectiveDate,
+                                      int periodId,
+                                      int postingDate,
+                                      Source source,
+                                      Map<String, Object> attributes) {
+        long versionId = dataService.generateSequence(tenantId, SequenceNames.INSTRUMENTATTRIBUTEVERSIONID.name());
+
+        // Use the Builder pattern to create an instance
+        return InstrumentAttribute.builder()
+                .instrumentId(instrumentId)
+                .attributeId(attributeId)
+                .effectiveDate(effectiveDate)
+                .periodId(periodId)
+                .attributes(attributes)
+                .versionId(versionId)
+                .previousVersionId(0L)
+                .source(source)
+                .endDate(null) // Assuming endDate is initialized to null
+                .postingDate(postingDate)
+                .build();
+    }
 }
