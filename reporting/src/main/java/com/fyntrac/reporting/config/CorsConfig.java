@@ -6,7 +6,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 
-import java.util.Arrays;
+import java.util.Collections;
 
 @Configuration
 public class CorsConfig {
@@ -14,13 +14,13 @@ public class CorsConfig {
     @Bean
     public CorsFilter corsFilter() {
         CorsConfiguration corsConfig = new CorsConfiguration();
-        corsConfig.setAllowedOrigins(Arrays.asList("*")); // Allow requests from all origins
-        corsConfig.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        corsConfig.setAllowedHeaders(Arrays.asList("*"));
+        corsConfig.setAllowedOriginPatterns(Collections.singletonList("*:3030")); // ✅ Allow any host on port 3030
+        corsConfig.setAllowedMethods(Collections.singletonList("*"));
+        corsConfig.setAllowedHeaders(Collections.singletonList("*"));
+        corsConfig.setAllowCredentials(true); // if you use cookies or auth headers
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", corsConfig);
         return new CorsFilter(source);
     }
-
-
 }

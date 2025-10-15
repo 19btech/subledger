@@ -73,7 +73,7 @@ docker {
     url = 'unix:///var/run/docker.sock'
 
 	javaApplication {
-		baseImage = 'openjdk:21-slim'
+		baseImage = 'openjdk:21'
 		mainClassName = 'com.fyntrac.model.ModelApplication' // Corrected property name
 		ports = [8082] // Specify any ports your application uses
 
@@ -85,10 +85,10 @@ docker {
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 	implementation 'org.springframework.boot:spring-boot-starter-pulsar'
-	implementation "org.apache.pulsar:pulsar-client-admin:${pulsarVersion}"
-	implementation "org.apache.pulsar:pulsar-common:${pulsarVersion}"
+    implementation "org.apache.pulsar:pulsar-client-all:${pulsarVersion}"
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation "com.fyntrac:commons:${project.version}"
 	implementation 'org.apache.poi:poi:5.4.1'
 	// implementation 'org.apache.poi:poi-ooxml:5.3.0'
