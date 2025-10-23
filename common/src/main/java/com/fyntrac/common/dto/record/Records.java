@@ -1,9 +1,6 @@
 package com.fyntrac.common.dto.record;
 
-import com.fyntrac.common.entity.AccountingPeriod;
-import com.fyntrac.common.entity.Batch;
-import com.fyntrac.common.entity.Model;
-import com.fyntrac.common.entity.ModelFile;
+import com.fyntrac.common.entity.*;
 import com.fyntrac.common.enums.InstrumentAttributeVersionType;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.enums.TestStep;
@@ -310,5 +307,13 @@ public class Records {
 
     public record InstrumentMessageRecord(String tenantId, String[] instrumentIds, String[] models) implements Serializable {
         private static final long serialVersionUID = 4754051711821283813L;
+    }
+
+    public record AuthticationRecord(String email, String pswd) implements Serializable {
+        private static final long serialVersionUID = -1704199134687276951L;
+    }
+
+    public record UserTenantRecord(User user, List<Tenant> tenants) implements Serializable {
+        private static final long serialVersionUID = -4812970440663173267L;
     }
 }

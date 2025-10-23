@@ -85,10 +85,10 @@ public class ModelExecutionService {
 
     public void executeModels(Date executionDate, Records.ModelExecutionMessageRecord msg) throws Throwable {
         try {
-            List<Model> models = this.modelDataService.getActiveModels();
+            List<Model> models = this.modelDataService.getActiveModels(msg.tenantId());
             List<Records.ModelRecord> activeModels = new ArrayList<>(0);
             for(Model model : models) {
-                ModelFile modelFile = this.modelDataService.getModelFile(model.getModelFileId());
+                ModelFile modelFile = this.modelDataService.getModelFile(model.getModelFileId(), msg.tenantId());
                 // Workbook workbook = ExcelUtil.convertBinaryToWorkbook(modelFile.getFileData());
                 activeModels.add(RecordFactory.createModelRecord(model, modelFile));
             }

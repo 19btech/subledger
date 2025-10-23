@@ -49,17 +49,17 @@ public class TenantDatasourceConfig {
     }
 
     public void configureTenantDatabases(Tenant tenant) {
-        this.configureTenantDatabases(tenant.getName());
+        this.configureTenantDatabases(tenant.getTenantCode());
     }
 
-    public void configureTenantDatabases(String tenant) {
-        if(tenantDataSourceProvider.getDataSource(tenant) == null) {
-            String connectionURI = getConnectionURI(tenant);
+    public void configureTenantDatabases(String tenantCode) {
+        if(tenantDataSourceProvider.getDataSource(tenantCode) == null) {
+            String connectionURI = getConnectionURI(tenantCode);
             MongoDatabaseFactory factory = new SimpleMongoClientDatabaseFactory(connectionURI);
             MongoTemplate template = new MongoTemplate(factory, mappingMongoConverter);
-            tenantDataSourceProvider.addDataSource(tenant, template);
+            tenantDataSourceProvider.addDataSource(tenantCode, template);
             if (sequenceGenerator != null) {
-                sequenceGenerator.generateAllSequences(template, tenant);
+                sequenceGenerator.generateAllSequences(template, tenantCode);
             }
         }
     }

@@ -46,12 +46,40 @@ public class ModelDataService {
         return this.dataService.fetchData(query, Model.class);
     }
 
+    public List<Model> getActiveModels(String tenant) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("isDeleted").is(0).and("modelStatus").is(ModelStatus.ACTIVE));
+
+        // Add sorting to the query (e.g., sort by uploadDate in descending order)
+        query.with(Sort.by(Sort.Direction.ASC, "orderId"));
+        // Execute the aggregation
+        return this.dataService.fetchData(query, tenant, Model.class);
+    }
+
     public ModelFile getModelFile(String fileId) {
         try {
             Query query = new Query();
             query.addCriteria(Criteria.where("_id").is(fileId));
             // Execute the query
             return this.modelFileDataService.findOne(query, ModelFile.class);
+        } catch (DataAccessException e) {
+            // Handle data access exceptions (e.g., database connectivity issues)
+            System.err.println("Data access error while retrieving model file: " + e.getMessage());
+            // You can also log the error using a logging framework
+            throw e; // or throw a custom exception
+        } catch (Exception e) {
+            // Handle any other exceptions
+            System.err.println("An error occurred while retrieving model file: " + e.getMessage());
+            throw e; // or throw a custom exception
+        }
+    }
+
+    public ModelFile getModelFile(String fileId, String tenant) {
+        try {
+            Query query = new Query();
+            query.addCriteria(Criteria.where("_id").is(fileId));
+            // Execute the query
+            return this.modelFileDataService.findOne(query, tenant, ModelFile.class);
         } catch (DataAccessException e) {
             // Handle data access exceptions (e.g., database connectivity issues)
             System.err.println("Data access error while retrieving model file: " + e.getMessage());

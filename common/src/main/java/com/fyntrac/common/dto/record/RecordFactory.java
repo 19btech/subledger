@@ -392,4 +392,12 @@ public class RecordFactory {
                                                                                 String[] models) {
         return createRecord(() -> new Records.InstrumentMessageRecord(tenantId, instrumentIds, models));
     }
+
+    public static Records.AuthticationRecord createAuthenticationRecord(String email, String pswd) {
+        return createRecord(() -> new Records.AuthticationRecord(email, pswd));
+    }
+
+    public static Records.UserTenantRecord createUserTenantRecord(User user, List<Tenant> tenants) {
+        return createRecord(() -> new Records.UserTenantRecord(user, tenants));
+    }
 }

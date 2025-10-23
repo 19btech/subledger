@@ -1,9 +1,8 @@
 package com.fyntrac.common.entity;
 
-import com.fyntrac.common.enums.TenantStatus;
+import com.fyntrac.common.enums.MerchantStatus;
 import lombok.*;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
@@ -13,24 +12,24 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Document(collection = "tenants")
-public class Tenant {
+@Document(collection = "merchants")
+public class Merchant {
 
     @Id
     private String id;
 
-    private String tenantCode;
-    @Indexed(unique = true)
+    private String merchantCode;
     private String name;
     private String description;
-    private String merchantId;
+    private String industryType;
 
-    private String timezone;
-    private String currency;
-    private String locale;
+    private String contactEmail;
+    private String contactPhone;
 
-    private List<String> userIds;
-    private TenantStatus status;
+    private Address address;
+    private List<String> tenantIds;
+
+    private MerchantStatus status;
 
     private Instant createdAt;
     private Instant updatedAt;
@@ -41,21 +40,29 @@ public class Tenant {
         sb.append("{");
 
         appendJsonField(sb, "id", id, true);
-        appendJsonField(sb, "tenantCode", tenantCode, false);
+        appendJsonField(sb, "merchantCode", merchantCode, false);
         appendJsonField(sb, "name", name, false);
         appendJsonField(sb, "description", description, false);
-        appendJsonField(sb, "merchantId", merchantId, false);
-        appendJsonField(sb, "timezone", timezone, false);
-        appendJsonField(sb, "currency", currency, false);
-        appendJsonField(sb, "locale", locale, false);
+        appendJsonField(sb, "industryType", industryType, false);
+        appendJsonField(sb, "contactEmail", contactEmail, false);
+        appendJsonField(sb, "contactPhone", contactPhone, false);
 
-        // Handle List field
-        sb.append("\"userIds\":");
-        if (userIds != null) {
+        // Handle Address object
+        sb.append("\"address\":");
+        if (address != null) {
+            sb.append(address.toString());
+        } else {
+            sb.append("null");
+        }
+        sb.append(",");
+
+        // Handle tenantIds list
+        sb.append("\"tenantIds\":");
+        if (tenantIds != null) {
             sb.append("[");
-            for (int i = 0; i < userIds.size(); i++) {
-                sb.append("\"").append(escapeJson(userIds.get(i))).append("\"");
-                if (i < userIds.size() - 1) sb.append(",");
+            for (int i = 0; i < tenantIds.size(); i++) {
+                sb.append("\"").append(escapeJson(tenantIds.get(i))).append("\"");
+                if (i < tenantIds.size() - 1) sb.append(",");
             }
             sb.append("]");
         } else {
