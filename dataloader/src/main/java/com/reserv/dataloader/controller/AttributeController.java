@@ -1,6 +1,7 @@
 package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.entity.Attributes;
+import com.fyntrac.common.entity.Option;
 import com.fyntrac.common.service.AttributeService;
 import com.fyntrac.common.service.DataService;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +36,18 @@ public class AttributeController {
     public ResponseEntity<Collection<Attributes>> getAllAttributes() {
         try {
             Collection<Attributes> attributes = dataService.fetchAllData(Attributes.class);
+            return new ResponseEntity<>(attributes, HttpStatus.OK);
+        } catch (Exception e) {
+            // Log the exception for debugging purposes
+            log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @GetMapping("/get/all/options")
+    public ResponseEntity<Collection<Option>> getAllAttributeOptions() {
+        try {
+            Collection<Option> attributes = attributeService.getAttributeNameOptions();
             return new ResponseEntity<>(attributes, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes

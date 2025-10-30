@@ -1,6 +1,7 @@
 package com.fyntrac.common.service;
 
 import com.fyntrac.common.cache.collection.CacheMap;
+import com.fyntrac.common.entity.Option;
 import com.fyntrac.common.entity.Transactions;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.Key;
@@ -89,5 +90,18 @@ public class TransactionService extends CacheBasedService<Transactions>{
         return metrics.stream()
                 .map(Records.TransactionNameRecord::new)         // Create a new MetricRecord for each distinct name
                 .collect(Collectors.toList());
+    }
+
+    public Collection<Option> fetchTransactionOptions() {
+        Collection<String> metrics = this.dataService.getMongoTemplate().query(Transactions.class)  // Replace Metric.class with your actual class
+                .distinct("name")          // Specify the field name
+                .as(String.class)                // Specify the return type
+                .all();
+
+        // Map the distinct names to MetricRecord objects
+        return metrics.stream()
+                .map(s -> Option.builder().label(s).value(s).build())  // Lambda: each string becomes label
+        // and value
+                .collect(Collectors.toList());  // Collect into a List (or use toCollection for specific type)
     }
 }

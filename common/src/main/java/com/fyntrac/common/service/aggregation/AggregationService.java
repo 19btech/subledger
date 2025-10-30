@@ -3,10 +3,7 @@ package com.fyntrac.common.service.aggregation;
 import com.fyntrac.common.cache.collection.CacheList;
 import com.fyntrac.common.cache.collection.CacheMap;
 import com.fyntrac.common.dto.record.Records;
-import com.fyntrac.common.entity.Aggregation;
-import com.fyntrac.common.entity.AttributeLevelLtd;
-import com.fyntrac.common.entity.InstrumentLevelLtd;
-import com.fyntrac.common.entity.MetricLevelLtd;
+import com.fyntrac.common.entity.*;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.CacheBasedService;
 import com.fyntrac.common.service.DataService;
@@ -65,6 +62,27 @@ public class AggregationService  extends CacheBasedService<Aggregation> {
         return metrics.stream()
                 .map(Records.MetricNameRecord::new)         // Create a new MetricRecord for each distinct name
                 .collect(Collectors.toList());
+    }
+
+    public Collection<String> fetchMetrics() {
+        return this.dataService.getMongoTemplate().query(Aggregation.class)  // Replace
+                // Metric.class with your actual class
+                .distinct("metricName")          // Specify the field name
+                .as(String.class)                // Specify the return type
+                .all();
+
+    }
+
+    public Collection<Option> fetchMetricOptionList() {
+        Collection<String> metrics = this.fetchMetrics();
+
+        Collection<Option> metricOptions = new ArrayList<>(0);
+
+        for(String metric : metrics) {
+            metricOptions.add(Option.builder().label(metric).value(metric).build());
+        }
+
+        return metricOptions;
     }
 
     @Override

@@ -24,14 +24,19 @@ public class TenantFilter implements Filter {
 
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException{
-        HttpServletRequest httpRequest = (HttpServletRequest) servletRequest;
-        String tenantId = httpRequest.getHeader("X-Tenant".toLowerCase());
-        this.tenantDatasourceConfig.configureTenantDatabases(tenantId);
-        if(tenantId != null) {
-            TenantContextHolder.setTenant(tenantId);
+        try {
+            HttpServletRequest httpRequest = (HttpServletRequest) servletRequest;
+            String tenantId = httpRequest.getHeader("X-Tenant".toLowerCase());
+            this.tenantDatasourceConfig.configureTenantDatabases(tenantId);
+            if (tenantId != null) {
+                TenantContextHolder.setTenant(tenantId);
+            }
+            this.dataService.setTenantId(tenantId);
+            filterChain.doFilter(servletRequest, servletResponse);
+        }finally {
+            TenantContextHolder.clear(); // Clear tenant after request processing
         }
-        this.dataService.setTenantId(tenantId);
-        filterChain.doFilter(servletRequest, servletResponse);
-        // tenantContextHolder.clear(); // Clear tenant after request processing
+        //
     }
+
 }

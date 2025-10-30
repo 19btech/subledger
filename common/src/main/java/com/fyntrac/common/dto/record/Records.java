@@ -9,9 +9,13 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.format.annotation.NumberFormat;
 
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Positive;
 import java.io.File;
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
@@ -316,4 +320,95 @@ public class Records {
     public record UserTenantRecord(User user, List<Tenant> tenants) implements Serializable {
         private static final long serialVersionUID = -4812970440663173267L;
     }
+
+    public record OptionRequest(
+            @NotBlank(message = "Label is required")
+            String label,
+
+            @NotBlank(message = "Value is required")
+            String value
+    ) implements Serializable {private static final long serialVersionUID = 3111803440852648881L;}
+
+    public record SourceMappingRequest(
+            @NotNull(message = "Source table is required")
+            String sourceTable,
+
+            @NotNull(message = "Source columns are required")
+            List<OptionRequest> sourceColumns,
+
+            List<OptionRequest> versionType,
+
+            List<OptionRequest> dataMapping
+    ) implements Serializable {private static final long serialVersionUID = -6688173484561516379L;}
+
+    public record TriggerSetupRequest(
+            @NotNull(message = "Trigger type is required")
+            String triggerType,
+
+            String triggerCondition,
+
+            List<OptionRequest> triggerSource
+    ) implements Serializable {private static final long serialVersionUID = 5176050122493280517L;}
+
+    public record EventConfigurationRequest(
+            @NotBlank(message = "Event ID is required")
+            String eventId,
+
+            @NotBlank(message = "Event name is required")
+            String eventName,
+
+            @NotNull(message = "Priority is required")
+            @Positive(message = "Priority must be positive")
+            Integer priority,
+
+            String description,
+
+            @NotNull(message = "Trigger setup is required")
+            TriggerSetupRequest triggerSetup,
+
+            @NotNull(message = "Source mappings are required")
+            List<SourceMappingRequest> sourceMappings
+    ) implements Serializable {private static final long serialVersionUID = 3791186632733494104L;}
+
+    public record OptionResponse(
+            String label,
+            String value
+    ) implements Serializable {private static final long serialVersionUID = 1180567008956378960L;}
+
+    public record SourceMappingResponse(
+            String sourceTable,
+            List<OptionResponse> sourceColumns,
+            List<OptionResponse> versionType,
+            List<OptionResponse> dataMapping
+    ) implements Serializable {private static final long serialVersionUID = 6415178979282662812L;}
+
+    public record TriggerSetupResponse(
+            String triggerType,
+            String triggerCondition,
+            List<OptionResponse> triggerSource
+    ) implements Serializable {private static final long serialVersionUID = -298061981443835860L;}
+
+    public record EventConfigurationResponse(
+            String id,
+            String eventId,
+            String eventName,
+            Integer priority,
+            String description,
+            TriggerSetupResponse triggerSetup,
+            List<SourceMappingResponse> sourceMappings,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt,
+            String createdBy,
+            String updatedBy,
+            Boolean isActive
+    ) implements Serializable {private static final long serialVersionUID = 9082175583455561988L;}
+
+    public record EventConfigurationBasicResponse(
+            String id,
+            String eventId,
+            String eventName,
+            Integer priority,
+            String description,
+            LocalDateTime createdAt
+    ) implements Serializable {private static final long serialVersionUID = 7199490834201351323L;}
 }

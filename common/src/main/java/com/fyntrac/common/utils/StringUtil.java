@@ -137,4 +137,46 @@ public class StringUtil {
             throw new RuntimeException(e);
         }
     }
+
+    // Helper method to add a field to JSON
+    public static void addField(StringBuilder json, String key, Object value) {
+        addField(json, key, value, false);
+    }
+    public static  void addField(StringBuilder json, String key, Object value, boolean isLast) {
+        json.append("\"").append(key).append("\":");
+        if (value == null) {
+            json.append("null");
+        } else if (value instanceof String) {
+            json.append("\"").append(escapeJsonString((String) value)).append("\"");
+        } else if (value instanceof Boolean || value instanceof Number) {
+            json.append(value.toString());
+        } else {
+            // For complex objects, assume they have JSON-compatible toString
+            json.append(value.toString());
+        }
+        if (!isLast) {
+            json.append(",");
+        }
+    }
+    // Helper method to add a list field to JSON
+    public static  void addListField(StringBuilder json, String key, List<?> list) {
+        json.append("\"").append(key).append("\":[");
+        if (list != null && !list.isEmpty()) {
+            for (int i = 0; i < list.size(); i++) {
+                json.append(list.get(i).toString());
+                if (i < list.size() - 1) {
+                    json.append(",");
+                }
+            }
+        }
+        json.append("],");
+    }
+    // Helper method to escape JSON strings
+    public static  String escapeJsonString(String str) {
+        return str.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
+    }
 }

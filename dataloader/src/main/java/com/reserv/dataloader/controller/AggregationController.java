@@ -1,6 +1,7 @@
 package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.entity.Aggregation;
+import com.fyntrac.common.entity.Option;
 import com.fyntrac.common.service.aggregation.AggregationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +35,19 @@ public class AggregationController {
             Records.TrendAnalysisRecord text;
             Collection<Aggregation> transactions = this.aggregationService.fetchAll();
             return new ResponseEntity<>(transactions, HttpStatus.OK);
+        } catch (Exception e) {
+            // Log the exception for debugging purposes
+            log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @GetMapping("/get/all/options")
+    public ResponseEntity<Collection<Option>> getMetricOptions() {
+        try {
+            Records.TrendAnalysisRecord text;
+            Collection<Option> attributes = this.aggregationService.fetchMetricOptionList();
+            return new ResponseEntity<>(attributes, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes
             log.error(e.getLocalizedMessage());

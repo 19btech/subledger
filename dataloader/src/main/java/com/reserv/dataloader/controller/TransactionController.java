@@ -1,5 +1,6 @@
 package com.reserv.dataloader.controller;
 
+import com.fyntrac.common.entity.Option;
 import com.fyntrac.common.entity.Transactions;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.service.TransactionService;
@@ -32,6 +33,18 @@ public class TransactionController {
     public ResponseEntity<Collection<Transactions>> getAllTransactions() {
         try {
             Collection<Transactions> transactions = transactionService.getAll();
+            return new ResponseEntity<>(transactions, HttpStatus.OK);
+        } catch (Exception e) {
+            // Log the exception for debugging purposes
+            log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @GetMapping("/get/all/options")
+    public ResponseEntity<Collection<Option>> getTransactionOptions() {
+        try {
+            Collection<Option> transactions = transactionService.fetchTransactionOptions();
             return new ResponseEntity<>(transactions, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes

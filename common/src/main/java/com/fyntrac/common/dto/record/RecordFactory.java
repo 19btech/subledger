@@ -13,10 +13,14 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.format.annotation.NumberFormat;
 import org.springframework.stereotype.Component;
 
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Positive;
 import java.io.File;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.text.ParseException;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
@@ -33,14 +37,14 @@ public class RecordFactory {
 
     // Specific methods for creating records
     public static Records.AccountingPeriodRecord createAccountingPeriodRecord(AccountingPeriod accountingPeriod) {
-        if(accountingPeriod == null) {
+        if (accountingPeriod == null) {
             return createRecord(() -> new Records.AccountingPeriodRecord(
                     0
                     , "_ _ / _ _"
                     , 0
                     , 0
                     , 0));
-        }else {
+        } else {
             return createRecord(() -> new Records.AccountingPeriodRecord(
                     accountingPeriod.getPeriodId()
                     , accountingPeriod.getPeriod()
@@ -50,11 +54,11 @@ public class RecordFactory {
         }
     }
 
-    public static Records.GeneralLedgerMessageRecord createGeneralLedgerMessageRecord(String tenantId, long jobId){
-        return createRecord(()->new Records.GeneralLedgerMessageRecord(tenantId, jobId));
+    public static Records.GeneralLedgerMessageRecord createGeneralLedgerMessageRecord(String tenantId, long jobId) {
+        return createRecord(() -> new Records.GeneralLedgerMessageRecord(tenantId, jobId));
     }
 
-    public static Records.TransactionActivityRecord createTransactionActivityRecord(TransactionActivity transactionActivity, String tenantId){
+    public static Records.TransactionActivityRecord createTransactionActivityRecord(TransactionActivity transactionActivity, String tenantId) {
         return createRecord(() -> {
             try {
                 return new Records.TransactionActivityRecord(
@@ -73,8 +77,8 @@ public class RecordFactory {
         });
     }
 
-    public static Records.InstrumentAttributeRecord createInstrumentAttributeRecord(InstrumentAttribute instrumentAttribute){
-        return createRecord(()-> new Records.InstrumentAttributeRecord(instrumentAttribute.getEffectiveDate()
+    public static Records.InstrumentAttributeRecord createInstrumentAttributeRecord(InstrumentAttribute instrumentAttribute) {
+        return createRecord(() -> new Records.InstrumentAttributeRecord(instrumentAttribute.getEffectiveDate()
                 , instrumentAttribute.getInstrumentId()
                 , instrumentAttribute.getAttributeId()
                 , instrumentAttribute.getEndDate()
@@ -95,26 +99,26 @@ public class RecordFactory {
     }
 
     public static Records.ReclassMessageRecord createReclassMessageRecord(String tenantId, String dataKey) {
-        return createRecord(()-> new Records.ReclassMessageRecord(tenantId, dataKey));
+        return createRecord(() -> new Records.ReclassMessageRecord(tenantId, dataKey));
     }
 
-    public static Records.AccountingPeriodCloseMessageRecord createAccountingPeriodCloseMessage(String tenant, Collection<Batch> batches){
+    public static Records.AccountingPeriodCloseMessageRecord createAccountingPeriodCloseMessage(String tenant, Collection<Batch> batches) {
         return createRecord(() -> new Records.AccountingPeriodCloseMessageRecord(tenant, batches));
     }
 
-    public static Records.ModelExecutionMessageRecord createModelExecutionMessage(String tenant,Integer executionDate, String key){
-        return createRecord(() -> new Records.ModelExecutionMessageRecord(tenant,executionDate, key));
+    public static Records.ModelExecutionMessageRecord createModelExecutionMessage(String tenant, Integer executionDate, String key) {
+        return createRecord(() -> new Records.ModelExecutionMessageRecord(tenant, executionDate, key));
     }
 
-    public static Records.ModelRecord createModelRecord(Model model, ModelFile modelFile){
+    public static Records.ModelRecord createModelRecord(Model model, ModelFile modelFile) {
         return createRecord(() -> new Records.ModelRecord(model, modelFile));
     }
 
-    public static Records.ExcelModelRecord createExcelModelRecord(Model model, Workbook excelModel){
+    public static Records.ExcelModelRecord createExcelModelRecord(Model model, Workbook excelModel) {
         return createRecord(() -> new Records.ExcelModelRecord(model, excelModel));
     }
 
-    public static Records.MetricRecord createMetricRecord(String metricName, String instrumentid, String attributeId, int accountingPeriod,int postingDate, BigDecimal beginningBalance, BigDecimal activity, BigDecimal endingBalance) {
+    public static Records.MetricRecord createMetricRecord(String metricName, String instrumentid, String attributeId, int accountingPeriod, int postingDate, BigDecimal beginningBalance, BigDecimal activity, BigDecimal endingBalance) {
         return createRecord(() -> new Records.MetricRecord(metricName
                 , instrumentid
                 , attributeId
@@ -166,21 +170,21 @@ public class RecordFactory {
         return createRecord(() -> new Records.ModelOutputData(transactionActivityList, instrumentAttributeList));
     }
 
-    public static Records.DocumentAttribute createDocumentAttribute(String attributeName, String attributeAlias,  String dataType) {
+    public static Records.DocumentAttribute createDocumentAttribute(String attributeName, String attributeAlias, String dataType) {
         return createRecord(() -> new Records.DocumentAttribute(attributeName, attributeAlias, dataType));
     }
 
-    public static Records.QueryCriteriaItem createQueryCriteriaItem(String attributeName, String operator,String values, List<String> filters, String logicalOperator) {
+    public static Records.QueryCriteriaItem createQueryCriteriaItem(String attributeName, String operator, String values, List<String> filters, String logicalOperator) {
         return createRecord(() -> new Records.QueryCriteriaItem(attributeName, operator, values, filters, logicalOperator));
     }
 
     public static Records.TransactionActivityReplayRecord createTransactionActivityReplayRecord(String instrumentId
-    , String attributeId
-    , Integer replayDate) {
-     return createRecord(() -> new Records.TransactionActivityReplayRecord(instrumentId, attributeId, replayDate));
+            , String attributeId
+            , Integer replayDate) {
+        return createRecord(() -> new Records.TransactionActivityReplayRecord(instrumentId, attributeId, replayDate));
     }
 
-    public  static Records.ExecutionDateRecord createExcutionDateRecord(Date executionDate, Date	lastExecutionDate, Date	replayDate) {
+    public static Records.ExecutionDateRecord createExcutionDateRecord(Date executionDate, Date lastExecutionDate, Date replayDate) {
         return createRecord(() -> new Records.ExecutionDateRecord(executionDate, lastExecutionDate, replayDate));
     }
 
@@ -225,8 +229,8 @@ public class RecordFactory {
                 , attributeId
                 , originalPeriodId
                 , instrumentAttributeVersionId
-        , accountingPeriod
-        , batchId, source, sourceId, DateUtil.convertToDateFromYYYYMMDD(postingDate),effectiveDate, attributes));
+                , accountingPeriod
+                , batchId, source, sourceId, DateUtil.convertToDateFromYYYYMMDD(postingDate), effectiveDate, attributes));
     }
 
     public static Records.TransactionActivityModelRecord createTransactionActivityModelRecord(TransactionActivity activity) {
@@ -245,7 +249,7 @@ public class RecordFactory {
                         , activity.getSource()
                         , activity.getSourceId()
                         , DateUtil.convertToDateFromYYYYMMDD(activity.getPostingDate())
-                        ,activity.getEffectiveDate()
+                        , activity.getEffectiveDate()
                         , activity.getAttributes());
             } catch (ParseException e) {
                 throw new RuntimeException(e);
@@ -253,39 +257,39 @@ public class RecordFactory {
         });
     }
 
-    public static Records.InstrumentAttributeModelRecord createInstrumentAttributeModelRecord( InstrumentAttributeVersionType type,
-                                                                                               String id,
-                                                                                               Date effectiveDate,
-                                                                                               String instrumentId,
-                                                                                               String attributeId,
-                                                                                               long batchId,
-                                                                                               Date endDate,
-                                                                                               int periodId,
-                                                                                               long versionId,
-                                                                                               long previousVersionId,
-                                                                                               Source source,
-                                                                                               String sourceId,
-                                                                                               Map<String, Object> attributes,
-                                                                                               Integer postingDate) {
+    public static Records.InstrumentAttributeModelRecord createInstrumentAttributeModelRecord(InstrumentAttributeVersionType type,
+                                                                                              String id,
+                                                                                              Date effectiveDate,
+                                                                                              String instrumentId,
+                                                                                              String attributeId,
+                                                                                              long batchId,
+                                                                                              Date endDate,
+                                                                                              int periodId,
+                                                                                              long versionId,
+                                                                                              long previousVersionId,
+                                                                                              Source source,
+                                                                                              String sourceId,
+                                                                                              Map<String, Object> attributes,
+                                                                                              Integer postingDate) {
         return createRecord(() -> new Records.InstrumentAttributeModelRecord(
                 type,
                 id,
                 effectiveDate,
                 instrumentId,
                 attributeId,
-        batchId,
-        endDate,
-        periodId,
-        versionId,
-        previousVersionId,
-        source,
-        sourceId,
-        attributes, DateUtil.convertToDateFromYYYYMMDD(postingDate)));
+                batchId,
+                endDate,
+                periodId,
+                versionId,
+                previousVersionId,
+                source,
+                sourceId,
+                attributes, DateUtil.convertToDateFromYYYYMMDD(postingDate)));
 
     }
 
-    public static Records.InstrumentAttributeModelRecord createInstrumentAttributeModelRecord( InstrumentAttributeVersionType type,
-                                                                                               InstrumentAttribute instrumentAttribute) {
+    public static Records.InstrumentAttributeModelRecord createInstrumentAttributeModelRecord(InstrumentAttributeVersionType type,
+                                                                                              InstrumentAttribute instrumentAttribute) {
         return createRecord(() -> new Records.InstrumentAttributeModelRecord(
                 type,
                 instrumentAttribute.getId(),
@@ -303,14 +307,14 @@ public class RecordFactory {
 
     }
 
-    public static Records.InstrumentAttributeRecord createInstrumentAttributeRecord( Date effectiveDate
-                                                                              ,String instrumentId
-                                                                              ,String attributeId
-                                                                              ,Date endDate
-                                                                              ,int periodId
-                                                                              ,long versionId
-                                                                              ,Map<String, Object> attributes
-    , AccountingPeriod accountingPeriod) {
+    public static Records.InstrumentAttributeRecord createInstrumentAttributeRecord(Date effectiveDate
+            , String instrumentId
+            , String attributeId
+            , Date endDate
+            , int periodId
+            , long versionId
+            , Map<String, Object> attributes
+            , AccountingPeriod accountingPeriod) {
 
         return createRecord(() -> new Records.InstrumentAttributeRecord(
                 effectiveDate,
@@ -328,7 +332,7 @@ public class RecordFactory {
     }
 
     public static Records.AttributeLevelLtdRecord createAttributeLevelLtdRecord(String metricName, String instrumentId, String attributeId, int postingDate, int accountingPeriod, BigDecimal amount) {
-        return createRecord(() -> new Records.AttributeLevelLtdRecord(metricName, instrumentId,attributeId, postingDate, accountingPeriod, amount));
+        return createRecord(() -> new Records.AttributeLevelLtdRecord(metricName, instrumentId, attributeId, postingDate, accountingPeriod, amount));
 
     }
 
@@ -336,6 +340,7 @@ public class RecordFactory {
         return createRecord(() -> new Records.InstrumentLevelLtdRecord(metricName, instrumentId, postingDate, accountingPeriod, amount));
 
     }
+
     public static Records.MetricLevelLtdRecord createMetricLevelLtdRecord(String metricName, int postingDate, int accountingPeriod, BigDecimal amount) {
         return createRecord(() -> new Records.MetricLevelLtdRecord(metricName, postingDate, accountingPeriod, amount));
 
@@ -346,34 +351,34 @@ public class RecordFactory {
     }
 
     public static Records.RankedMetricRecord createRankedMetricRecord(int rank, String metricName, BigDecimal balance) {
-        return createRecord(()-> new Records.RankedMetricRecord(rank,metricName,balance));
+        return createRecord(() -> new Records.RankedMetricRecord(rank, metricName, balance));
     }
 
     public static Records.MonthOverMonthActivityRecord createMonthOverMonthActivityRecord(Integer accountingPeriodId, String metricName, BigDecimal activityAmount) {
-        return createRecord(()-> new Records.MonthOverMonthActivityRecord(accountingPeriodId, metricName, activityAmount));
+        return createRecord(() -> new Records.MonthOverMonthActivityRecord(accountingPeriodId, metricName, activityAmount));
     }
 
     public static Records.MonthOverMonthMetricActivityRecord createMonthOverMonthMetricActivityRecord(List<Map<String, String>> monthOverMonthSeries, List<Map<String, Object>> momData) {
-        return createRecord(()-> new Records.MonthOverMonthMetricActivityRecord(monthOverMonthSeries, momData));
+        return createRecord(() -> new Records.MonthOverMonthMetricActivityRecord(monthOverMonthSeries, momData));
     }
 
     public static Records.DiagnosticReportRequestRecord createRiagnosticReportRequestRecord(String tenant, String instrumentId, String modelId) {
-        return createRecord(()-> new Records.DiagnosticReportRequestRecord(tenant, instrumentId,modelId));
+        return createRecord(() -> new Records.DiagnosticReportRequestRecord(tenant, instrumentId, modelId));
     }
 
     public static Records.DiagnosticReportModelDataRecord createDiagnosticReportModelDataRecord(ModelWorkflowContext excelData, File excelMode) {
-        return createRecord(()-> new Records.DiagnosticReportModelDataRecord(excelData, excelMode));
+        return createRecord(() -> new Records.DiagnosticReportModelDataRecord(excelData, excelMode));
     }
 
     public static Records.DiagnosticReportDataRecord createDiagnosticReportDataRecord(List<Records.DocumentAttribute> transactionActivityHeader,
-                                             List<Map<String, Object>> transactionActivityData,
-                                             List<Records.DocumentAttribute> instrumentAttributeHeader,
-                                             List<Map<String, Object>> instrumentAttributeData,
-                                             List<Records.DocumentAttribute> balancesHeader,
-                                             List<Map<String, Object>> balancesData,
-                                             List<Records.DocumentAttribute> executionStateHeader,
-                                             List<Map<String, Object>> executionStateData) {
-        return createRecord(()-> new Records.DiagnosticReportDataRecord(transactionActivityHeader,
+                                                                                      List<Map<String, Object>> transactionActivityData,
+                                                                                      List<Records.DocumentAttribute> instrumentAttributeHeader,
+                                                                                      List<Map<String, Object>> instrumentAttributeData,
+                                                                                      List<Records.DocumentAttribute> balancesHeader,
+                                                                                      List<Map<String, Object>> balancesData,
+                                                                                      List<Records.DocumentAttribute> executionStateHeader,
+                                                                                      List<Map<String, Object>> executionStateData) {
+        return createRecord(() -> new Records.DiagnosticReportDataRecord(transactionActivityHeader,
                 transactionActivityData,
                 instrumentAttributeHeader,
                 instrumentAttributeData,
@@ -384,7 +389,7 @@ public class RecordFactory {
     }
 
     public static Records.DataFileRecord createDataFileRecord(String name, String id) {
-        return createRecord(()-> new Records.DataFileRecord(name, id));
+        return createRecord(() -> new Records.DataFileRecord(name, id));
     }
 
     public static Records.InstrumentMessageRecord CreateInstrumentMessageRecord(String tenantId,
@@ -400,4 +405,118 @@ public class RecordFactory {
     public static Records.UserTenantRecord createUserTenantRecord(User user, List<Tenant> tenants) {
         return createRecord(() -> new Records.UserTenantRecord(user, tenants));
     }
+
+    public static Records.OptionRequest createOptionRequestRecord(
+            @NotBlank(message = "Label is required")
+            String label,
+
+            @NotBlank(message = "Value is required")
+            String value
+    ) {
+        return createRecord(() -> new Records.OptionRequest(label, value));
+    }
+
+    public static Records.SourceMappingRequest createSourceMappingRequestRecord(
+            @NotNull(message = "Source table is required")
+            String sourceTable,
+
+            @NotNull(message = "Source columns are required")
+            List<Records.OptionRequest> sourceColumns,
+
+            List<Records.OptionRequest> versionType,
+
+            List<Records.OptionRequest> dataMapping
+    ) {
+        return createRecord(() -> new Records.SourceMappingRequest(sourceTable, sourceColumns, versionType, dataMapping));
+    }
+
+    public static Records.TriggerSetupRequest createTriggerSetupRequestRecord(
+            @NotNull(message = "Trigger type is required")
+            String triggerType,
+
+            String triggerCondition,
+
+            List<Records.OptionRequest> triggerSource
+    ) {
+        return createRecord(() -> new Records.TriggerSetupRequest(triggerType, triggerCondition, triggerSource));
+    }
+
+    public static Records.EventConfigurationRequest createEventConfigurationRequestRecord(
+            @NotBlank(message = "Event ID is required")
+            String eventId,
+
+            @NotBlank(message = "Event name is required")
+            String eventName,
+
+            @NotNull(message = "Priority is required")
+            @Positive(message = "Priority must be positive")
+            Integer priority,
+
+            String description,
+
+            @NotNull(message = "Trigger setup is required")
+            Records.TriggerSetupRequest triggerSetup,
+
+            @NotNull(message = "Source mappings are required")
+            List<Records.SourceMappingRequest> sourceMappings
+    ) {
+        return createRecord(() -> new Records.EventConfigurationRequest(eventId, eventName, priority, description,
+                triggerSetup, sourceMappings));
+    }
+
+    public static Records.OptionResponse createOptionResponseRecord(
+            String label,
+            String value
+    ) {
+        return createRecord(() -> new Records.OptionResponse(label, value));
+    }
+
+    public static Records.SourceMappingResponse createSourceMappingResponseRecord(
+            String sourceTable,
+            List<Records.OptionResponse> sourceColumns,
+            List<Records.OptionResponse> versionType,
+            List<Records.OptionResponse> dataMapping
+    ) {
+        return createRecord(() -> new Records.SourceMappingResponse(sourceTable, sourceColumns, versionType,
+                dataMapping));
+    }
+
+    public static Records.TriggerSetupResponse createTriggerSetupResponseRecord(
+            String triggerType,
+            String triggerCondition,
+            List<Records.OptionResponse> triggerSource
+    ) {
+        return createRecord(() -> new Records.TriggerSetupResponse(triggerType, triggerCondition, triggerSource));
+    }
+
+    public static Records.EventConfigurationResponse createEventConfigurationResponseRecord(
+            String id,
+            String eventId,
+            String eventName,
+            Integer priority,
+            String description,
+            Records.TriggerSetupResponse triggerSetup,
+            List<Records.SourceMappingResponse> sourceMappings,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt,
+            String createdBy,
+            String updatedBy,
+            Boolean isActive
+    ) {
+        return createRecord(() -> new Records.EventConfigurationResponse(id, eventId, eventName, priority,
+                description, triggerSetup, sourceMappings, createdAt, updatedAt, createdBy, updatedBy, isActive));
+    }
+
+    public static Records.EventConfigurationBasicResponse createEventConfigurationBasicResponseRecord(
+            String id,
+            String eventId,
+            String eventName,
+            Integer priority,
+            String description,
+            LocalDateTime createdAt
+    ) {
+        return createRecord(() -> new Records.EventConfigurationBasicResponse(id, eventId, eventName, priority,
+                description, createdAt));
+    }
 }
+
