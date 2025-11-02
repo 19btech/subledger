@@ -55,6 +55,9 @@ public class EventConfiguration {
     @Field("isActive")
     @Builder.Default
     private Boolean isActive = Boolean.TRUE;
+    @Field("isDeleted")
+    @Builder.Default
+    private Boolean isDeleted = Boolean.FALSE;
 
     // Custom constructors (optional, but ensure they don't conflict)
     public EventConfiguration(String eventId, String eventName, Integer priority, String description,
@@ -87,7 +90,8 @@ public class EventConfiguration {
         StringUtil.addField(json, "updatedAt", updatedAt != null ? updatedAt.toString() : null);
         StringUtil.addField(json, "createdBy", createdBy);
         StringUtil.addField(json, "updatedBy", updatedBy);
-        StringUtil.addField(json, "isActive", isActive, true);  // Last field, no comma
+        StringUtil.addField(json, "isActive", isActive);
+        StringUtil.addField(json, "isActive", isDeleted, true);  // Last field, no comma
         json.append("}");
         return json.toString();
     }

@@ -57,23 +57,23 @@ public class EventConfigurationController {
         return ResponseEntity.ok(response);
     }
 
-    @PutMapping("/update/status/{id}/{isActive}")
+    @PutMapping("/update/status/{eventId}/{isActive}")
     public ResponseEntity<Records.EventConfigurationResponse> updateEventConfigurationStatus(
-            @PathVariable String id,
+            @PathVariable String eventId,
             @PathVariable boolean isActive,
             @RequestHeader("X-User-Id") String userId) {
 
-        Records.EventConfigurationResponse response = eventConfigurationService.updateEventConfigurationStatus(id,
+        Records.EventConfigurationResponse response = eventConfigurationService.updateEventConfigurationStatus(eventId,
                 isActive, userId);
         return ResponseEntity.ok(response);
     }
 
-    @DeleteMapping("/delete/{id}")
+    @DeleteMapping("/delete/{eventId}")
     public ResponseEntity<Void> deleteEventConfiguration(
-            @PathVariable String id,
+            @PathVariable String eventId,
             @RequestHeader("X-User-Id") String userId) {
 
-        eventConfigurationService.deleteEventConfiguration(id, userId);
+        eventConfigurationService.deleteEventConfiguration(eventId, userId);
         return ResponseEntity.noContent().build();
     }
 

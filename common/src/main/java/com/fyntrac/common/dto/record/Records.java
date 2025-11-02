@@ -1,6 +1,7 @@
 package com.fyntrac.common.dto.record;
 
 import com.fyntrac.common.entity.*;
+import com.fyntrac.common.enums.FieldType;
 import com.fyntrac.common.enums.InstrumentAttributeVersionType;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.enums.TestStep;
@@ -338,7 +339,9 @@ public class Records {
 
             List<OptionRequest> versionType,
 
-            List<OptionRequest> dataMapping
+            List<OptionRequest> dataMapping,
+            @NotNull(message = "Source columns are required")
+            String fieldType
     ) implements Serializable {private static final long serialVersionUID = -6688173484561516379L;}
 
     public record TriggerSetupRequest(
@@ -379,7 +382,8 @@ public class Records {
             String sourceTable,
             List<OptionResponse> sourceColumns,
             List<OptionResponse> versionType,
-            List<OptionResponse> dataMapping
+            List<OptionResponse> dataMapping,
+            String fieldType
     ) implements Serializable {private static final long serialVersionUID = 6415178979282662812L;}
 
     public record TriggerSetupResponse(
@@ -400,7 +404,8 @@ public class Records {
             LocalDateTime updatedAt,
             String createdBy,
             String updatedBy,
-            Boolean isActive
+            Boolean isActive,
+            Boolean isDeleted
     ) implements Serializable {private static final long serialVersionUID = 9082175583455561988L;}
 
     public record EventConfigurationBasicResponse(

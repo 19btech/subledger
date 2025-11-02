@@ -1,10 +1,7 @@
 package com.fyntrac.common.dto.record;
 
 import com.fyntrac.common.entity.*;
-import com.fyntrac.common.enums.InstrumentAttributeVersionType;
-import com.fyntrac.common.enums.Source;
-import com.fyntrac.common.enums.TestStep;
-import com.fyntrac.common.enums.UploadStatus;
+import com.fyntrac.common.enums.*;
 import com.fyntrac.common.model.ModelWorkflowContext;
 import com.fyntrac.common.utils.DateUtil;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -425,9 +422,11 @@ public class RecordFactory {
 
             List<Records.OptionRequest> versionType,
 
-            List<Records.OptionRequest> dataMapping
+            List<Records.OptionRequest> dataMapping,
+            String fieldType
     ) {
-        return createRecord(() -> new Records.SourceMappingRequest(sourceTable, sourceColumns, versionType, dataMapping));
+        return createRecord(() -> new Records.SourceMappingRequest(sourceTable, sourceColumns, versionType,
+                dataMapping, fieldType));
     }
 
     public static Records.TriggerSetupRequest createTriggerSetupRequestRecord(
@@ -475,10 +474,11 @@ public class RecordFactory {
             String sourceTable,
             List<Records.OptionResponse> sourceColumns,
             List<Records.OptionResponse> versionType,
-            List<Records.OptionResponse> dataMapping
+            List<Records.OptionResponse> dataMapping,
+            String fieldType
     ) {
         return createRecord(() -> new Records.SourceMappingResponse(sourceTable, sourceColumns, versionType,
-                dataMapping));
+                dataMapping, fieldType));
     }
 
     public static Records.TriggerSetupResponse createTriggerSetupResponseRecord(
@@ -501,10 +501,12 @@ public class RecordFactory {
             LocalDateTime updatedAt,
             String createdBy,
             String updatedBy,
-            Boolean isActive
+            Boolean isActive,
+            Boolean isDeleted
     ) {
         return createRecord(() -> new Records.EventConfigurationResponse(id, eventId, eventName, priority,
-                description, triggerSetup, sourceMappings, createdAt, updatedAt, createdBy, updatedBy, isActive));
+                description, triggerSetup, sourceMappings, createdAt, updatedAt, createdBy, updatedBy, isActive,
+                isDeleted));
     }
 
     public static Records.EventConfigurationBasicResponse createEventConfigurationBasicResponseRecord(

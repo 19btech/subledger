@@ -24,6 +24,9 @@ public interface EventConfigurationRepository extends MongoRepository<EventConfi
     @Query("{ 'eventId': ?0, 'isActive': true }")
     boolean existsActiveByEventIdAndTenantId(String eventId);
 
+    @Query("{ 'isDeleted': false }")
+    List<EventConfiguration> findAllUndeleted();
+
     @Query(value = "{ 'isActive': true }", fields = "{ 'eventId': 1, 'eventName': 1, 'priority': 1 }")
     List<EventConfiguration> findBasicInfo();
 

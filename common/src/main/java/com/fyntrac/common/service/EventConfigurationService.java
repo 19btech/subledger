@@ -87,7 +87,7 @@ public class EventConfigurationService {
     public List<Records.EventConfigurationResponse> getAllEventConfigurations() {
         logger.info("Fetching all event configurations for tenant");
 
-        List<EventConfiguration> entities = eventConfigurationRepository.findAll();
+        List<EventConfiguration> entities = eventConfigurationRepository.findAllUndeleted();
         logger.info("Found {} event configurations", entities.size());
 
         return entities.stream()
@@ -109,20 +109,13 @@ public class EventConfigurationService {
                                                                         boolean isActive, String userId) {
         logger.info("Updating event configuration with ID: {}", eventId);
 
-        EventConfiguration entity = eventConfigurationRepository.findById(eventId)
+        EventConfiguration entity = eventConfigurationRepository.findByEventId(eventId)
                 .orElseThrow(() -> {
                     logger.warn("Event configuration not found with id: {}", eventId);
                     return new RuntimeException("Event configuration not found with id: " + eventId);
                 });
 
         validateTenantAccess(entity);
-
-        // Check if event ID is being changed and if new one already exists
-        if (!entity.getEventId().equals(eventId) &&
-                eventConfigurationRepository.existsByEventId(eventId)) {
-            logger.warn("Event ID already exists: {}", eventId);
-            throw new IllegalArgumentException("Event ID already exists: " + eventId);
-        }
 
         entity.setIsActive(isActive);
         EventConfiguration updated = eventConfigurationRepository.save(entity);
@@ -156,22 +149,22 @@ public class EventConfigurationService {
         return eventConfigurationMapper.toResponse(updated);
     }
 
-    public void deleteEventConfiguration(String id, String userId) {
-        logger.info("Soft deleting event configuration with ID: {}", id);
+    public void deleteEventConfiguration(String eventId, String userId) {
+        logger.info("Soft deleting event configuration with ID: {}", eventId);
 
-        EventConfiguration entity = eventConfigurationRepository.findById(id)
+        EventConfiguration entity = eventConfigurationRepository.findByEventId(eventId)
                 .orElseThrow(() -> {
-                    logger.warn("Event configuration not found with id: {}", id);
-                    return new RuntimeException("Event configuration not found with id: " + id);
+                    logger.warn("Event configuration not found with id: {}", eventId);
+                    return new RuntimeException("Event configuration not found with id: " + eventId);
                 });
 
         validateTenantAccess(entity);
 
-        entity.setIsActive(false);
+        entity.setIsDeleted(Boolean.TRUE);
         entity.setUpdatedBy(userId);
         entity.setUpdatedAt(LocalDateTime.now());
         eventConfigurationRepository.save(entity);
-        logger.info("Event configuration soft deleted successfully with ID: {}", id);
+        logger.info("Event configuration soft deleted successfully with ID: {}", eventId);
     }
 
     @Transactional(readOnly = true)

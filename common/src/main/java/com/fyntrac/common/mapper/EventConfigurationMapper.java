@@ -5,6 +5,7 @@ import com.fyntrac.common.entity.EventConfiguration;
 import com.fyntrac.common.entity.Option;
 import com.fyntrac.common.entity.SourceMapping;
 import com.fyntrac.common.entity.TriggerSetup;
+import com.fyntrac.common.enums.FieldType;
 import com.fyntrac.common.enums.SourceTable;
 import com.fyntrac.common.enums.TriggerType;
 import org.springframework.stereotype.Component;
@@ -79,17 +80,29 @@ public class EventConfigurationMapper {
     private SourceMapping toSourceMapping(Records.SourceMappingRequest request) {
         // Convert string source table to enum
         SourceTable sourceTable;
+        FieldType fieldType;
         try {
             sourceTable = SourceTable.valueOf(request.sourceTable().toUpperCase());
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid source table: " + request.sourceTable());
         }
 
+        try {
+            if(request.fieldType() != null && !(request.fieldType().isEmpty())) {
+                fieldType = FieldType.valueOf(request.fieldType().toUpperCase());
+            }else{
+                fieldType = FieldType.NONE;
+            }
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid filed type: " + request.fieldType());
+        }
+
         return new SourceMapping(
                 sourceTable,
                 toOptions(request.sourceColumns()),
                 toOptions(request.versionType()),
-                toOptions(request.dataMapping())
+                toOptions(request.dataMapping()),
+                fieldType
         );
     }
 
@@ -103,7 +116,7 @@ public class EventConfigurationMapper {
     }
 
     public Records.EventConfigurationResponse toResponse(EventConfiguration entity) {
-        return new Records.EventConfigurationResponse(
+        return RecordFactory.createEventConfigurationResponseRecord(
                 entity.getId(),
                 entity.getEventId(),
                 entity.getEventName(),
@@ -115,7 +128,8 @@ public class EventConfigurationMapper {
                 entity.getUpdatedAt(),
                 entity.getCreatedBy(),
                 entity.getUpdatedBy(),
-                entity.getIsActive()
+                entity.getIsActive(),
+                entity.getIsDeleted()
         );
     }
 
@@ -135,10 +149,11 @@ public class EventConfigurationMapper {
 
     private Records.SourceMappingResponse toSourceMappingResponse(SourceMapping sourceMapping) {
         return RecordFactory.createSourceMappingResponseRecord(
-                sourceMapping.getSourceTable().name(),
+                sourceMapping.getSourceTable().getDisplayName(),
                 toOptionResponses(sourceMapping.getSourceColumns()),
                 toOptionResponses(sourceMapping.getVersionType()),
-                toOptionResponses(sourceMapping.getDataMapping())
+                toOptionResponses(sourceMapping.getDataMapping()),
+                sourceMapping.getFieldType().getDisplayName()
         );
     }
 
