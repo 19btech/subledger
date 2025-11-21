@@ -1,10 +1,13 @@
 package com.reserv.dataloader.service;
 
+import com.fyntrac.common.entity.EventConfiguration;
 import com.fyntrac.common.entity.Model;
 import com.fyntrac.common.enums.InstrumentAttributeVersionType;
 import com.fyntrac.common.exception.InstrumentAttributeVersionTypeException;
+import com.fyntrac.common.repository.EventConfigurationRepository;
 import com.reserv.dataloader.exception.*;
 import com.fyntrac.common.service.aggregation.AggregationService;
+import com.reserv.dataloader.service.model.EventConfigurationValidator;
 import com.reserv.dataloader.utils.ExcelFileUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Cell;
@@ -38,6 +41,8 @@ public class ModelUploadService {
     private final TransactionService transactionService;
     private final AggregationService aggregationService;
     private final AccountingPeriodService accountingPeriodService;
+    private final EventConfigurationValidator eventConfigurationValidator;
+    private final EventConfigurationRepository eventConfigurationRepository;
     private final static List<InstrumentAttributeVersionType> instrumentAttributeTypes = new ArrayList<>(Arrays.asList(InstrumentAttributeVersionType.CURRENT_OPEN_VERSION, InstrumentAttributeVersionType.LAST_CLOSED_VERSION, InstrumentAttributeVersionType.FIRST_VERSION));
 
 
@@ -45,11 +50,31 @@ public class ModelUploadService {
     public ModelUploadService(DataloaderExcelFileService excelFileService
                             , TransactionService transactionService
                             , AggregationService aggregationService
-                            , AccountingPeriodService accountingPeriodService) {
+                            , AccountingPeriodService accountingPeriodService
+    , EventConfigurationValidator eventConfigurationValidator
+    , EventConfigurationRepository eventConfigurationRepository) {
         this.excelFileService = excelFileService;
         this.transactionService = transactionService;
         this.aggregationService = aggregationService;
         this.accountingPeriodService = accountingPeriodService;
+        this.eventConfigurationValidator = eventConfigurationValidator;
+        this.eventConfigurationRepository = eventConfigurationRepository;
+    }
+
+    public EventConfigurationValidator.ValidationResult validateNewModel(Workbook model) throws Exception {
+        //convert multipart file into POI workbook
+        //read sheet i_transaction
+        //ignore header row
+        //read first column of the sheet
+        //get list of transactions
+        //check if transactions are valid
+        //if valid continue else fail validation and throw exception
+        List<EventConfiguration> configurations = this.eventConfigurationRepository.findAllUndeleted();
+        EventConfigurationValidator.ValidationResult result =
+                this.eventConfigurationValidator.validateWorkbookAgainstConfigurations(model,
+                configurations);
+
+        return result;
     }
 
     public boolean validateModel(Workbook model) throws Exception {
@@ -85,6 +110,11 @@ public class ModelUploadService {
     public boolean validateModel(MultipartFile model) throws Exception {
         Workbook workbook = ExcelFileUtil.convertMultipartFileToWorkbook(model);
         return this.validateModel(workbook);
+    }
+
+    public EventConfigurationValidator.ValidationResult validateNewModel(MultipartFile model) throws Exception {
+        Workbook workbook = ExcelFileUtil.convertMultipartFileToWorkbook(model);
+        return this.validateNewModel(workbook);
     }
 
     public boolean validateTransactions(Workbook model, String sheetName) throws Exception {

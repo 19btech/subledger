@@ -4,9 +4,13 @@ import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.ModelConfig;
 import com.fyntrac.common.enums.AggregationLevel;
 import com.fyntrac.common.enums.ModelType;
+import com.fyntrac.common.repository.EventRepository;
+import com.fyntrac.common.service.ExcelModelService;
+import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.StringUtil;
 import com.reserv.dataloader.service.DataloaderExcelFileService;
 import com.reserv.dataloader.service.ModelUploadService;
+import com.reserv.dataloader.service.model.EventConfigurationValidator;
 import com.reserv.dataloader.service.model.ModelExecutionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +25,7 @@ import com.fyntrac.common.service.ModelService;
 import com.fyntrac.common.enums.ModelStatus;
 import com.fyntrac.common.entity.Model;
 
+import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.Date;
 
@@ -33,64 +38,133 @@ public class ModelController {
     private final ModelService modelService;
     private final ModelUploadService modelUploadService;
     private final ModelExecutionService modelExecutionService;
+    private final ExcelModelService excelModelService;
+    private final EventRepository eventRepository;
 
 
     @Autowired
     public ModelController(DataloaderExcelFileService fileService
-                            , ModelService modelServicen
-                            , ModelUploadService modelUploadService
-                            , ModelExecutionService modelExecutionService) {
+            , ModelService modelServicen
+            , ModelUploadService modelUploadService
+            , ModelExecutionService modelExecutionService
+            , ExcelModelService excelModelService
+    , EventRepository eventRepository) {
         this.fileService = fileService;
         this.modelService = modelServicen;
         this.modelUploadService = modelUploadService;
         this.modelExecutionService = modelExecutionService;
+        this.excelModelService = excelModelService;
+        this.eventRepository = eventRepository;
     }
+
     // Upload endpoint
     @PostMapping("/upload")
     @Transactional
     public ResponseEntity<?> uploadFile(@RequestParam("files") MultipartFile file,
-                                             @RequestParam("modelName") String modelName,
-                                             @RequestParam("modelOrderId") String modelOrderId) {
+                                        @RequestParam("modelName") String modelName,
+                                        @RequestParam("modelOrderId") String modelOrderId) {
         try {
-            if (!(modelService.ifModelExists(modelName)) && this.modelUploadService.validateModel(file)) {
 
-                String fileId = fileService.uploadFile(file);
-                ModelConfig modelConfig = new ModelConfig();
-                modelConfig.setMetrics(new Records.MetricNameRecord[]{});
-                modelConfig.setTransactions(new Records.TransactionNameRecord[]{});
-                modelConfig.setAggregationLevel(AggregationLevel.INSTRUMENT);
-                modelConfig.setCurrentVersion(Boolean.TRUE);
-                modelConfig.setLastOpenVersion(Boolean.FALSE);
-                modelConfig.setFirstVersion(Boolean.FALSE);
-                Model model = this.modelService.save(modelName
-                        , ModelType.EXCEL
-                        , modelOrderId
-                        , fileId
-                        , Boolean.FALSE
-                        , ModelStatus.CONFIGURE
-                        , new Date()
-                        , "Fyntrac"
-                        , modelConfig);
-                return ResponseEntity.ok(model);
-            }else{
-                return ResponseEntity.badRequest().body("Model Name already exists [" + modelName + "]");
+            // Basic null/empty file safety check
+            if (file == null || file.isEmpty()) {
+                return ResponseEntity.badRequest().body("Uploaded file is empty.");
             }
-            } catch(IllegalArgumentException e){
-                return ResponseEntity.badRequest().body("Error: " + e.getMessage());
-            } catch(Exception e){
+
+            // Check if model already exists
+            if (modelService.ifModelExists(modelName)) {
+                return ResponseEntity.badRequest()
+                        .body("Model name already exists: " + modelName);
+            }
+
+            // Validate the uploaded model file
+            EventConfigurationValidator.ValidationResult result =
+                    modelUploadService.validateNewModel(file);
+
+            if (result == null || !result.isValid()) {
+                String errorMessage = String.format(
+                        "Model [%s] validation failed. Errors: %s",
+                        modelName,
+                        result != null ? result.getErrors() : "Unknown validation error"
+                );
+
+                log.warn(errorMessage);
+                return ResponseEntity.badRequest().body(errorMessage);
+            }
+
+            // Upload file and save model
+            String fileId = fileService.uploadFile(file);
+
+            ModelConfig modelConfig = new ModelConfig();
+
+            Model model = modelService.save(
+                    modelName,
+                    ModelType.EXCEL,
+                    modelOrderId,
+                    fileId,
+                    Boolean.FALSE,
+                    ModelStatus.INACTIVE,
+                    new Date(),
+                    "Fyntrac",
+                    modelConfig
+            );
+
+            return ResponseEntity.ok(model);
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+
+        } catch (Exception e) {
             String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
             log.error(stackTrace);
-                return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
-            }
-
+            return ResponseEntity.internalServerError()
+                    .body("An unexpected error occurred: " + e.getMessage());
+        }
     }
+
+    //Old Code
+//    public ResponseEntity<?> uploadFile(@RequestParam("files") MultipartFile file,
+//                                        @RequestParam("modelName") String modelName,
+//                                        @RequestParam("modelOrderId") String modelOrderId) {
+//        try {
+//            if (!(modelService.ifModelExists(modelName)) && this.modelUploadService.validateModel(file)) {
+//
+//                String fileId = fileService.uploadFile(file);
+//                ModelConfig modelConfig = new ModelConfig();
+//                modelConfig.setMetrics(new Records.MetricNameRecord[]{});
+//                modelConfig.setTransactions(new Records.TransactionNameRecord[]{});
+//                modelConfig.setAggregationLevel(AggregationLevel.INSTRUMENT);
+//                modelConfig.setCurrentVersion(Boolean.TRUE);
+//                modelConfig.setLastOpenVersion(Boolean.FALSE);
+//                modelConfig.setFirstVersion(Boolean.FALSE);
+//                Model model = this.modelService.save(modelName
+//                        , ModelType.EXCEL
+//                        , modelOrderId
+//                        , fileId
+//                        , Boolean.FALSE
+//                        , ModelStatus.CONFIGURE
+//                        , new Date()
+//                        , "Fyntrac"
+//                        , modelConfig);
+//                return ResponseEntity.ok(model);
+//            } else {
+//                return ResponseEntity.badRequest().body("Model Name already exists [" + modelName + "]");
+//            }
+//        } catch (IllegalArgumentException e) {
+//            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+//        } catch (Exception e) {
+//            String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
+//            log.error(stackTrace);
+//            return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
+//        }
+//
+//    }
 
     @PostMapping("/save")
     public ResponseEntity<String> save(@RequestBody Model m) {
         try {
             modelService.save(m);
             return ResponseEntity.ok("Model saved successfully, ID: " + m.getId());
-        }catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
@@ -102,7 +176,7 @@ public class ModelController {
         try {
             Model model = modelService.save(m);
             return ResponseEntity.ok(model);
-        }catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
@@ -112,9 +186,17 @@ public class ModelController {
     @PostMapping("/execute")
     public ResponseEntity<String> executeModel(@RequestBody Records.DateRequestRecord dateRequestRecord) {
         try {
-            this.modelExecutionService.sendModelExecutionMessage(dateRequestRecord.date());
+            // this.modelExecutionService.sendModelExecutionMessage(dateRequestRecord.date());
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy"); // Define the format
+
+            Date executionDate = DateUtil.parseDate(dateRequestRecord.date(), formatter);
+            int postingDate = DateUtil.dateInNumber(executionDate);
+            this.eventRepository.deleteByPostingDate(postingDate);
+            excelModelService.generateEvent(postingDate);
+            this.modelExecutionService.sendExcelModelExecutionMessage(dateRequestRecord.date());
+
             return ResponseEntity.ok("Model executed successfully, for : " + dateRequestRecord.date());
-        }catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             log.error(StringUtil.getStackTrace(e));
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (Exception e) {

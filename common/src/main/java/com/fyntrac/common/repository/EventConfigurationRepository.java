@@ -14,7 +14,10 @@ public interface EventConfigurationRepository extends MongoRepository<EventConfi
 
     Optional<EventConfiguration> findByEventId(String eventId);
 
+
     List<EventConfiguration> findByIsActive(Boolean isActive);
+
+    List<EventConfiguration> findByIsActiveOrderByPriorityAsc(Boolean isActive);
 
     @Query("{ 'eventId': ?0, 'isActive': true }")
     Optional<EventConfiguration> findActiveByEventId(String eventId);

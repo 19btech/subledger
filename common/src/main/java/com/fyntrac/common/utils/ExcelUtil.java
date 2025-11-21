@@ -475,36 +475,64 @@ public class ExcelUtil {
             }
         }
     }
+
     public static void mapJsonToExcel(List<Map<String, Object>> jsonData, Workbook workbook, String sheetName) throws IOException {
-        // Step 2: Load Excel File
-        Sheet sheet = getSheetIgnoreCase(workbook, sheetName); // Update with your actual sheet name
-        log.info("Sheet Name:", sheetName);
-        log.info("Excel Sheet Name", sheet.getSheetName());
-        // Step 3: Get Excel Headers (Row 0)
+        // Step 1: Load Excel File
+        Sheet sheet = getSheetIgnoreCase(workbook, sheetName);
+        log.info("Requested Sheet Name: {}", sheetName);
+        log.info("Excel Sheet Name: {}", sheet.getSheetName());
+
+        // Step 2: Get Excel Headers and create case-insensitive map
         Row headerRow = sheet.getRow(0);
         Map<String, Integer> excelColumnMap = getColumnIndexMap(headerRow);
+
+        // Create case-insensitive version using TreeMap
+        Map<String, Integer> caseInsensitiveExcelColumnMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        caseInsensitiveExcelColumnMap.putAll(excelColumnMap);
+
         cleanSheet(sheet);
-        // Step 4: Write JSON Data to Excel Based on Matching Headers
+
+        // Step 3: Write JSON Data to Excel Based on Matching Headers
         int rowNum = sheet.getLastRowNum() + 1; // Append new rows
+
         for (Map<String, Object> row : jsonData) {
             Row excelRow = sheet.createRow(rowNum++);
+
             for (String column : row.keySet()) {
-                if (excelColumnMap.containsKey(column)) {
-                    int colIndex = excelColumnMap.get(column);
-                    excelRow.createCell(colIndex).setCellValue(row.get(column).toString());
+                // Use case-insensitive matching
+                if (caseInsensitiveExcelColumnMap.containsKey(column)) {
+                    int colIndex = caseInsensitiveExcelColumnMap.get(column);
+                    Object cellValue = row.get(column);
+
+                    // Handle different data types properly
+                    if (cellValue == null) {
+                        excelRow.createCell(colIndex).setCellValue("");
+                    } else if (cellValue instanceof Date) {
+                        excelRow.createCell(colIndex).setCellValue((Date) cellValue);
+                    } else if (cellValue instanceof Number) {
+                        excelRow.createCell(colIndex).setCellValue(((Number) cellValue).doubleValue());
+                    } else if (cellValue instanceof Boolean) {
+                        excelRow.createCell(colIndex).setCellValue((Boolean) cellValue);
+                    } else {
+                        excelRow.createCell(colIndex).setCellValue(cellValue.toString());
+                    }
                 }
             }
         }
+
+        log.debug("Successfully mapped {} rows to sheet '{}'", jsonData.size(), sheetName);
     }
 
-    public static Map<String, Integer> getColumnIndexMap(Row headerRow) {
-        Map<String, Integer> columnIndexMap = new HashMap<>();
+    private static Map<String, Integer> getColumnIndexMap(Row headerRow) {
+        Map<String, Integer> columnMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+
         for (Cell cell : headerRow) {
-            columnIndexMap.put(cell.getStringCellValue(), cell.getColumnIndex());
+            String columnName = cell.getStringCellValue().trim();
+            columnMap.put(columnName, cell.getColumnIndex());
         }
-        return columnIndexMap;
-    }
 
+        return columnMap;
+    }
 
     public static Workbook convertBinaryToWorkbook(Binary fileData) {
         if (fileData == null || fileData.getData() == null) {

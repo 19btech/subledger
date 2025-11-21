@@ -5,7 +5,8 @@ public enum TestStep {
     ACTIVITY_UPLOAD,
     MODEL_UPLOAD,
     MODEL_CONFIGURATION,
-    MODEL_EXECUTION;
+    MODEL_EXECUTION,
+    EVENT_CONFIGURATION;
 
     public static TestStep step(String value) {
         if (value == null || value.isBlank()) {

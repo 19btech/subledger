@@ -6,27 +6,20 @@ import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.*;
-import com.fyntrac.common.enums.ErrorCode;
-import com.fyntrac.common.enums.InstrumentAttributeVersionType;
-import com.fyntrac.common.enums.SequenceNames;
-import com.fyntrac.common.enums.Source;
+import com.fyntrac.common.enums.*;
+import com.fyntrac.common.model.ExcelModelExecutor;
 import com.fyntrac.common.model.ModelWorkflowContext;
+import com.fyntrac.common.repository.EventRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.*;
 import com.fyntrac.common.service.aggregation.CommonAggregationService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.StringUtil;
-import com.fyntrac.common.exception.LoadExcelModelExecption;
 import com.fyntrac.model.pulsar.producer.AggregationMessageProducer;
 import com.fyntrac.model.pulsar.producer.GeneralLedgerMessageProducer;
-import com.fyntrac.common.utils.ExcelModelUtil;
-import com.fyntrac.common.enums.ModelExecutionType;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.io.FileOutputStream;
 import java.math.BigDecimal;
 import java.text.ParseException;
 import java.time.LocalDate;
@@ -39,7 +32,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
-import com.fyntrac.common.model.ExcelModelExecutor;
 @Service
 @Slf4j
 public class ModelExecutionService {
@@ -56,6 +48,7 @@ public class ModelExecutionService {
     private final AggregationMessageProducer aggregationMessageProducer;
     private final InstrumentAttributeService instrumentAttributeService;
     private final TransactionActivityQueue transactionActivityQueue;
+    private final EventRepository eventRepository;
     public ModelExecutionService(ModelDataService modelDataService
     , MemcachedRepository memcachedRepository
     , AccountingPeriodDataUploadService accountingPeriodService
@@ -67,7 +60,8 @@ public class ModelExecutionService {
     , ExecutionStateService executionStateService
     , AggregationMessageProducer aggregationMessageProducer
     , InstrumentAttributeService instrumentAttributeService
-    , TransactionActivityQueue transactionActivityQueue) {
+    , TransactionActivityQueue transactionActivityQueue
+    , EventRepository eventRepository) {
         this.modelDataService = modelDataService;
         this.memcachedRepository = memcachedRepository;
         this.accountingPeriodService = accountingPeriodService;
@@ -80,7 +74,115 @@ public class ModelExecutionService {
         this.aggregationMessageProducer = aggregationMessageProducer;
         this.instrumentAttributeService = instrumentAttributeService;
         this.transactionActivityQueue = transactionActivityQueue;
+        this.eventRepository = eventRepository;
 
+    }
+    public void executeExcelModels(Date executionDate, Records.ModelExecutionMessageRecord msg) throws Throwable {
+        try {
+            List<Model> models = this.modelDataService.getActiveModels(msg.tenantId());
+            // this.eventRepository.findAllByPostingDate(Date)
+            List<Records.ModelRecord> activeModels = new ArrayList<>(0);
+            for(Model model : models) {
+                ModelFile modelFile = this.modelDataService.getModelFile(model.getModelFileId(), msg.tenantId());
+                // Workbook workbook = ExcelUtil.convertBinaryToWorkbook(modelFile.getFileData());
+                activeModels.add(RecordFactory.createModelRecord(model, modelFile));
+            }
+
+            ExecutionState executionState = this.executionStateService.getExecutionState();
+            if(executionState == null) {
+                executionState = ExecutionState.builder()
+                        .executionDate(0)
+                        .build();
+
+            }
+
+            // Step 2: Camunda Process Engine Initialization
+            int maxRetries = 5;
+            int attempts = 0;
+            CacheList<String> cacheList = null;
+            String key = msg.key();
+            while (attempts < maxRetries) {
+                attempts++;
+                try {
+                    cacheList = this.memcachedRepository.getFromCache(key, CacheList.class);
+                    if (cacheList != null && cacheList.getList() != null && !cacheList.getList().isEmpty()) {
+                        break; // Successfully fetched non-empty list, exit retry loop
+                    }
+                    log.warn("Attempt {}: Cache miss or empty list for key: {}", attempts, key);
+                } catch (Exception e) {
+                    log.error("Attempt {}: Error accessing cache for key {}: {}", attempts, key, e.getMessage());
+                }
+
+                // Optional: Add a delay between retries
+                try {
+                    Thread.sleep(100); // 100ms delay between retries
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt(); // Restore interrupted state
+                    break;
+                }
+            }
+
+            // Step 3: Virtual Thread Pool
+            try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                String tenantId=msg.tenantId();
+                Integer lastActivityPostingDate = this.transactionActivityService.getLatestActivityPostingDate(tenantId);
+                List<Future<?>> futures = new ArrayList<>();
+                int postingDate = DateUtil.dateInNumber(executionDate);
+
+                int acctPeriod = com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(executionDate);
+                AccountingPeriod accountingPeriod = this.accountingPeriodService.getAccountingPeriod(acctPeriod);
+
+                // Step 4: Process each instrument
+                for (String instrumentId : cacheList.getList()) {
+
+                    List<Event> events = this.eventRepository.findByPostingDateAndInstrumentId(postingDate, instrumentId);
+                    futures.add(executor.submit(() -> {
+                        try {
+                            // Set the tenant context for this virtual thread
+                            TenantContextHolder.runWithTenant(tenantId, () -> {
+                                try {
+                                   this.processInstrument(tenantId, postingDate,
+                                           accountingPeriod
+            , instrumentId
+            , activeModels
+            , events);
+                                } catch (Throwable e) {
+                                    throw new RuntimeException(e);
+                                }
+                            });
+                        } catch (Throwable e) {
+                            log.error("Error processing instrument: {}", instrumentId, e);
+                            // throw new RuntimeException("Failed to process instrument: " + ia, e);
+                            // save error in database!!!!!
+
+                        }
+                    }));
+
+                }
+
+                // Step 5: Wait for all tasks to complete
+                for (Future<?> future : futures) {
+                    try {
+                        future.get(); // This will rethrow any exceptions thrown in the task
+                    } catch (ExecutionException e) {
+                        // Unwrap the root cause of the exception
+                        Throwable cause = e.getCause();
+                        log.error("Task execution failed", cause);
+                        throw cause; // Rethrow the original exception
+                    } catch (InterruptedException e) {
+                        log.error("Thread interrupted while waiting for tasks to complete", e);
+                        Thread.currentThread().interrupt(); // Restore the interrupted status
+                        throw new RuntimeException("Thread interrupted", e);
+                    }
+                }
+            } catch (Throwable e) {
+                log.error("Error in executeModels", e);
+                throw e; // Rethrow the exception for further handling
+            }
+        }catch (Exception exp){
+            log.error(StringUtil.getStackTrace(exp));
+            throw exp;
+        }
     }
 
     public void executeModels(Date executionDate, Records.ModelExecutionMessageRecord msg) throws Throwable {
@@ -119,6 +221,7 @@ public class ModelExecutionService {
 
         }
     }
+
 
     public void executeModels(Date executionDate
             , Records.ModelExecutionMessageRecord msg
@@ -218,6 +321,112 @@ public class ModelExecutionService {
         }
     }
 
+    private void processInstrument(String tenantId, int executionDate,
+                                   AccountingPeriod accountingPeriod
+            , String instrumentId
+            , List<Records.ModelRecord> activeModels
+            , List<Event> events) throws Exception {
+        log.info("Processing " + instrumentId + " on Thread: " + Thread.currentThread().getName());
+
+        List<InstrumentAttribute> currentOpenInstrumentAttributes = this.instrumentAttributeService.getOpenInstrumentAttributesByInstrumentId(instrumentId, tenantId);
+
+        for (Records.ModelRecord model : activeModels) {
+                Collection<TransactionActivity> transactionActivities = null;
+                try {
+                    // Save transaction activities
+                    Records.ModelOutputData modelOutputData = this.excelModelExecutor.execute(instrumentId, executionDate,  model,
+                            events);
+                    this.insertInstrumentAttribute(modelOutputData, DateUtil.convertIntDateToUtc(executionDate),
+                            tenantId);
+                    List<TransactionActivity> filledTransactions = new ArrayList<>(0);
+                    Set<TransactionActivity> transactions = new HashSet<>(0);
+
+                    for (Map<String, Object> activity : modelOutputData.transactionActivityList()) {
+                        Object instrumentIdObj = activity.get("instrumentId");
+                        if (instrumentIdObj == null || instrumentIdObj.toString().trim().isEmpty()) {
+                            log.warn("Skipping activity due to missing or empty instrumentId: {}", activity);
+                            continue;
+                        }
+
+                        TransactionActivity transactionActivity = this.transactionActivityService.fillTrascationActivity(activity, accountingPeriod);
+                        filledTransactions.add(transactionActivity);
+                    }
+
+
+
+                    for (InstrumentAttribute attr : currentOpenInstrumentAttributes) {
+                        List<TransactionActivity> matchingActivities = filledTransactions.stream()
+                                .filter(act -> attr.getInstrumentId().equals(act.getInstrumentId())
+                                        && attr.getAttributeId().equals(act.getAttributeId()))
+                                .toList();
+                        List<TransactionActivity> activityList = populateMissingFields(attr, matchingActivities,
+                                accountingPeriod, DateUtil.convertIntDateToUtc(executionDate), model.model().getId());
+                        transactions.addAll(activityList);
+                        // Do something with matchingActivities
+                    }
+
+                    // Filter out TransactionActivity where amount is zero
+                    Set<TransactionActivity> filteredTransactions = transactions.stream()
+                            .filter(transaction -> transaction.getAmount().compareTo(BigDecimal.ZERO) != 0)
+                            .collect(Collectors.toSet());
+                    // transactionActivities = this.transactionActivityService.save(filteredTransactions);
+                    transactionActivities =  this.transactionActivityService.getDataService().saveAll(filteredTransactions, tenantId, TransactionActivity.class);
+
+                    // Now send message to generate GL
+                    // Now send message to Aggregate transactions
+                    // this.commonAggregationService.aggregate(transactionActivities, previousPostingDate);
+                    LocalDateTime dateTime = LocalDateTime.now();
+                    int timestamp = (int) (dateTime.toEpochSecond(ZoneOffset.UTC));
+                    String key = String.format("%s-%s-%d", tenantId, "TA", executionDate);
+
+                    long jobId = System.currentTimeMillis();
+                    if (transactionActivities != null) {
+                        transactionActivities.forEach(transactionActivity -> {
+                                    this.transactionActivityQueue.add(tenantId, jobId, transactionActivity);
+                                }
+                        );
+                    }
+
+                    Records.ExecuteAggregationMessageRecord aggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenantId, jobId, (long) executionDate);
+                    aggregationMessageProducer.executeAggregation(aggregationMessageRecord);
+
+                    String transactionActivityKey = String.format("%s-%d", key, timestamp);
+
+                    TransactionActivityList activityList = new TransactionActivityList();
+                    if (transactionActivities != null) {
+                        transactionActivities.forEach(transactionActivity -> {
+                                    String activityKey = String.format("%s-%d", key, transactionActivity.hashCode());
+
+                                    activityList.add(activityKey);
+                                    this.memcachedRepository.putInCache(activityKey, transactionActivity);
+                                }
+                        );
+                    }
+
+                    this.memcachedRepository.putInCache(transactionActivityKey, activityList);
+
+
+                    Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(this.transactionActivityService.getDataService().getTenantId(), jobId);
+                    generalLedgerMessageProducer.bookTempGL(glRec);
+
+                } catch (Exception e) {
+                    // Log the exception and continue processing the next model
+                    log.error("An error occurred while processing model " + model.model().getId() + " for instrument " + instrumentId, e);
+                    // Optionally, you can add additional handling here (e.g., notify, retry, etc.)
+                    Errors error = Errors.builder().modelId(model.model().getId())
+                            .instrumentId(instrumentId)
+                            .executionDate(DateUtil.convertIntDateToUtc(executionDate))
+                            .code(ErrorCode.Model_Execution_Error)
+                            .isWarning(Boolean.FALSE)
+                            .stacktrace(StringUtil.getStackTrace(e))
+                            .build();
+                    this.errorService.save(error);
+                    throw e;
+                }
+
+        }
+
+    }
 
     private void processInstrument(String tenantId, Date executionDate,
                                    AccountingPeriod accountingPeriod

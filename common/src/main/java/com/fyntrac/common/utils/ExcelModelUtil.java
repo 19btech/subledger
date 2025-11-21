@@ -3,6 +3,7 @@ package com.fyntrac.common.utils;
 import com.fyntrac.common.enums.AccountingRules;
 import com.fyntrac.common.exception.ExcelFormulaCellException;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.formula.eval.NotImplementedException;
 import org.apache.poi.ss.usermodel.*;
 import org.bson.types.Binary;
 
@@ -28,15 +29,34 @@ import java.util.zip.ZipInputStream;
 @Slf4j
 public class ExcelModelUtil {
 
+    public static CellStyle DATE_STYLE;
+    public static CellStyle NUMBER_STYLE;
+    public static CellStyle INT_STYLE;
 
-    public  static File saveFileToTempFolder(String filePath, String fileName, byte[] fildData) throws Exception{
+    public static final DateTimeFormatter DATE_INPUT_FMT =
+            DateTimeFormatter.ofPattern("MM/dd/yyyy");
+
+    public static void preCreateStyles(Workbook workbook) {
+        CreationHelper helper = workbook.getCreationHelper();
+
+        DATE_STYLE = workbook.createCellStyle();
+        DATE_STYLE.setDataFormat(helper.createDataFormat().getFormat("MM/dd/yyyy"));
+
+        NUMBER_STYLE = workbook.createCellStyle();
+        NUMBER_STYLE.setDataFormat(helper.createDataFormat().getFormat("#,##0.00"));
+
+        INT_STYLE = workbook.createCellStyle();
+        INT_STYLE.setDataFormat(helper.createDataFormat().getFormat("#,##0"));
+    }
+
+    public static File saveFileToTempFolder(String filePath, String fileName, byte[] fildData) throws Exception {
 
         org.apache.commons.io.FileUtils.deleteDirectory(new File(filePath));
         new File(filePath + File.separator).mkdirs();
         File uploadedFile = new File(filePath + File.separator + fileName);
 
         uploadedFile.createNewFile();
-        FileOutputStream fos =new FileOutputStream(uploadedFile);
+        FileOutputStream fos = new FileOutputStream(uploadedFile);
         fos.write(fildData);
         fos.close();
 
@@ -49,13 +69,12 @@ public class ExcelModelUtil {
     }
 
 
-    public  String getHeaderOfCSVFile(File csvFile){
+    public String getHeaderOfCSVFile(File csvFile) {
         BufferedReader br = null;
         String strLine = "";
         try {
             LineNumberReader reader = new LineNumberReader(new InputStreamReader(new FileInputStream(csvFile.getAbsoluteFile()), "UTF-8"));
-            if(((strLine = reader.readLine()) != null) && reader.getLineNumber() == 1)
-            {
+            if (((strLine = reader.readLine()) != null) && reader.getLineNumber() == 1) {
                 return strLine;
             }
 
@@ -69,7 +88,7 @@ public class ExcelModelUtil {
         return null;
     }
 
-    public static List<String> getSheetListFromExcelFile(String fileNameWithAbsolutePath) throws Throwable{
+    public static List<String> getSheetListFromExcelFile(String fileNameWithAbsolutePath) throws Throwable {
 
         List<String> xlSheetList = new ArrayList<>(0);
         try {
@@ -78,14 +97,14 @@ public class ExcelModelUtil {
             for (Sheet sheet : wb) {
                 xlSheetList.add(sheet.getSheetName());
             }
-        }catch (IOException ex) {
+        } catch (IOException ex) {
             throw ex;
         }
 
         return xlSheetList;
     }
 
-    public static Set<String> getSheetNameList(String fileNameWithAbsolutePath) throws Throwable{
+    public static Set<String> getSheetNameList(String fileNameWithAbsolutePath) throws Throwable {
         Set<String> nameSet = new HashSet<>(0);
         InputStream inp = null;
         try {
@@ -109,9 +128,10 @@ public class ExcelModelUtil {
         }
         return nameSet;
     }
-    public  static void convertExcelToCSV(String fileNameWithAbsolutePath,
-                                          String outPutFilePath,
-                                          Long activityUploadId) throws Throwable{
+
+    public static void convertExcelToCSV(String fileNameWithAbsolutePath,
+                                         String outPutFilePath,
+                                         Long activityUploadId) throws Throwable {
         InputStream inp = null;
         try {
             inp = new FileInputStream(fileNameWithAbsolutePath);
@@ -119,44 +139,44 @@ public class ExcelModelUtil {
             FormulaEvaluator evaluator = wb.getCreationHelper().createFormulaEvaluator();
             for (Sheet sheet : wb) {
 
-                if(!AccountingRules.isValid(sheet.getSheetName().toLowerCase() + ".csv")) {
+                if (!AccountingRules.isValid(sheet.getSheetName().toLowerCase() + ".csv")) {
 //                    throw new InvalidExcelSheetNameException("Invalid SheetName["
 //                            + sheet.getSheetName() + "] of file[" + "]");
                     continue;
                 }
 
                 String sheetName = sheet.getSheetName().toLowerCase();
-                String outputFile = outPutFilePath + File.separator +  sheetName + ".csv";
+                String outputFile = outPutFilePath + File.separator + sheetName + ".csv";
                 Path outputFilePath = Path.of(outputFile);
 
-                if(!Files.exists(outputFilePath.getParent())) {
+                if (!Files.exists(outputFilePath.getParent())) {
                     Files.createDirectories(outputFilePath.getParent());
                 }
 //                Files.deleteIfExists(outputFilePath);
 //                Files.createFile(outputFilePath);
-                BufferedWriter writer = new BufferedWriter(new FileWriter(outPutFilePath + File.separator +  sheetName + ".csv", true));
+                BufferedWriter writer = new BufferedWriter(new FileWriter(outPutFilePath + File.separator + sheetName + ".csv", true));
                 boolean isFirstRow = Boolean.TRUE;
                 int numOfCells = 0;
 
                 Iterator<Row> rowIterator = sheet.rowIterator();
                 while (rowIterator.hasNext()) {
                     Row row = rowIterator.next();
-                    if(isRowEmpty(row)) {
+                    if (isRowEmpty(row)) {
                         continue;
                     }
                     boolean isFirstCell = Boolean.TRUE;
-                    if(isFirstRow) {
+                    if (isFirstRow) {
                         numOfCells = row.getPhysicalNumberOfCells();
                     }
 
                     for (int cellIndex = 0; cellIndex < numOfCells; cellIndex++) {
                         Cell cell = row.getCell(cellIndex, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
-                        if(isFirstRow && activityUploadId != null) {
+                        if (isFirstRow && activityUploadId != null) {
                             isFirstRow = Boolean.FALSE;
                             isFirstCell = Boolean.FALSE;
                             writer.append("\"activityUploadId\"".toUpperCase());
                             writer.append(',');
-                        }else if(isFirstCell){
+                        } else if (isFirstCell) {
                             isFirstCell = Boolean.FALSE;
                             writer.append(activityUploadId + "");
                             writer.append(',');
@@ -172,16 +192,16 @@ public class ExcelModelUtil {
                                 break;
                             case STRING:
                                 writer.append("\"" + String.valueOf(cell.getStringCellValue()).toUpperCase()
-                                        + "\"" );
+                                        + "\"");
                                 break;
                             case BLANK:
-                                writer.append("\"" + "\"" );
+                                writer.append("\"" + "\"");
                                 break;
                             case FORMULA:
                                 setFormulaCellValue(cell, writer, evaluator, cellIndex);
                                 break;
                             case _NONE:
-                                writer.append("\"" + "\"" );
+                                writer.append("\"" + "\"");
                                 break;
                             default:
                                 writer.append(cell + "");
@@ -212,7 +232,7 @@ public class ExcelModelUtil {
     protected static String getDateValue(Cell cell) {
         DateFormat df = new SimpleDateFormat("yyyy-MM-dd");
         Date date = cell.getDateCellValue();
-        return  df.format(date);
+        return df.format(date);
     }
 
     protected static String getNumericValue(Cell cell) {
@@ -220,7 +240,7 @@ public class ExcelModelUtil {
         if (cell.getCellStyle().getDataFormatString().contains("%")) {
             // Detect Percent Values
             value = cell.getNumericCellValue() / 100;
-            System.out.println("Percent value found = " + value.toString() +"%");
+            System.out.println("Percent value found = " + value.toString() + "%");
         } else {
             value = cell.getNumericCellValue();
             System.out.println("Non percent value found = " + value.toString());
@@ -287,9 +307,9 @@ public class ExcelModelUtil {
     public static boolean isRowEmpty(Row row) {
         boolean isEmpty = true;
         DataFormatter dataFormatter = new DataFormatter();
-        if(row != null) {
-            for(Cell cell: row) {
-                if(dataFormatter.formatCellValue(cell).trim().length() > 0) {
+        if (row != null) {
+            for (Cell cell : row) {
+                if (dataFormatter.formatCellValue(cell).trim().length() > 0) {
                     isEmpty = false;
                     break;
                 }
@@ -380,7 +400,6 @@ public class ExcelModelUtil {
     }
 
 
-
     // Method to convert Workbook to ByteArrayOutputStream
     public static byte[] convertWorkbookToByteArray(Workbook workbook) throws IOException {
         try (workbook; ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
@@ -389,7 +408,6 @@ public class ExcelModelUtil {
         }
         // Ensure the workbook is closed
     }
-
 
 
     // Recreate Workbook from byte[]
@@ -419,55 +437,151 @@ public class ExcelModelUtil {
         }
     }
 
-    public static void mapJsonToExcel(List<Map<String, Object>> jsonData, Workbook workbook, String sheetName) throws IOException {
-        // Step 2: Load Excel File
-        Sheet sheet = getSheetIgnoreCase(workbook, sheetName); // Update with your actual sheet name
-        log.info("Sheet Name:", sheetName);
-        log.info("Excel Sheet Name", sheet.getSheetName());
-        // Step 3: Get Excel Headers (Row 0)
-        Row headerRow = sheet.getRow(0);
-        Map<String, Integer> excelColumnMap = getColumnIndexMap(headerRow);
-        cleanSheet(sheet);
-        // Step 4: Write JSON Data to Excel Based on Matching Headers
-        int rowNum = sheet.getLastRowNum() + 1; // Append new rows
-// Assuming jsonData is a List<Map<String, Object>> and sheet is already defined
-        for (Map<String, Object> row : jsonData) {
-            Row excelRow = sheet.createRow(rowNum++);
-            for (String column : row.keySet()) {
-                String col = column.toUpperCase();
-                if (excelColumnMap.containsKey(col)) {
-                    int colIndex = excelColumnMap.get(col);
-                    Object cellValue = row.get(col);
+    public static void mapJsonToExcel(
+            List<Map<String, Object>> jsonData,
+            Workbook workbook,
+            String sheetName
+    ) throws IOException {
 
-                    if (cellValue instanceof Date) {
-                        // Set the cell value as a Date object
-                        excelRow.createCell(colIndex).setCellValue((Date) cellValue);
-                        // Optionally, you can set a date format for the cell
-                        CellStyle cellStyle = sheet.getWorkbook().createCellStyle();
-                        DataFormat format = sheet.getWorkbook().createDataFormat();
-                        cellStyle.setDataFormat(format.getFormat("MM/dd/yyyy"));
-                        excelRow.getCell(colIndex).setCellStyle(cellStyle);
-                    } else if (cellValue instanceof Number) {
-                        // Set the cell value as a Number
-                        excelRow.createCell(colIndex).setCellValue(((Number) cellValue).doubleValue());
-                    }else if (cellValue instanceof String strVal) {
-                        String trimmed = strVal.trim();
-                        if (trimmed.matches("-?\\d+(\\.\\d+)?")) {
-                            excelRow.createCell(colIndex).setCellValue(Double.parseDouble(trimmed));
-                        } else {
-                            excelRow.createCell(colIndex).setCellValue(strVal);
-                        }
-                    }else if (cellValue == null) {
-                        // Handle null value
-                        excelRow.createCell(colIndex).setCellValue(""); // Set to empty string or use "N/A"
-                    } else {
-                        // Set other types of values as string
-                        excelRow.createCell(colIndex).setCellValue(cellValue.toString());
-                    }
-                }
+        Sheet sheet = getSheetIgnoreCase(workbook, sheetName);
+
+        log.info("Requested Sheet Name: {}", sheetName);
+        log.info("Excel Sheet Name: {}", sheet.getSheetName());
+
+        Row headerRow = sheet.getRow(0);
+        Map<String, Integer> colMap = getColumnIndexMap(headerRow);
+
+        Map<String, Integer> caseInsensitiveMap =
+                new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        caseInsensitiveMap.putAll(colMap);
+
+        cleanSheet(sheet);
+
+        int rowNum = 1; // Start after header
+
+        for (Map<String, Object> rowMap : jsonData) {
+            Row row = sheet.createRow(rowNum++);
+
+            Map<String, Object> caseInsensitiveRow =
+                    new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+            caseInsensitiveRow.putAll(rowMap);
+
+            for (String column : caseInsensitiveRow.keySet()) {
+
+                if (!caseInsensitiveMap.containsKey(column)) continue;
+
+                int colIndex = caseInsensitiveMap.get(column);
+                Cell cell = row.createCell(colIndex);
+                Object value = caseInsensitiveRow.get(column);
+
+                applyCellValue(cell, value, column);
             }
         }
+
+        log.debug("Successfully mapped {} rows to '{}'", jsonData.size(), sheetName);
     }
+
+    private static String cleanString(String s) {
+        if (s == null) return "";
+        return s.replace("\u200B", "")
+                .replace("\ufeff", "")
+                .trim();
+    }
+
+    private static boolean isValidDateString(String s) {
+        try {
+            LocalDate.parse(s, DATE_INPUT_FMT);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static void applyCellValue(Cell cell, Object value, String columnName) {
+
+        if (value == null) {
+            cell.setBlank();
+            return;
+        }
+
+        // ---------------------------------------------------------
+        // ALWAYS TREAT InstrumentId and AttributeId AS STRING
+        // ---------------------------------------------------------
+        if ("InstrumentId".equalsIgnoreCase(columnName) ||
+                "AttributeId".equalsIgnoreCase(columnName)) {
+
+            cell.setCellValue(String.valueOf(value));
+            return;
+        }
+
+        // ---------------------------------------------------------
+        // STRING VALUES
+        // ---------------------------------------------------------
+        if (value instanceof String str) {
+            str = cleanString(str);
+
+            // Numeric string → number
+            if (str.matches("-?\\d+(\\.\\d+)?")) {
+                cell.setCellValue(Double.parseDouble(str));
+                cell.setCellStyle(NUMBER_STYLE);
+                return;
+            }
+
+            // Date string
+            if (isValidDateString(str)) {
+                LocalDate date = LocalDate.parse(str, DATE_INPUT_FMT);
+                double excelDate = org.apache.poi.ss.usermodel.DateUtil.getExcelDate(date);
+                cell.setCellValue(excelDate);
+                cell.setCellStyle(DATE_STYLE);
+                return;
+            }
+
+            cell.setCellValue(str);
+            return;
+        }
+
+        // ---------------------------------------------------------
+        // DATE
+        // ---------------------------------------------------------
+        if (value instanceof Date date) {
+            double excelDate = org.apache.poi.ss.usermodel.DateUtil.getExcelDate(date);
+            cell.setCellValue(excelDate);
+            cell.setCellStyle(DATE_STYLE);
+            return;
+        }
+
+        // ---------------------------------------------------------
+        // BIGDECIMAL
+        // ---------------------------------------------------------
+        if (value instanceof BigDecimal bd) {
+            cell.setCellValue(bd.doubleValue());
+            cell.setCellStyle(NUMBER_STYLE);
+            return;
+        }
+
+        // ---------------------------------------------------------
+        // OTHER NUMBERS
+        // ---------------------------------------------------------
+        if (value instanceof Number n) {
+            cell.setCellValue(n.doubleValue());
+            cell.setCellStyle(NUMBER_STYLE);
+            return;
+        }
+
+        // ---------------------------------------------------------
+        // BOOLEAN
+        // ---------------------------------------------------------
+        if (value instanceof Boolean b) {
+            cell.setCellValue(b);
+            return;
+        }
+
+        // ---------------------------------------------------------
+        // FALLBACK STRING
+        // ---------------------------------------------------------
+        cell.setCellValue(value.toString());
+    }
+
 
     public static void fillExcelSheetByAttributeIdOrOrder(List<Map<String, Object>> jsonData, Workbook workbook, String sheetName) {
         Sheet sheet = getSheetIgnoreCase(workbook, sheetName);
@@ -519,7 +633,7 @@ public class ExcelModelUtil {
             if (attrObj == null || txnObj == null) continue;
 
             String key = (attrObj.toString().trim() + "_" + txnObj.toString().trim()).toLowerCase();
-            if(!compositeKeyToRowMap.containsKey(key)) {
+            if (!compositeKeyToRowMap.containsKey(key)) {
                 continue;
             }
 
@@ -759,7 +873,7 @@ public class ExcelModelUtil {
             if (txnObj == null) continue;
 
             String key = (attributeId.trim() + "_" + txnObj.toString().trim()).toLowerCase();
-            if(!compositeKeyToRowMap.containsKey(key)) {
+            if (!compositeKeyToRowMap.containsKey(key)) {
                 continue;
             }
             Integer rowIndex = compositeKeyToRowMap.get(key).poll();
@@ -821,7 +935,7 @@ public class ExcelModelUtil {
                     cellStyle.setDataFormat(format.getFormat("MM/dd/yyyy"));
                     cell.setCellStyle(cellStyle);
 
-                }else {
+                } else {
                     cell.setCellValue(strVal);
                 }
 
@@ -997,4 +1111,47 @@ public class ExcelModelUtil {
         return result;
     }
 
+    public static void evaluateFormulas(Workbook workbook) {
+        FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
+
+        try {
+            evaluator.evaluateAll();
+        } catch (NotImplementedException e) {
+            log.warn("Bulk evaluation failed, falling back to cell-by-cell evaluation");
+            evaluateFormulasCellByCell(workbook, evaluator);
+        } catch (Exception e) {
+            log.error("Error during workbook evaluation: {}", e.getMessage());
+            evaluateFormulasCellByCell(workbook, evaluator);
+        }
+    }
+
+    private static void evaluateFormulasCellByCell(Workbook workbook, FormulaEvaluator evaluator) {
+        for (Sheet sheet : workbook) {
+            for (Row row : sheet) {
+                for (Cell cell : row) {
+                    if (cell.getCellType() == CellType.FORMULA) {
+                        evaluateFormulaCell(cell, evaluator);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void evaluateFormulaCell(Cell cell, FormulaEvaluator evaluator) {
+        try {
+            evaluator.evaluateFormulaCell(cell);
+        } catch (NotImplementedException e) {
+            log.error("Unsupported formula in {}!{}: {}",
+                    cell.getSheet().getSheetName(),
+                    cell.getAddress(),
+                    cell.getCellFormula());
+            cell.setCellErrorValue(FormulaError.NA.getCode());
+        } catch (Exception e) {
+            log.error("Error evaluating formula in {}!{}: {}",
+                    cell.getSheet().getSheetName(),
+                    cell.getAddress(),
+                    e.getMessage());
+            cell.setCellErrorValue(FormulaError.VALUE.getCode());
+        }
+    }
 }

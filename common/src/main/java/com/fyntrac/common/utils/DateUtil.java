@@ -1680,5 +1680,23 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
         sdf.setTimeZone(TimeZone.getTimeZone("UTC")); // Parse in UTC
         return sdf.parse(dateStr);
     }
+
+    public static String convertYyyyMMddToMMddyyyyUtc(Integer yyyymmdd) {
+        if (yyyymmdd == null) return null;
+
+        String input = String.valueOf(yyyymmdd);
+
+        // This works ONLY with java.time.format.DateTimeFormatter
+        java.time.format.DateTimeFormatter inputFormatter = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd");
+        LocalDate date = LocalDate.parse(input, inputFormatter);
+
+        ZonedDateTime utc = date.atStartOfDay(ZoneOffset.UTC);
+
+        java.time.format.DateTimeFormatter outputFormatter = java.time.format.DateTimeFormatter.ofPattern("MM/dd/yyyy");
+        return utc.format(outputFormatter);
+    }
+
+
+
 }
 

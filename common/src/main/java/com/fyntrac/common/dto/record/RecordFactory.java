@@ -520,5 +520,25 @@ public class RecordFactory {
         return createRecord(() -> new Records.EventConfigurationBasicResponse(id, eventId, eventName, priority,
                 description, createdAt));
     }
+
+    public static Records.ExcelModelEventKey createExcelModelEventKeyRecord(
+            Integer postingDate,
+            Integer effectiveDate,
+            String instrumentId,
+            String attributeId
+    ){
+        return createRecord(() -> new Records.ExcelModelEventKey(postingDate,effectiveDate,instrumentId,attributeId));
+    }
+
+    public static Records.TransactionKeyRecord createTransactionKeyRecord(String transactionName,
+                                                                          Integer effectiveDate){
+        return createRecord(() -> new Records.TransactionKeyRecord(transactionName, effectiveDate));
+    }
+
+    public static Records.TransactionActivityAmountRecord createTransactionActivityAmountRecord( String transactionName,
+                                                                                                 Integer effectiveDate,
+                                                                                                 BigDecimal totalAmount){
+        return createRecord(() -> new Records.TransactionActivityAmountRecord(transactionName, effectiveDate, totalAmount));
+    }
 }
 

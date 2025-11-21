@@ -416,4 +416,19 @@ public class Records {
             String description,
             LocalDateTime createdAt
     ) implements Serializable {private static final long serialVersionUID = 7199490834201351323L;}
+
+    public record TransactionActivityAmountRecord(
+            String transactionName,
+            Integer effectiveDate,
+            BigDecimal totalAmount
+    ) implements Serializable {private static final long serialVersionUID = -7045460909449564112L;}
+
+    public record ExcelModelEventKey(
+            Integer postingDate,
+            Integer effectiveDate,
+            String instrumentId,
+            String attributeId
+    ) implements Serializable {private static final long serialVersionUID = 4292426438651236257L;}
+
+    public record TransactionKeyRecord(String transactionName, Integer effectiveDate) implements Serializable {private static final long serialVersionUID = 3338343449065429379L;}
 }

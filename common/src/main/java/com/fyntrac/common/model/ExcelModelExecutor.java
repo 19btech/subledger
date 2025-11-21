@@ -14,14 +14,20 @@ import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.MongoDocumentConverter;
 import com.fyntrac.common.utils.ExcelModelUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.formula.eval.NotImplementedException;
+import org.apache.poi.ss.usermodel.FormulaEvaluator;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.time.Instant;
+
 
 @Service
 @Slf4j
@@ -57,6 +63,126 @@ public class ExcelModelExecutor {
         this.executionStateService = executionStateService;
         this.instrumentReplayStateService = instrumentReplayStateService;
     }
+
+    public Map<String, Map<String, Object>> sortEventValues(
+            Map<String, Map<String, Object>> values
+    ) {
+        if (values == null || values.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+
+        // Explicit type declaration in lambda parameters
+        Comparator<Map.Entry<String, Map<String, Object>>> comparator =
+                Comparator.comparing(
+                        (Map.Entry<String, Map<String, Object>> entry) -> extractAttributeId(entry.getValue()),
+                        this::compareAttributeId
+                ).thenComparing(
+                        (Map.Entry<String, Map<String, Object>> entry) -> extractEffectiveDate(entry.getValue()),
+                        Comparator.reverseOrder() // Descending
+                );
+
+        return values.entrySet()
+                .stream()
+                .sorted(comparator)
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (o, n) -> o,
+                        LinkedHashMap::new
+                ));
+    }
+
+    private String extractAttributeId(Map<String, Object> map) {
+        if (map == null) return "";
+        Object attrId = map.get("AttributeId");
+        return attrId != null ? String.valueOf(attrId) : "";
+    }
+
+    private Instant extractEffectiveDate(Map<String, Object> map) {
+        if (map == null) return Instant.EPOCH;
+        Object eff = map.get("EffectiveDate");
+
+        if (eff instanceof Date d) return d.toInstant();
+        if (eff instanceof Instant i) return i;
+        if (eff instanceof Long l) return Instant.ofEpochMilli(l);
+        if (eff instanceof Integer i) return Instant.ofEpochSecond(i);
+        if (eff instanceof String s) {
+            try { return Instant.ofEpochMilli(Long.parseLong(s)); }
+            catch (NumberFormatException e) { return Instant.EPOCH; }
+        }
+        return Instant.EPOCH;
+    }
+
+    private int compareAttributeId(String a, String b) {
+        if (a == null) a = "";
+        if (b == null) b = "";
+
+        boolean num1 = isNumeric(a);
+        boolean num2 = isNumeric(b);
+
+        if (num1 && num2) {
+            return new BigDecimal(a).compareTo(new BigDecimal(b));
+        }
+        if (num1) return -1;
+        if (num2) return 1;
+        return a.compareTo(b);
+    }
+
+    private boolean isNumeric(String s) {
+        if (s == null || s.trim().isEmpty()) return false;
+        try {
+            new BigDecimal(s.trim());
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+
+    public Records.ModelOutputData execute(
+            String instrumentId,
+            int postingDate,
+            Records.ModelRecord model,
+            List<Event> events
+    ) throws IOException {
+
+        Workbook workbook = ExcelModelUtil.convertBinaryToWorkbook(model.modelFile().getFileData());
+
+        // Pre-create all styles ONCE
+        ExcelModelUtil.preCreateStyles(workbook);
+
+        // Fill data into template sheets
+        for (Event event : events) {
+            List<Map<String, Object>> rows =
+                    this.sortEventValues(event.getEventDetail().getValues())
+                            .values()
+                            .stream()
+                            .toList();
+
+            ExcelModelUtil.mapJsonToExcel(rows, workbook, event.getEventId());
+        }
+
+        // Clear all cached formula values
+        ExcelModelUtil.evaluateFormulas(workbook);
+
+        // Read outputs
+        List<Map<String, Object>> oTransactionData =
+                ExcelModelProcessor.readSheetData(workbook, "o_transaction");
+
+        List<Map<String, Object>> oInstrumentAttributeData =
+                ExcelModelProcessor.readSheetData(workbook, "o_instrumentattribute");
+
+        // Save output file for debugging
+        if (this.generateModelOutputFile) {
+            String fileName = String.format("processed-output-%s-%d.xlsx", instrumentId, postingDate);
+            try (FileOutputStream fos = new FileOutputStream(fileName)) {
+                workbook.write(fos);
+            }
+        }
+
+        return RecordFactory.createModelOutputData(oTransactionData, oInstrumentAttributeData);
+    }
+
 
     public Records.ModelOutputData execute(ModelWorkflowContext context) throws Throwable {
         // Load the workbook from the context or a file
