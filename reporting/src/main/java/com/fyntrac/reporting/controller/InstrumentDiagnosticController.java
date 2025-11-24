@@ -1,20 +1,23 @@
 package com.fyntrac.reporting.controller;
 
 import com.fyntrac.common.dto.record.Records;
+import com.fyntrac.common.entity.Event;
+import com.fyntrac.common.entity.MetricLevelLtd;
+import com.fyntrac.common.entity.Option;
+import com.fyntrac.common.repository.EventRepository;
+import com.fyntrac.common.service.EventService;
 import com.fyntrac.reporting.service.InstrumentDiagnosticService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/reporting/diagnostic")
@@ -22,9 +25,12 @@ import java.nio.file.Files;
 public class InstrumentDiagnosticController {
 
     private final InstrumentDiagnosticService instrumentDiagnosticService;
+    private final EventService eventService;
 
-    public InstrumentDiagnosticController(InstrumentDiagnosticService instrumentDiagnosticService){
+    public InstrumentDiagnosticController(InstrumentDiagnosticService instrumentDiagnosticService,
+                                          EventService eventService){
         this.instrumentDiagnosticService = instrumentDiagnosticService;
+        this.eventService = eventService;
     }
 
     @PostMapping("/generate")
@@ -52,6 +58,18 @@ public class InstrumentDiagnosticController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getName() + "\"")
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(fileContent);
+    }
+
+    @GetMapping("/get/event-postingdates")
+    public ResponseEntity<List<Option>> getEventHistoryPostingDates() {
+        try {
+           List<Option> postingDates = this.eventService.getDistinctPostingDates();
+            return new ResponseEntity<>(postingDates, HttpStatus.OK);
+        }catch (Exception e) {
+            // Log the exception for debugging purposes
+            log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
 
 }

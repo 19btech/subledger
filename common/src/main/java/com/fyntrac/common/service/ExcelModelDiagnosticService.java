@@ -1,19 +1,18 @@
 package com.fyntrac.common.service;
 
 import com.fyntrac.common.component.TransactionActivityQueue;
+import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
-import com.fyntrac.common.entity.AccountingPeriod;
-import com.fyntrac.common.entity.InstrumentAttribute;
-import com.fyntrac.common.entity.TransactionActivity;
+import com.fyntrac.common.entity.*;
 import com.fyntrac.common.enums.InstrumentAttributeVersionType;
-import com.fyntrac.common.enums.ModelExecutionType;
 import com.fyntrac.common.enums.SequenceNames;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.exception.LoadExcelModelExecption;
-import com.fyntrac.common.model.ExcelModelDiagnosticExecutor;
 import com.fyntrac.common.model.ExcelModelExecutor;
 import com.fyntrac.common.model.ModelWorkflowContext;
+import com.fyntrac.common.repository.EventRepository;
+import com.fyntrac.common.repository.InstrumentAttributeRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.aggregation.CommonAggregationService;
 import com.fyntrac.common.utils.DateUtil;
@@ -31,14 +30,18 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+
 @Service
 @Slf4j
 public class ExcelModelDiagnosticService {
 
+    private final EventRepository eventRepository;
+
+    private final InstrumentAttributeRepository instrumentRepo;
     private final ModelDataService modelDataService;
     private final MemcachedRepository memcachedRepository;
     private final AccountingPeriodDataUploadService accountingPeriodService;
-    private final ExcelModelDiagnosticExecutor excelModelExecutor;
+    private final ExcelModelExecutor excelModelExecutor;
     private final TransactionActivityService transactionActivityService;
     private final ErrorService errorService;
     private final CommonAggregationService commonAggregationService;
@@ -48,13 +51,15 @@ public class ExcelModelDiagnosticService {
     public ExcelModelDiagnosticService(ModelDataService modelDataService
             , MemcachedRepository memcachedRepository
             , AccountingPeriodDataUploadService accountingPeriodService
-            , ExcelModelDiagnosticExecutor excelModelExecutor
+            , ExcelModelExecutor excelModelExecutor
             , TransactionActivityService transactionActivityService
             , ErrorService errorService
             , CommonAggregationService commonAggregationService
             , ExecutionStateService executionStateService
             , InstrumentAttributeService instrumentAttributeService
-            , TransactionActivityQueue transactionActivityQueue) {
+            , TransactionActivityQueue transactionActivityQueue
+                                       , EventRepository eventRepository
+    , InstrumentAttributeRepository instrumentRepo) {
         this.modelDataService = modelDataService;
         this.memcachedRepository = memcachedRepository;
         this.accountingPeriodService = accountingPeriodService;
@@ -65,6 +70,42 @@ public class ExcelModelDiagnosticService {
         this.executionStateService = executionStateService;
         this.instrumentAttributeService = instrumentAttributeService;
         this.transactionActivityQueue = transactionActivityQueue;
+        this.instrumentRepo = instrumentRepo;
+        this.eventRepository = eventRepository;
+
+    }
+
+
+    public Records.DiagnosticReportModelDataRecord generateEventDiagnostic(Records.DiagnosticReportRequestRecord requestRecord, Records.ModelRecord modelRecord) throws IOException, ParseException {
+        final String tenant = TenantContextHolder.getTenant();
+
+        int postingDate = Integer.parseInt(requestRecord.postingDate());
+        String instrumentId = requestRecord.instrumentId();
+        List<Event> events = this.eventRepository.findByPostingDateAndInstrumentId(postingDate, instrumentId);
+
+        Workbook workbook = this.excelModelExecutor.executeExcelModel(
+        modelRecord,
+        events);
+
+        File modelFile = generateModelOutputFile(tenant, instrumentId, workbook);
+        // Close the workbook explicitly
+        workbook.close();
+
+        // Build workflow context
+        ModelWorkflowContext context = ModelWorkflowContext.builder()
+                .currentInstrumentAttribute(null)
+                .executionType(com.fyntrac.common.enums.ModelExecutionType.CHAINED)
+                .accountingPeriod(null)
+                .executionDate(DateUtil.convertIntDateToUtc(postingDate))
+                .instrumentId(instrumentId)
+                .tenantId(tenant)
+                .lastActivityPostingDate(postingDate)
+                .events(events)
+                .excelModel(modelRecord)
+                .build();
+        context.setWorkbook(workbook);
+        // Return the saved file
+        return RecordFactory.createDiagnosticReportModelDataRecord(context, modelFile);
 
     }
 

@@ -2,7 +2,7 @@ package com.fyntrac.reporting.service;
 
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
-import com.fyntrac.common.entity.AccountingPeriod;
+import com.fyntrac.common.entity.Event;
 import com.fyntrac.common.entity.ExecutionState;
 import com.fyntrac.common.entity.Model;
 import com.fyntrac.common.entity.ModelFile;
@@ -10,7 +10,6 @@ import com.fyntrac.common.model.ModelWorkflowContext;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.*;
 import com.fyntrac.common.utils.DataUtil;
-import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.ExcelModelUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +19,6 @@ import java.io.File;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -86,46 +84,16 @@ public class InstrumentDiagnosticService {
 
             ModelWorkflowContext context = this.generateModelOutput(requestRecord);
 
-            List<Map<String, Object>> transactionActivityData = DataUtil.ensureIds(ExcelModelUtil.readSheetAsListOfMaps(context.getWorkbook(),"i_Transaction", "INSTRUMENTID"));
-            List<Map<String, Object>> instrumentAttributeData = DataUtil.ensureIds(ExcelModelUtil.readSheetAsListOfMaps(context.getWorkbook(),"i_InstrumentAttribute","INSTRUMENTID"));
-            List<Map<String, Object>> balancesData = DataUtil.ensureIds(ExcelModelUtil.readSheetAsListOfMaps(context.getWorkbook(),"i_Metric","POSTINGDATE"));
-            List<Map<String, Object>> executionStateData = DataUtil.ensureIds(ExcelModelUtil.readSheetAsListOfMaps(context.getWorkbook(),"i_ExecutionDate",""));
+        Map<String, List<Map<String, Object>>> valueMap = this.getEventValueMap(context.getEvents());
 
-            List<Records.DocumentAttribute> transactionActivityHeader = DataUtil.convert(DataUtil.reorderKeys(transactionActivityData,transactionActivityColumnOrder),keysToExclude);
-            List<Records.DocumentAttribute> instrumentAttributeHeader = DataUtil.convert(DataUtil.reorderKeys(instrumentAttributeData,instrumentAttributeColumnOrder),keysToExclude);
-            List<Records.DocumentAttribute> balancesHeader = DataUtil.convert(DataUtil.reorderKeys(balancesData,balanceColumnOrder),keysToExclude);
-            List<Records.DocumentAttribute> executionStateHeader = DataUtil.convert(DataUtil.reorderKeys(executionStateData,executionStateColumnOrder),keysToExclude);
+        return RecordFactory.createDiagnosticReportDataRecord(valueMap);
+    }
 
-
-        // Extract attributeName values in uppercase
-            List<String> activityColumnOrderList = transactionActivityHeader.stream()
-                .map(Records.DocumentAttribute::attributeName)
-                .map(String::toUpperCase)
+    public List<Map<String, Map<String, Object>>> convert(Map<String, Map<String, Object>> input) {
+        return input.entrySet()
+                .stream()
+                .map(e -> Map.of(e.getKey(), e.getValue()))
                 .toList();
-
-            List<String> instrumentColumnOrderList = instrumentAttributeHeader.stream()
-                .map(Records.DocumentAttribute::attributeName)
-                .map(String::toUpperCase)
-                .toList();
-
-
-            List<String> balancesColumnOrderList = executionStateHeader.stream()
-                .map(Records.DocumentAttribute::attributeName)
-                .map(String::toUpperCase)
-                .toList();
-
-            List<String> executionStateColumnOrderList = balancesHeader.stream()
-                .map(Records.DocumentAttribute::attributeName)
-                .map(String::toUpperCase)
-                .toList();
-            return RecordFactory.createDiagnosticReportDataRecord(transactionActivityHeader,
-                    DataUtil.normalizeIdKeys(DataUtil.reorderKeys(transactionActivityData,activityColumnOrderList),keysToExclude),
-                    instrumentAttributeHeader,
-                    DataUtil.normalizeIdKeys(DataUtil.reorderKeys(instrumentAttributeData,instrumentColumnOrderList),keysToExclude),
-                    balancesHeader,
-                    DataUtil.ensureIds(DataUtil.normalizeIdKeys(DataUtil.reorderKeys(balancesData,balancesColumnOrderList),keysToExclude)),
-                    executionStateHeader,
-                    DataUtil.ensureIds(DataUtil.normalizeIdKeys(DataUtil.reorderKeys(executionStateData,executionStateColumnOrderList),keysToExclude)));
     }
 
     public ModelWorkflowContext generateModelOutput(Records.DiagnosticReportRequestRecord requestRecord) throws Throwable {
@@ -153,35 +121,18 @@ public class InstrumentDiagnosticService {
                     "Execution state not found"
             );
 
-            String dateStr = String.valueOf(executionState.getExecutionDate());
+            String dateStr = requestRecord.postingDate();
             SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
             sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
 
-            Date executionDate;
-            try {
-                executionDate = sdf.parse(dateStr);
-            } catch (ParseException e) {
-                log.error("Failed to parse execution date={} for tenant={}", dateStr, requestRecord.tenant(), e);
-                throw new IllegalArgumentException("Invalid execution date format: " + dateStr, e);
-            }
 
-            // 4. Get accounting period
-            int accountingPeriodId = com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(executionDate);
-            AccountingPeriod accountingPeriod = Objects.requireNonNull(
-                    accountingPeriodService.getAccountingPeriod(accountingPeriodId),
-                    "AccountingPeriod not found for id=" + accountingPeriodId
-            );
+
 
             // 5. Generate diagnostic data
             Records.DiagnosticReportModelDataRecord diagnosticReportDataRecord =
-                    excelModelDiagnosticService.generateDiagnostic(
-                            requestRecord.tenant(),
-                            executionDate,
-                            executionState.getLastExecutionDate(),
-                            accountingPeriod,
-                            requestRecord.instrumentId(),
-                            modelRecord
-                    );
+                    excelModelDiagnosticService.generateEventDiagnostic(requestRecord,
+                            modelRecord);
+
 
             // 6. Generate output file
             File outputFile = diagnosticReportDataRecord.excelMode();
@@ -192,7 +143,8 @@ public class InstrumentDiagnosticService {
                 throw new IllegalStateException("Output file not generated: ") ;
             }
 
-            String fileKey = String.format("%s-%s-%d", requestRecord.tenant(), requestRecord.instrumentId(), DateUtil.convertToIntYYYYMMDDFromJavaDate(executionDate));
+            String fileKey = String.format("%s-%s-%s", requestRecord.tenant(), requestRecord.instrumentId(),
+                    requestRecord.postingDate());
             this.memcachedRepository.putInCache(fileKey, outputFile);
 
             log.info("Diagnostic report successfully generated at={} for instrumentId={}, tenant={}",
@@ -216,7 +168,7 @@ public class InstrumentDiagnosticService {
                 "Execution state not found"
         );
 
-        String dateStr = String.valueOf(executionState.getExecutionDate());
+        String dateStr = requestRecord.postingDate();
         SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
         sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
 
@@ -228,7 +180,26 @@ public class InstrumentDiagnosticService {
             throw new IllegalArgumentException("Invalid execution date format: " + dateStr, e);
         }
 
-        String fileKey = String.format("%s-%s-%d", requestRecord.tenant(), requestRecord.instrumentId(), DateUtil.convertToIntYYYYMMDDFromJavaDate(executionDate));
+        String fileKey = String.format("%s-%s-%s", requestRecord.tenant(), requestRecord.instrumentId(),
+                dateStr);
         return this.memcachedRepository.getFromCache(fileKey, File.class);
+    }
+
+    Map<String, List<Map<String, Object>>> getEventValueMap(List<Event> events) {
+
+        Map<String, List<Map<String, Object>>> valueMap = new HashMap<>(0);
+
+        for(Event event : events) {
+            String eventId = event.getEventId();
+            Map<String,Map<String, Object>> values = event.getEventDetail().getValues();
+            List<Map<String, Object>> tmpValueMap = new ArrayList<>(0);
+            for(Map<String, Object> map : values.values()) {
+                tmpValueMap.add(map);
+            }
+
+            valueMap.put(eventId, tmpValueMap);
+        }
+
+        return valueMap;
     }
 }

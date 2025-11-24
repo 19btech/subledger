@@ -24,9 +24,6 @@ public interface EventRepository extends MongoRepository<Event, String> {
     // Find events by eventId
     List<Event> findByEventId(String eventId);
 
-    // Find events by postingDate and instrumentId
-    List<Event> findByPostingDateAndInstrumentId(Integer postingDate, String instrumentId);
-
     // Find events by postingDate and eventId
     List<Event> findByPostingDateAndEventId(Integer postingDate, String eventId);
 
@@ -80,4 +77,10 @@ public interface EventRepository extends MongoRepository<Event, String> {
             fields = "{ 'instrumentId': 1 }")
     Page<Event> findInstrumentIdsByPostingDateAndStatusNotStarted(
             Integer postingDate, Pageable pageable);
+
+    List<Integer> findDistinctPostingDateByPostingDateNotNull();
+
+    @Query("{ 'postingDate': ?0, 'instrumentId': ?1 }")
+    List<Event> findByPostingDateAndInstrumentId(Integer postingDate, String instrumentId);
+
 }

@@ -2,6 +2,7 @@ package com.fyntrac.common.model;
 
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.AccountingPeriod;
+import com.fyntrac.common.entity.Event;
 import com.fyntrac.common.entity.ExecutionState;
 import lombok.Builder;
 import lombok.Data;
@@ -31,4 +32,5 @@ public class ModelWorkflowContext {
     private String tenantId;
     private int lastActivityPostingDate;
     private Workbook workbook;
+    private List<Event> events;
 }

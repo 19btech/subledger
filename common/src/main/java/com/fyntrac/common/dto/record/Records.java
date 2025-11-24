@@ -287,7 +287,8 @@ public class Records {
         private static final long serialVersionUID = -2108325930955107947L;
     }
 
-    public record DiagnosticReportRequestRecord(String tenant, String instrumentId, String modelId) implements Serializable {
+    public record DiagnosticReportRequestRecord(String tenant, String instrumentId, String modelId,
+                                                String postingDate) implements Serializable {
         private static final long serialVersionUID = 4708400430638644109L;
     }
 
@@ -295,14 +296,8 @@ public class Records {
         private static final long serialVersionUID = 8522699881876081280L;
     }
 
-    public record DiagnosticReportDataRecord(List<Records.DocumentAttribute> transactionActivityHeader,
-                                             List<Map<String, Object>> transactionActivityData,
-                                             List<Records.DocumentAttribute> instrumentAttributeHeader,
-                                             List<Map<String, Object>> instrumentAttributeData,
-                                             List<Records.DocumentAttribute> balancesHeader,
-                                             List<Map<String, Object>> balancesData,
-                                             List<Records.DocumentAttribute> executionStateHeader,
-                                             List<Map<String, Object>> executionStateData) implements Serializable {
+    public record DiagnosticReportDataRecord(Map<String, List<Map<String,
+            Object>>> valueMapList) implements Serializable {
         private static final long serialVersionUID = -212786685516433649L;
     }
 

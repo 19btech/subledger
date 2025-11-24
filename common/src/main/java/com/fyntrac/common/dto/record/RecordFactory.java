@@ -359,30 +359,20 @@ public class RecordFactory {
         return createRecord(() -> new Records.MonthOverMonthMetricActivityRecord(monthOverMonthSeries, momData));
     }
 
-    public static Records.DiagnosticReportRequestRecord createRiagnosticReportRequestRecord(String tenant, String instrumentId, String modelId) {
-        return createRecord(() -> new Records.DiagnosticReportRequestRecord(tenant, instrumentId, modelId));
+    public static Records.DiagnosticReportRequestRecord createRiagnosticReportRequestRecord(String tenant,
+                                                                                            String instrumentId,
+                                                                                            String modelId,
+                                                                                            String postingDate) {
+        return createRecord(() -> new Records.DiagnosticReportRequestRecord(tenant, instrumentId, modelId, postingDate));
     }
 
     public static Records.DiagnosticReportModelDataRecord createDiagnosticReportModelDataRecord(ModelWorkflowContext excelData, File excelMode) {
         return createRecord(() -> new Records.DiagnosticReportModelDataRecord(excelData, excelMode));
     }
 
-    public static Records.DiagnosticReportDataRecord createDiagnosticReportDataRecord(List<Records.DocumentAttribute> transactionActivityHeader,
-                                                                                      List<Map<String, Object>> transactionActivityData,
-                                                                                      List<Records.DocumentAttribute> instrumentAttributeHeader,
-                                                                                      List<Map<String, Object>> instrumentAttributeData,
-                                                                                      List<Records.DocumentAttribute> balancesHeader,
-                                                                                      List<Map<String, Object>> balancesData,
-                                                                                      List<Records.DocumentAttribute> executionStateHeader,
-                                                                                      List<Map<String, Object>> executionStateData) {
-        return createRecord(() -> new Records.DiagnosticReportDataRecord(transactionActivityHeader,
-                transactionActivityData,
-                instrumentAttributeHeader,
-                instrumentAttributeData,
-                balancesHeader,
-                balancesData,
-                executionStateHeader,
-                executionStateData));
+    public static Records.DiagnosticReportDataRecord createDiagnosticReportDataRecord(Map<String, List<Map<String,
+            Object>>> valueMapList) {
+        return createRecord(() -> new Records.DiagnosticReportDataRecord(valueMapList));
     }
 
     public static Records.DataFileRecord createDataFileRecord(String name, String id) {
@@ -526,18 +516,18 @@ public class RecordFactory {
             Integer effectiveDate,
             String instrumentId,
             String attributeId
-    ){
-        return createRecord(() -> new Records.ExcelModelEventKey(postingDate,effectiveDate,instrumentId,attributeId));
+    ) {
+        return createRecord(() -> new Records.ExcelModelEventKey(postingDate, effectiveDate, instrumentId, attributeId));
     }
 
     public static Records.TransactionKeyRecord createTransactionKeyRecord(String transactionName,
-                                                                          Integer effectiveDate){
+                                                                          Integer effectiveDate) {
         return createRecord(() -> new Records.TransactionKeyRecord(transactionName, effectiveDate));
     }
 
-    public static Records.TransactionActivityAmountRecord createTransactionActivityAmountRecord( String transactionName,
-                                                                                                 Integer effectiveDate,
-                                                                                                 BigDecimal totalAmount){
+    public static Records.TransactionActivityAmountRecord createTransactionActivityAmountRecord(String transactionName,
+                                                                                                Integer effectiveDate,
+                                                                                                BigDecimal totalAmount) {
         return createRecord(() -> new Records.TransactionActivityAmountRecord(transactionName, effectiveDate, totalAmount));
     }
 }

@@ -11,11 +11,9 @@ import com.fyntrac.common.service.aggregation.AttributeLevelAggregationService;
 import com.fyntrac.common.service.aggregation.InstrumentLevelAggregationService;
 import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
 import com.fyntrac.common.utils.DateUtil;
-import com.fyntrac.common.utils.MongoDocumentConverter;
 import com.fyntrac.common.utils.ExcelModelUtil;
+import com.fyntrac.common.utils.MongoDocumentConverter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.ss.formula.eval.NotImplementedException;
-import org.apache.poi.ss.usermodel.FormulaEvaluator;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,9 +22,9 @@ import org.springframework.stereotype.Service;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.time.Instant;
 
 
 @Service
@@ -146,6 +144,32 @@ public class ExcelModelExecutor {
             List<Event> events
     ) throws IOException {
 
+        Workbook workbook = this.executeExcelModel(model, events);
+
+        // Read outputs
+        List<Map<String, Object>> oTransactionData =
+                ExcelModelProcessor.readSheetData(workbook, "o_transaction");
+
+        List<Map<String, Object>> oInstrumentAttributeData =
+                ExcelModelProcessor.readSheetData(workbook, "o_instrumentattribute");
+
+        // Save output file for debugging
+        if (this.generateModelOutputFile) {
+            String fileName = String.format("processed-output-%s-%d.xlsx", instrumentId, postingDate);
+            try (FileOutputStream fos = new FileOutputStream(fileName)) {
+                workbook.write(fos);
+            }
+        }
+
+        return RecordFactory.createModelOutputData(oTransactionData, oInstrumentAttributeData);
+    }
+
+
+    public Workbook executeExcelModel(
+            Records.ModelRecord model,
+            List<Event> events
+    ) throws IOException {
+
         Workbook workbook = ExcelModelUtil.convertBinaryToWorkbook(model.modelFile().getFileData());
 
         // Pre-create all styles ONCE
@@ -165,22 +189,7 @@ public class ExcelModelExecutor {
         // Clear all cached formula values
         ExcelModelUtil.evaluateFormulas(workbook);
 
-        // Read outputs
-        List<Map<String, Object>> oTransactionData =
-                ExcelModelProcessor.readSheetData(workbook, "o_transaction");
-
-        List<Map<String, Object>> oInstrumentAttributeData =
-                ExcelModelProcessor.readSheetData(workbook, "o_instrumentattribute");
-
-        // Save output file for debugging
-        if (this.generateModelOutputFile) {
-            String fileName = String.format("processed-output-%s-%d.xlsx", instrumentId, postingDate);
-            try (FileOutputStream fos = new FileOutputStream(fileName)) {
-                workbook.write(fos);
-            }
-        }
-
-        return RecordFactory.createModelOutputData(oTransactionData, oInstrumentAttributeData);
+        return workbook;
     }
 
 
