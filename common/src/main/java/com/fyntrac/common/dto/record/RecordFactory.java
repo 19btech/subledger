@@ -4,15 +4,18 @@ import com.fyntrac.common.entity.*;
 import com.fyntrac.common.enums.*;
 import com.fyntrac.common.model.ModelWorkflowContext;
 import com.fyntrac.common.utils.DateUtil;
+import org.apache.poi.ss.formula.functions.T;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.format.annotation.NumberFormat;
 import org.springframework.stereotype.Component;
 
+import javax.validation.Valid;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Positive;
+import javax.validation.constraints.Size;
 import java.io.File;
 import java.io.Serializable;
 import java.math.BigDecimal;
@@ -529,6 +532,33 @@ public class RecordFactory {
                                                                                                 Integer effectiveDate,
                                                                                                 BigDecimal totalAmount) {
         return createRecord(() -> new Records.TransactionActivityAmountRecord(transactionName, effectiveDate, totalAmount));
+    }
+
+    public static Records.CustomTableRequestRecord createCreateCustomTableRequestRecord(String tableName,
+                                                                                        String description, CustomTableType tableType,
+                                                                                        List<CustomTableColumn> columns,
+                                                                                        List<String> primaryKeys,
+                                                                                        String referenceColumn,
+                                                                                        String referenceTable) {
+        return createRecord(() -> new Records.CustomTableRequestRecord(tableName, description, tableType,
+                columns, primaryKeys, referenceColumn, referenceTable));
+    }
+
+    public static Records.CustromTableResponseRecord createCustromTableResponseRecord(String id,
+                                                                                      String tableName,
+                                                                                      String description,
+                                                                                      CustomTableType tableType,
+                                                                                      LocalDateTime createdAt,
+                                                                                      LocalDateTime updatedAt) {
+        return createRecord(() -> new Records.CustromTableResponseRecord(id, tableName, description, tableType,
+                createdAt, updatedAt));
+    }
+
+    public static Records.ApiResponseRecord createApiResponseRecord(boolean success,
+    String message,
+    T data,
+    String error) {
+        return createRecord(() -> new Records.ApiResponseRecord(success, message, data, error));
     }
 }
 

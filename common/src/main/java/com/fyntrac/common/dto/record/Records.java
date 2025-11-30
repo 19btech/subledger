@@ -1,18 +1,17 @@
 package com.fyntrac.common.dto.record;
 
 import com.fyntrac.common.entity.*;
-import com.fyntrac.common.enums.FieldType;
-import com.fyntrac.common.enums.InstrumentAttributeVersionType;
-import com.fyntrac.common.enums.Source;
-import com.fyntrac.common.enums.TestStep;
+import com.fyntrac.common.enums.*;
 import com.fyntrac.common.model.ModelWorkflowContext;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.format.annotation.NumberFormat;
 
+import javax.validation.Valid;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Positive;
+import javax.validation.constraints.Size;
 import java.io.File;
 import java.io.Serializable;
 import java.math.BigDecimal;
@@ -426,4 +425,59 @@ public class Records {
     ) implements Serializable {private static final long serialVersionUID = 4292426438651236257L;}
 
     public record TransactionKeyRecord(String transactionName, Integer effectiveDate) implements Serializable {private static final long serialVersionUID = 3338343449065429379L;}
+
+    public record CustomTableRequestRecord(
+            @NotBlank(message = "Table name is required")
+            String tableName,
+
+            String description,
+
+            @NotNull(message = "Table type is required")
+            CustomTableType tableType,
+
+            @NotNull(message = "Columns are required")
+            @Size(min = 1, message = "At least one column is required")
+            @Valid
+            List<CustomTableColumn> columns,
+
+            @NotNull(message = "Primary keys are required")
+            @Size(min = 1, message = "At least one primary key must be selected")
+            List<String> primaryKeys,
+
+            String referenceColumn,
+
+            String referenceTable
+    ) implements Serializable {private static final long serialVersionUID = -2354948109672778094L;}
+
+    public record CustromTableResponseRecord(
+            String id,
+            String tableName,
+            String description,
+            CustomTableType tableType,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
+    ) implements Serializable {private static final long serialVersionUID = 6620969286174533592L;}
+
+    public record ApiResponseRecord<T>(
+            boolean success,
+            String message,
+            T data,
+            String error
+    ) {
+        public static <T> ApiResponseRecord<T> success(T data) {
+            return new ApiResponseRecord<>(true, null, data, null);
+        }
+
+        public static <T> ApiResponseRecord<T> success(String message, T data) {
+            return new ApiResponseRecord<>(true, message, data, null);
+        }
+
+        public static <T> ApiResponseRecord<T> error(String error) {
+            return new ApiResponseRecord<>(false, null, null, error);
+        }
+
+        public static <T> ApiResponseRecord<T> error(String message, String error) {
+            return new ApiResponseRecord<>(false, message, null, error);
+        }
+    }
 }
