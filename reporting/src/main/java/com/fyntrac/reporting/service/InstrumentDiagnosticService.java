@@ -190,14 +190,13 @@ public class InstrumentDiagnosticService {
         Map<String, List<Map<String, Object>>> valueMap = new HashMap<>(0);
 
         for(Event event : events) {
-            String eventId = event.getEventId();
             Map<String,Map<String, Object>> values = event.getEventDetail().getValues();
             List<Map<String, Object>> tmpValueMap = new ArrayList<>(0);
             for(Map<String, Object> map : values.values()) {
                 tmpValueMap.add(map);
             }
 
-            valueMap.put(eventId, tmpValueMap);
+            valueMap.put(event.getEventName(), tmpValueMap);
         }
 
         return valueMap;

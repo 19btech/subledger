@@ -59,6 +59,23 @@ public class CustomTableController {
         }
     }
 
+    @GetMapping("/get/{id}")
+    public ResponseEntity<Records.ApiResponseRecord<CustomTableDefinition>> getCustomTableById(@PathVariable String id) {
+        try {
+            CustomTableDefinition tableDefinition = tableDefinitionService.findById(id)
+                    .orElseThrow(() -> new IllegalArgumentException("Table definition not found"));
+
+            return ResponseEntity.ok(Records.ApiResponseRecord.success("Custom table find successfully",
+                    tableDefinition));
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Records.ApiResponseRecord.error(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(Records.ApiResponseRecord.error("Failed to get custom table: " + e.getMessage()));
+        }
+    }
+
     @DeleteMapping("/{id}/physical")
     public ResponseEntity<Records.ApiResponseRecord<Boolean>> dropPhysicalCollection(@PathVariable String id) {
         try {
