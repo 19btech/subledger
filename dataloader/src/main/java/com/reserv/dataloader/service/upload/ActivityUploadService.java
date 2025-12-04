@@ -1,5 +1,6 @@
 package com.reserv.dataloader.service.upload;
 
+import com.fyntrac.common.entity.CustomTableDefinition;
 import com.fyntrac.common.enums.SequenceNames;
 import com.fyntrac.common.enums.AccountingRules;
 import com.fyntrac.common.enums.AggregationRequestType;
@@ -47,6 +48,9 @@ public class ActivityUploadService {
     @Autowired
     protected  DataService dataService;
 
+    @Autowired
+    Job dynamicLoadJob;
+
     private final AccountingPeriodDataUploadService accountingPeriodService;
     private final AggregationService aggregationService;
     private final TransactionActivityService transactionActivityService;
@@ -62,6 +66,23 @@ public class ActivityUploadService {
         this.aggregationService = aggregationService;
         this.transactionActivityService = transactionActivityService;
         this.cacheService = cacheService;
+    }
+
+    public void uploadCustomTableData(Map<CustomTableDefinition, String> dataMap) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException {
+
+        for(Map.Entry<CustomTableDefinition, String> entry :  dataMap.entrySet()) {
+            CustomTableDefinition customTableDefinition = entry.getKey();
+            String fileName = entry.getValue();
+
+            JobParameters params = new JobParametersBuilder()
+                    .addString("tableDefId", customTableDefinition.getId()) // ID from Mongo
+                    .addString("filePath", fileName)
+                    .addLong("time", System.currentTimeMillis())
+                    .toJobParameters();
+
+            jobLauncher.run(dynamicLoadJob, params);
+        }
+
     }
 
     public void uploadActivity(Map<AccountingRules, String> activityMap) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, ExecutionException, InterruptedException, JobRestartException {

@@ -29,4 +29,6 @@ public interface CustomTableDefinitionRepository extends MongoRepository<CustomT
 
     @Query("{ 'tableType': ?0 }")
     List<CustomTableDefinition> findByTableTypeIgnoreCase(CustomTableType tableType);
+
+    List<CustomTableDefinition> findAllBy();
 }

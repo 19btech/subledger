@@ -3,7 +3,9 @@ package com.fyntrac.common.utils;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 
 public class FileUtil {
 
@@ -29,5 +31,22 @@ public class FileUtil {
         }
 
         return file;
+    }
+
+    public static Path createDirectoryIfNotExists(String path) {
+        try {
+            return Files.createDirectories(Path.of(path));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to create directory: " + path, e);
+        }
+    }
+
+    public static String getFileNameWithoutExtension(Path file) {
+        if (file == null || file.getFileName() == null) return null;
+
+        String name = file.getFileName().toString();
+        int lastDot = name.lastIndexOf('.');
+
+        return lastDot == -1 ? name : name.substring(0, lastDot);
     }
 }

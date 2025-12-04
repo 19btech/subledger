@@ -431,5 +431,13 @@ public class DataService<T> {
         return alias.toString();
     }
 
-
+    /**
+     * Get all collection names except system collections
+     */
+    public List<String> getUserCollectionNames() {
+        return this.getMongoTemplate().getCollectionNames().stream()
+                .filter(name -> !name.startsWith("system."))
+                .filter(name -> !name.equals("table_definitions")) // Exclude metadata collection if needed
+                .toList();
+    }
 }

@@ -1565,6 +1565,21 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
         return Integer.parseInt(year + formattedMonth);
     }
 
+    /**
+     * Generates an accounting period ID (YYYYMM) from a LocalDate.
+     * Example: 2025-01-31 -> 202501
+     *
+     * @param date The date to convert
+     * @return The integer representation of the period (YYYYMM)
+     */
+    public static int getAccountingPeriodId(LocalDate date) {
+        if (date == null) {
+            throw new IllegalArgumentException("Date cannot be null for PeriodId calculation");
+        }
+        // Efficient calculation: Year * 100 + Month (1-12)
+        return (date.getYear() * 100) + date.getMonthValue();
+    }
+
     public static int getAccountingPeriodId(Integer date) {
         return getAccountingPeriodId(convertToDateFromYYYYMMDD(date));
     }

@@ -112,7 +112,8 @@ public class ExcelUtil {
     }
     public  static void convertExcelToCSV(String fileNameWithAbsolutePath,
                                           String outPutFilePath,
-                                          Long activityUploadId) throws Throwable{
+                                          Long activityUploadId,
+                                          boolean validate) throws Throwable{
         InputStream inp = null;
         try {
             inp = new FileInputStream(fileNameWithAbsolutePath);
@@ -120,7 +121,8 @@ public class ExcelUtil {
             FormulaEvaluator evaluator = wb.getCreationHelper().createFormulaEvaluator();
             for (Sheet sheet : wb) {
 
-                if(!AccountingRules.isValid(sheet.getSheetName().toLowerCase() + ".csv")) {
+
+                if(validate && (!AccountingRules.isValid(sheet.getSheetName().toLowerCase() + ".csv"))) {
 //                    throw new InvalidExcelSheetNameException("Invalid SheetName["
 //                            + sheet.getSheetName() + "] of file[" + "]");
                     continue;

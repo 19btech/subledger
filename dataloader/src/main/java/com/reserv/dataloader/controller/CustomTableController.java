@@ -4,10 +4,14 @@ import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.CustomTableDefinition;
 import com.fyntrac.common.enums.CustomTableType;
 import com.fyntrac.common.service.CustomTableDefinitionService;
+import com.fyntrac.common.service.DataService;
+import com.reserv.dataloader.service.upload.FileUploadService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.validation.Valid;
 import java.util.List;
@@ -20,11 +24,14 @@ import java.util.Optional;
 public class CustomTableController {
 
     private final CustomTableDefinitionService tableDefinitionService;
+    private final DataService dataService;
     // Add these methods to your TableDefinitionController.java
 
     @Autowired
-    public  CustomTableController(CustomTableDefinitionService tableDefinitionService) {
+    public  CustomTableController(CustomTableDefinitionService tableDefinitionService,
+                                  DataService dataService) {
             this.tableDefinitionService = tableDefinitionService;
+            this.dataService = dataService;
     }
     @PostMapping("/create-with-physical")
     public ResponseEntity<Records.ApiResponseRecord<CustomTableDefinition>> createTableWithPhysicalCollection(
@@ -159,6 +166,45 @@ public class CustomTableController {
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(Records.ApiResponseRecord.error("Failed to get reference tables: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/get/all-tables")
+    public ResponseEntity<Records.ApiResponseRecord<List<String>>> getAllExistingTables() {
+        try {
+            List<String> tables =
+                    this.dataService.getUserCollectionNames();
+
+            return ResponseEntity.ok(Records.ApiResponseRecord.success(tables));
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Records.ApiResponseRecord.error(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(Records.ApiResponseRecord.error("Failed to get  tables list : " + e.getMessage()));
+        }
+    }
+
+    @Autowired
+    FileUploadService fileUploadService;
+    @PostMapping("/data-upload")
+    public ResponseEntity<String> handleFileUpload(@RequestParam("files") MultipartFile[] files) {
+        try {
+            // Process the uploaded files
+            log.info("Tesing log");
+            for (MultipartFile file : files) {
+                // Save the file or perform any other operations
+                System.out.println("Received file: " + file.getOriginalFilename());
+                fileUploadService.uploadCustomTableDataFiles(file);
+            }
+            return ResponseEntity.ok("Files uploaded successfully");
+        } catch (Exception e) {
+            String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
+            log.error(stackTrace);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload files: cause:" + stackTrace);
+        } catch (Throwable e) {
+            log.error(e.getLocalizedMessage());
+            throw new RuntimeException(e);
         }
     }
 }

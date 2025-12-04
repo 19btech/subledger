@@ -6,6 +6,7 @@ import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.*;
 import com.fyntrac.common.enums.DataActivityType;
 import com.fyntrac.common.enums.DataFileType;
+import com.fyntrac.common.repository.CustomTableDefinitionRepository;
 import com.fyntrac.common.service.*;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.ExcelUtil;
@@ -45,8 +46,9 @@ public class TestDataFileUploadService extends FileUploadService {
                               AccountingPeriodService accountingPeriodService,
                               SettingsService settingsService,
                               AccountingPeriodDataUploadService accountingPeriodDataUploadService,
-                              DataFileService dataFileService) {
-        super(tenantContextHolder, transactionsUploadService, activityUploadService);
+                              DataFileService dataFileService,
+                              CustomTableDefinitionRepository customTableDefinitionRepository) {
+        super(tenantContextHolder, activityUploadService , transactionsUploadService, customTableDefinitionRepository);
         this.dataService = dataService;
         this.settingsService = settingsService;
         this.accountingPeriodDataUploadService = accountingPeriodDataUploadService;
