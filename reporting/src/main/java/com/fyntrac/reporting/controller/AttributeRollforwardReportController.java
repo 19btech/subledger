@@ -1,7 +1,6 @@
 package com.fyntrac.reporting.controller;
 
 import com.fyntrac.common.dto.record.Records;
-import com.fyntrac.common.entity.AttributeLevelLtd;
 import com.fyntrac.reporting.service.AttributeRollforwardReportingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

@@ -1,6 +1,7 @@
 package com.fyntrac.common.utils;
 
 import com.fyntrac.common.dto.record.Records;
+import org.bson.Document;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 
@@ -8,6 +9,101 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MongoQueryGenerator {
+
+    public static List<Document> generateAggregationPipeline(List<Records.QueryCriteriaItem> criteriaList, List<String> fields) {
+        List<Criteria> criteriaListMongo = new ArrayList<>();
+
+        // Build the $or/$and criteria like before
+        for (Records.QueryCriteriaItem criteria : criteriaList) {
+            Criteria criteriaMongo = null;
+            Object parsedValue = parseIfNumber(criteria.filters().get(0));
+            switch (criteria.operator().toLowerCase()) {
+                case "contains":
+                    List<Criteria> containsCriteria = new ArrayList<>();
+                    for (String filter : criteria.filters()) {
+                        containsCriteria.add(Criteria.where(criteria.attributeName()).regex(filter, "i"));
+                    }
+                    criteriaMongo = new Criteria().orOperator(containsCriteria.toArray(new Criteria[0]));
+                    break;
+                case "starts with":
+                    List<Criteria> startsWithCriteria = new ArrayList<>();
+                    for (String filter : criteria.filters()) {
+                        startsWithCriteria.add(Criteria.where(criteria.attributeName()).regex("^" + filter, "i"));
+                    }
+                    criteriaMongo = new Criteria().orOperator(startsWithCriteria.toArray(new Criteria[0]));
+                    break;
+                case "ends with":
+                    List<Criteria> endsWithCriteria = new ArrayList<>();
+                    for (String filter : criteria.filters()) {
+                        endsWithCriteria.add(Criteria.where(criteria.attributeName()).regex(filter + "$", "i"));
+                    }
+                    criteriaMongo = new Criteria().orOperator(endsWithCriteria.toArray(new Criteria[0]));
+                    break;
+                default:
+                    switch (criteria.operator()) {
+                        case "equals":
+                        case "==":
+                            criteriaMongo = Criteria.where(criteria.attributeName()).is(parsedValue);
+                            break;
+                        case "not equal":
+                        case "!=":
+                            criteriaMongo = Criteria.where(criteria.attributeName()).ne(parsedValue);
+                            break;
+                        case "<":
+                            criteriaMongo = Criteria.where(criteria.attributeName()).lt(parsedValue);
+                            break;
+                        case ">":
+                            criteriaMongo = Criteria.where(criteria.attributeName()).gt(parsedValue);
+                            break;
+                        case "<=":
+                            criteriaMongo = Criteria.where(criteria.attributeName()).lte(parsedValue);
+                            break;
+                        case ">=":
+                            criteriaMongo = Criteria.where(criteria.attributeName()).gte(parsedValue);
+                            break;
+                        default:
+                            throw new IllegalArgumentException("Invalid operator: " + criteria.operator());
+                    }
+            }
+
+            if (criteriaMongo != null) {
+                criteriaListMongo.add(criteriaMongo);
+            }
+        }
+
+        // Combine criteria with logical operators
+        Criteria finalCriteria = null;
+        for (int i = 0; i < criteriaListMongo.size(); i++) {
+            Criteria current = criteriaListMongo.get(i);
+            if (finalCriteria == null) {
+                finalCriteria = current;
+            } else {
+                String logicalOp = criteriaList.get(i - 1).logicalOperator();
+                if ("OR".equalsIgnoreCase(logicalOp)) {
+                    finalCriteria = new Criteria().orOperator(finalCriteria, current);
+                } else {
+                    finalCriteria = new Criteria().andOperator(finalCriteria, current);
+                }
+            }
+        }
+
+        // Build aggregation pipeline stages
+        List<Document> pipeline = new ArrayList<>();
+        if (finalCriteria != null) {
+            pipeline.add(new Document("$match", finalCriteria.getCriteriaObject()));
+        }
+
+        if (fields != null && !fields.isEmpty()) {
+            Document projectFields = new Document();
+            for (String field : fields) {
+                projectFields.append(field, 1);
+            }
+            projectFields.append("_id", 1); // optional
+            pipeline.add(new Document("$project", projectFields));
+        }
+
+        return pipeline;
+    }
 
     public static Query generateQuery(List<Records.QueryCriteriaItem> criteriaList) {
         List<Criteria> criteriaListMongo = new ArrayList<>();
