@@ -2,10 +2,11 @@ package com.fyntrac.common.enums;
 
 public enum TriggerType {
     ON_MODEL_EXECUTION("On Model Execution"),
-    ON_ATTRIBUTE_ADD("On Attribute Add"),
+    ON_INSTRUMENT_ADD("On Instrument Add"),
     ON_TRANSACTION_POST("On Transaction Post"),
     ON_CONDITION_MATCH("On Condition Match"),
-    ON_ATTRIBUTE_CHANGE("On Attribute Change");
+    ON_ATTRIBUTE_CHANGE("On Attribute Change"),
+    ON_CUSTOM_DATA_TRIGGER("On Custom Data Trigger");
 
     private final String displayName;
 

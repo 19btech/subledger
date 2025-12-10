@@ -15,7 +15,7 @@ import java.util.List;
 public class SourceMapping {
 
     @Field("sourceTable")
-    private SourceTable sourceTable;
+    private String sourceTable;
 
     @Field("sourceColumns")
     private List<Option> sourceColumns;
@@ -32,7 +32,7 @@ public class SourceMapping {
     // Constructors
     public SourceMapping() {}
 
-    public SourceMapping(SourceTable sourceTable, List<Option> sourceColumns,
+    public SourceMapping(String sourceTable, List<Option> sourceColumns,
                          List<Option> versionType, List<Option> dataMapping, FieldType fieldType) {
         this.sourceTable = sourceTable;
         this.sourceColumns = sourceColumns;

@@ -81,9 +81,9 @@ public class ExcelModelUtil {
             reader.close();
 
         } catch (FileNotFoundException e) {
-            System.err.println("File not found");
+           log.error("File not found");
         } catch (IOException e) {
-            System.err.println("Unable to read the file.");
+           log.error("Unable to read the file.");
         }
         return null;
     }
@@ -381,7 +381,7 @@ public class ExcelModelUtil {
             if (created) {
                 System.out.println("Directory created successfully: " + directoryPath);
             } else {
-                System.err.println("Failed to create directory: " + directoryPath);
+               log.error("Failed to create directory: " + directoryPath);
             }
         } else {
             System.out.println("Directory already exists: " + directoryPath);
@@ -474,7 +474,19 @@ public class ExcelModelUtil {
                 Cell cell = row.createCell(colIndex);
                 Object value = caseInsensitiveRow.get(column);
 
-                applyCellValue(cell, value, column);
+                try {
+                    applyCellValue(cell, value, column, workbook);
+                }catch (Exception e){
+                   log.error("❌ ERROR in applyCellValue()");
+                   log.error("   Column Name     : " + column);
+                   log.error("   Column Index    : " + colIndex);
+                   log.error("   Row Number      : " + row.getRowNum());
+                   log.error("   Cell Address    : " + cell.getAddress());
+                   log.error("   Value           : " + value);
+                   log.error("   Value Type      : " + (value != null ? value.getClass().getName() : "null"));
+                   log.error("   Error Message   : " + e.getMessage());
+                    e.printStackTrace();
+                }
             }
         }
 
@@ -497,7 +509,26 @@ public class ExcelModelUtil {
         }
     }
 
-    private static void applyCellValue(Cell cell, Object value, String columnName) {
+    // Replace with a method to get or create styles for each workbook
+    private static CellStyle getNumberStyle(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+        DataFormat format = workbook.createDataFormat();
+        style.setDataFormat(format.getFormat("0.00"));
+        return style;
+    }
+
+    private static CellStyle getDateStyle(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+        CreationHelper createHelper = workbook.getCreationHelper();
+        style.setDataFormat(createHelper.createDataFormat().getFormat("dd-MM-yyyy"));
+        return style;
+    }
+
+    // Modify your applyCellValue method to accept the workbook
+    private static void applyCellValue(Cell cell, Object value, String columnName, Workbook workbook) {
+
+        log.info(String.format("columnName[%s], value[%s], cell[%s]", columnName,
+                (value == null ? "null" : value.toString()), cell.toString()));
 
         if (value == null) {
             cell.setBlank();
@@ -509,7 +540,6 @@ public class ExcelModelUtil {
         // ---------------------------------------------------------
         if ("InstrumentId".equalsIgnoreCase(columnName) ||
                 "AttributeId".equalsIgnoreCase(columnName)) {
-
             cell.setCellValue(String.valueOf(value));
             return;
         }
@@ -523,7 +553,7 @@ public class ExcelModelUtil {
             // Numeric string → number
             if (str.matches("-?\\d+(\\.\\d+)?")) {
                 cell.setCellValue(Double.parseDouble(str));
-                cell.setCellStyle(NUMBER_STYLE);
+                cell.setCellStyle(getNumberStyle(workbook)); // Use workbook-specific style
                 return;
             }
 
@@ -532,7 +562,7 @@ public class ExcelModelUtil {
                 LocalDate date = LocalDate.parse(str, DATE_INPUT_FMT);
                 double excelDate = org.apache.poi.ss.usermodel.DateUtil.getExcelDate(date);
                 cell.setCellValue(excelDate);
-                cell.setCellStyle(DATE_STYLE);
+                cell.setCellStyle(getDateStyle(workbook)); // Use workbook-specific style
                 return;
             }
 
@@ -546,7 +576,7 @@ public class ExcelModelUtil {
         if (value instanceof Date date) {
             double excelDate = org.apache.poi.ss.usermodel.DateUtil.getExcelDate(date);
             cell.setCellValue(excelDate);
-            cell.setCellStyle(DATE_STYLE);
+            cell.setCellStyle(getDateStyle(workbook)); // Use workbook-specific style
             return;
         }
 
@@ -555,7 +585,7 @@ public class ExcelModelUtil {
         // ---------------------------------------------------------
         if (value instanceof BigDecimal bd) {
             cell.setCellValue(bd.doubleValue());
-            cell.setCellStyle(NUMBER_STYLE);
+            cell.setCellStyle(getNumberStyle(workbook)); // Use workbook-specific style
             return;
         }
 
@@ -564,7 +594,7 @@ public class ExcelModelUtil {
         // ---------------------------------------------------------
         if (value instanceof Number n) {
             cell.setCellValue(n.doubleValue());
-            cell.setCellStyle(NUMBER_STYLE);
+            cell.setCellStyle(getNumberStyle(workbook)); // Use workbook-specific style
             return;
         }
 

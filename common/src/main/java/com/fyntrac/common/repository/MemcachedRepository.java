@@ -40,6 +40,10 @@ public class MemcachedRepository {
         }
     }
 
+    public boolean add(String key, Object value, int ttl) throws ExecutionException, InterruptedException {
+        // Returns true if key was set (didn't exist), false if it existed
+        return memcachedClient.add(key, ttl, value).get();
+    }
 
     public <T> OperationFuture<Boolean> replaceInCache(String key, T object, int expirationTimeInSeconds) {
         try {

@@ -480,4 +480,6 @@ public class Records {
             return new ApiResponseRecord<>(false, message, null, error);
         }
     }
+
+    public record CustomTableColumnsRecord(String tableName, List<String> columns) {private static final long serialVersionUID = -7350503432076490961L;}
 }

@@ -1,6 +1,8 @@
 package com.reserv.dataloader.controller;
 
+import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
+import com.fyntrac.common.entity.CustomTableColumn;
 import com.fyntrac.common.entity.CustomTableDefinition;
 import com.fyntrac.common.enums.CustomTableType;
 import com.fyntrac.common.service.CustomTableDefinitionService;
@@ -14,9 +16,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.validation.Valid;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/dataloader/fyntrac/custom-table")
@@ -166,6 +167,95 @@ public class CustomTableController {
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(Records.ApiResponseRecord.error("Failed to get reference tables: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/get/all/operational-tables/options")
+    public ResponseEntity<Records.ApiResponseRecord<Collection<Records.CustomTableColumnsRecord>>>
+    getOperationalTableOptions() {
+
+        try {
+            List<CustomTableDefinition> operationalTables =
+                    tableDefinitionService
+                            .getCustomTables(CustomTableType.OPERATIONAL)
+                            .orElseThrow(() -> new IllegalArgumentException("Table definition not found"));
+
+            Collection<Records.CustomTableColumnsRecord> options =
+                    operationalTables.stream()
+                            .map(table -> {
+
+                                // ✅ Safely extract column names as List<String>
+                                List<String> columnNames = Optional.ofNullable(table.getColumns())
+                                        .orElse(List.of())
+                                        .stream()
+                                        .filter(Objects::nonNull)
+                                        .map(CustomTableColumn::getColumnName)
+                                        .filter(Objects::nonNull)
+                                        .toList();
+
+                                // ✅ Build record with tableName + columns
+                                return RecordFactory.creatCustomTableColumnsRecord(
+                                        table.getTableName(),
+                                        columnNames
+                                );
+                            })
+                            .collect(Collectors.toList());
+
+            return ResponseEntity.ok(Records.ApiResponseRecord.success(options));
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(Records.ApiResponseRecord.error(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(Records.ApiResponseRecord.error(
+                            "Failed to get operational tables: " + e.getMessage()
+                    ));
+        }
+    }
+
+
+    @GetMapping("/get/all/reference-tables/options")
+    public ResponseEntity<Records.ApiResponseRecord<Collection<Records.CustomTableColumnsRecord>>>
+    getReferenceTableOptions() {
+
+        try {
+            List<CustomTableDefinition> operationalTables =
+                    tableDefinitionService
+                            .getCustomTables(CustomTableType.REFERENCE)
+                            .orElseThrow(() -> new IllegalArgumentException("Table definition not found"));
+
+            Collection<Records.CustomTableColumnsRecord> options =
+                    operationalTables.stream()
+                            .map(table -> {
+
+                                // ✅ Safely extract column names as List<String>
+                                List<String> columnNames = Optional.ofNullable(table.getColumns())
+                                        .orElse(List.of())
+                                        .stream()
+                                        .filter(Objects::nonNull)
+                                        .map(CustomTableColumn::getColumnName)
+                                        .filter(Objects::nonNull)
+                                        .toList();
+
+                                // ✅ Build record with tableName + columns
+                                return RecordFactory.creatCustomTableColumnsRecord(
+                                        table.getTableName(),
+                                        columnNames
+                                );
+                            })
+                            .collect(Collectors.toList());
+
+            return ResponseEntity.ok(Records.ApiResponseRecord.success(options));
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(Records.ApiResponseRecord.error(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(Records.ApiResponseRecord.error(
+                            "Failed to get operational tables: " + e.getMessage()
+                    ));
         }
     }
 

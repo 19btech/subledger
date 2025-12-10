@@ -79,10 +79,10 @@ public class EventConfigurationMapper {
 
     private SourceMapping toSourceMapping(Records.SourceMappingRequest request) {
         // Convert string source table to enum
-        SourceTable sourceTable;
+        String sourceTable;
         FieldType fieldType;
         try {
-            sourceTable = SourceTable.valueOf(request.sourceTable().toUpperCase());
+            sourceTable = request.sourceTable();
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid source table: " + request.sourceTable());
         }
@@ -149,7 +149,7 @@ public class EventConfigurationMapper {
 
     private Records.SourceMappingResponse toSourceMappingResponse(SourceMapping sourceMapping) {
         return RecordFactory.createSourceMappingResponseRecord(
-                sourceMapping.getSourceTable().getDisplayName(),
+                sourceMapping.getSourceTable(),
                 toOptionResponses(sourceMapping.getSourceColumns()),
                 toOptionResponses(sourceMapping.getVersionType()),
                 toOptionResponses(sourceMapping.getDataMapping()),

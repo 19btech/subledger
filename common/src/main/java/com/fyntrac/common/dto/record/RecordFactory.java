@@ -560,5 +560,10 @@ public class RecordFactory {
     String error) {
         return createRecord(() -> new Records.ApiResponseRecord(success, message, data, error));
     }
+
+    public static Records.CustomTableColumnsRecord creatCustomTableColumnsRecord(String tableName,
+                                                                                 List<String> columns) {
+        return createRecord(() -> new Records.CustomTableColumnsRecord(tableName, columns));
+    }
 }
 

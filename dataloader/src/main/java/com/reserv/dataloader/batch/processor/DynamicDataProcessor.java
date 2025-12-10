@@ -42,6 +42,11 @@ public class DynamicDataProcessor implements ItemProcessor<FieldSet, Document> {
             // Type Conversion Logic
             Object convertedValue = convertData(rawValue, col.getDataType().name());
 
+            if (colName.equalsIgnoreCase("POSTINGDATE") || colName.equalsIgnoreCase("EFFECTIVEDATE")) {
+                Date pDate = DateUtil.parseDate((String) convertedValue);
+                convertedValue = DateUtil.dateInNumber(pDate);
+            }
+
             document.append(colName, convertedValue);
 
             if(colName.equalsIgnoreCase("PostingDate") && convertedValue instanceof LocalDate) {

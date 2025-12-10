@@ -122,12 +122,22 @@ public class ModelExecutionService {
                 }
             }
 
+            // Now send message to Aggregate transactions
+            // this.commonAggregationService.aggregate(transactionActivities, previousPostingDate);
+            LocalDateTime dateTime = LocalDateTime.now();
+            int timestamp = (int) (dateTime.toEpochSecond(ZoneOffset.UTC));
+            String tenantId=msg.tenantId();
+            int postingDate = DateUtil.dateInNumber(executionDate);
+            String jobKey = String.format("%s-%s-%d", tenantId, "TA", postingDate);
+            long jobId = System.currentTimeMillis();
+            String transactionActivityKey = String.format("%s-%d", jobKey, timestamp);
+            TransactionActivityList activityList = new TransactionActivityList();
             // Step 3: Virtual Thread Pool
             try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-                String tenantId=msg.tenantId();
+
                 Integer lastActivityPostingDate = this.transactionActivityService.getLatestActivityPostingDate(tenantId);
                 List<Future<?>> futures = new ArrayList<>();
-                int postingDate = DateUtil.dateInNumber(executionDate);
+
 
                 int acctPeriod = com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(executionDate);
                 AccountingPeriod accountingPeriod = this.accountingPeriodService.getAccountingPeriod(acctPeriod);
@@ -141,11 +151,25 @@ public class ModelExecutionService {
                             // Set the tenant context for this virtual thread
                             TenantContextHolder.runWithTenant(tenantId, () -> {
                                 try {
-                                   this.processInstrument(tenantId, postingDate,
+                                  Collection<TransactionActivity> activities = this.processInstrument(tenantId,
+                                            postingDate,
                                            accountingPeriod
             , instrumentId
             , activeModels
             , events);
+
+                                    if (activities != null) {
+                                        activities.forEach(transactionActivity -> {
+                                            log.info(String.format("Adding TransactionActivityQueue[%s]",
+                                                    transactionActivity.toString()));
+                                                    this.transactionActivityQueue.add(tenantId, jobId, transactionActivity);
+                                            String activityKey = String.format("%s-%d", key, transactionActivity.hashCode());
+
+                                            activityList.add(activityKey);
+                                            this.memcachedRepository.putInCache(activityKey, transactionActivity);
+                                                }
+                                        );
+                                    }
                                 } catch (Throwable e) {
                                     throw new RuntimeException(e);
                                 }
@@ -178,6 +202,13 @@ public class ModelExecutionService {
             } catch (Throwable e) {
                 log.error("Error in executeModels", e);
                 throw e; // Rethrow the exception for further handling
+            }finally {
+                Records.ExecuteAggregationMessageRecord aggregationMessageRecord =
+                        RecordFactory.createExecutionAggregationRecord(tenantId, jobId, (long) postingDate);
+                aggregationMessageProducer.executeAggregation(aggregationMessageRecord);
+                this.memcachedRepository.putInCache(transactionActivityKey, activityList);
+                Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(this.transactionActivityService.getDataService().getTenantId(), jobId);
+                generalLedgerMessageProducer.bookTempGL(glRec);
             }
         }catch (Exception exp){
             log.error(StringUtil.getStackTrace(exp));
@@ -321,7 +352,7 @@ public class ModelExecutionService {
         }
     }
 
-    private void processInstrument(String tenantId, int executionDate,
+    private Collection<TransactionActivity> processInstrument(String tenantId, int executionDate,
                                    AccountingPeriod accountingPeriod
             , String instrumentId
             , List<Records.ModelRecord> activeModels
@@ -329,7 +360,7 @@ public class ModelExecutionService {
         log.info("Processing " + instrumentId + " on Thread: " + Thread.currentThread().getName());
 
         List<InstrumentAttribute> currentOpenInstrumentAttributes = this.instrumentAttributeService.getOpenInstrumentAttributesByInstrumentId(instrumentId, tenantId);
-
+        Collection<TransactionActivity> allActivities = new ArrayList<>(0);
         for (Records.ModelRecord model : activeModels) {
                 Collection<TransactionActivity> transactionActivities = null;
                 try {
@@ -370,44 +401,10 @@ public class ModelExecutionService {
                             .filter(transaction -> transaction.getAmount().compareTo(BigDecimal.ZERO) != 0)
                             .collect(Collectors.toSet());
                     // transactionActivities = this.transactionActivityService.save(filteredTransactions);
-                    transactionActivities =  this.transactionActivityService.getDataService().saveAll(filteredTransactions, tenantId, TransactionActivity.class);
-
-                    // Now send message to generate GL
-                    // Now send message to Aggregate transactions
-                    // this.commonAggregationService.aggregate(transactionActivities, previousPostingDate);
-                    LocalDateTime dateTime = LocalDateTime.now();
-                    int timestamp = (int) (dateTime.toEpochSecond(ZoneOffset.UTC));
-                    String key = String.format("%s-%s-%d", tenantId, "TA", executionDate);
-
-                    long jobId = System.currentTimeMillis();
-                    if (transactionActivities != null) {
-                        transactionActivities.forEach(transactionActivity -> {
-                                    this.transactionActivityQueue.add(tenantId, jobId, transactionActivity);
-                                }
-                        );
-                    }
-
-                    Records.ExecuteAggregationMessageRecord aggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenantId, jobId, (long) executionDate);
-                    aggregationMessageProducer.executeAggregation(aggregationMessageRecord);
-
-                    String transactionActivityKey = String.format("%s-%d", key, timestamp);
-
-                    TransactionActivityList activityList = new TransactionActivityList();
-                    if (transactionActivities != null) {
-                        transactionActivities.forEach(transactionActivity -> {
-                                    String activityKey = String.format("%s-%d", key, transactionActivity.hashCode());
-
-                                    activityList.add(activityKey);
-                                    this.memcachedRepository.putInCache(activityKey, transactionActivity);
-                                }
-                        );
-                    }
-
-                    this.memcachedRepository.putInCache(transactionActivityKey, activityList);
-
-
-                    Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(this.transactionActivityService.getDataService().getTenantId(), jobId);
-                    generalLedgerMessageProducer.bookTempGL(glRec);
+                    transactionActivities =
+                            this.transactionActivityService.getDataService().saveAll(filteredTransactions, tenantId,
+                            TransactionActivity.class);
+                    allActivities.addAll(transactionActivities);
 
                 } catch (Exception e) {
                     // Log the exception and continue processing the next model
@@ -425,7 +422,7 @@ public class ModelExecutionService {
                 }
 
         }
-
+return allActivities;
     }
 
     private void processInstrument(String tenantId, Date executionDate,

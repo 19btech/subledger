@@ -10,10 +10,14 @@ import com.fyntrac.common.enums.TriggerType;
 import com.fyntrac.common.repository.*;
 import com.fyntrac.common.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -33,6 +37,7 @@ public class ExcelModelService {
     private final InstrumentAttributeService instrumentAttributeService;
     private final ExecutionStateService executionStateService;
     private final EventRepository eventRepository;
+    private final DataService<?> dataService;
     private List<TransactionActivity> transactionActivities;
     private List<InstrumentAttribute> instrumentAttributes;
 
@@ -46,7 +51,8 @@ public class ExcelModelService {
                              EventConfigurationRepository eventConfigurationRepo,
                              InstrumentAttributeService instrumentAttributeService,
                              ExecutionStateService executionStateService,
-                             EventRepository eventRepository
+                             EventRepository eventRepository,
+                             DataService<?> dataService
     ) {
         this.instrumentRepo = instrumentRepo;
         this.activityRepo = activityRepo;
@@ -55,6 +61,7 @@ public class ExcelModelService {
         this.instrumentAttributeService = instrumentAttributeService;
         this.executionStateService = executionStateService;
         this.eventRepository = eventRepository;
+        this.dataService = dataService;
         transactionActivities = new ArrayList<>(0);
         instrumentAttributes = new ArrayList<>(0);
     }
@@ -220,7 +227,7 @@ public class ExcelModelService {
                         null,
                         configuration);
             }
-            case TriggerType.ON_ATTRIBUTE_ADD -> {
+            case TriggerType.ON_INSTRUMENT_ADD -> {
                 // logic for ON_ATTRIBUTE_ADD
                 InstrumentAttribute currentOpenVersion =
                         this.instrumentRepo.findByInstrumentIdAndPostingDate(instrumentId, attributeId,
@@ -279,6 +286,9 @@ public class ExcelModelService {
                             configuration);
                 }
             }
+            case TriggerType.ON_CUSTOM_DATA_TRIGGER -> {
+                valueMap = generateSourceMappingEventDetails(instrumentId, attributeId,postingDate, effectiveDate, configuration);
+            }
             default -> {
                 // optional: handle unexpected value
                 throw new IllegalArgumentException("Unknown trigger type: " + configuration.getTriggerSetup());
@@ -287,6 +297,96 @@ public class ExcelModelService {
 
         return valueMap;
     }
+
+    Map<String, Map<String, Object>> generateSourceMappingEventDetails(String instrumentId, String attributeId,
+                                                                       int postingDate,
+                                                                       int effectiveDate,
+                                                                       EventConfiguration configuration){
+        Map<String, Map<String, Object>> valueMap = new HashMap<>(0);
+        //Custom Table event generation
+        for (SourceMapping sourceMapping : configuration.getSourceMappings()) {
+
+
+            Map<String, Map<String, Object>> tmpValueMap = getValuesFromCustomTable(
+                    instrumentId,
+                    attributeId,
+                    postingDate,
+                    effectiveDate,
+                    sourceMapping
+            );
+            valueMap.putAll(tmpValueMap);
+        }
+        return valueMap;
+    }
+
+    public Map<String, Map<String, Object>> getValuesFromCustomTable(String instrumentId,
+            String attributeId,
+            Integer postingDate,
+            Integer effectiveDate,
+            SourceMapping mapping
+    ) {
+
+        Map<String, Map<String, Object>> resultMap = new LinkedHashMap<>();
+
+        // ✅ Mandatory columns
+        List<String> mandatoryColumns = List.of(
+                "instrumentId",
+                "attributeId",
+                "postingDate",
+                "effectiveDate",
+                "periodId"
+        );
+
+        // ✅ Projection columns (mandatory + dynamic)
+        List<String> projectionColumns = new ArrayList<>(mandatoryColumns);
+
+        List<String> columns = Optional.ofNullable(mapping.getSourceColumns())
+                .orElse(List.of())
+                .stream()
+                .map(Option::getValue)   // adjust if needed
+                .filter(Objects::nonNull)
+                .toList();
+
+        projectionColumns.addAll(columns);
+
+        String collectionName = mapping.getSourceTable();
+
+        // ✅ Build query
+        Query query = new Query();
+
+        query.addCriteria(
+                Criteria.where("instrumentId").is(instrumentId).and("attributeId").is(attributeId).and("postingDate").is(postingDate)
+                        .and("effectiveDate").lte(effectiveDate)
+        );
+
+        // ✅ ORDER BY effectiveDate DESC
+        query.with(Sort.by(Sort.Direction.DESC, "effectiveDate"));
+
+        // ✅ Projection
+        projectionColumns.forEach(query.fields()::include);
+        query.fields().include("_id");
+
+        // ✅ Fetch MULTIPLE records
+        List<Document> documents = this.dataService
+                .getMongoTemplate()
+                .find(query, Document.class, collectionName);
+
+        // ✅ Convert to Map<String, Map<String, Object>>
+        for (Document doc : documents) {
+
+            String key = doc.getObjectId("_id").toHexString(); // ✅ OUTER MAP KEY
+
+            Map<String, Object> valueMap = new HashMap<>();
+            for (String field : doc.keySet()) {
+                valueMap.put(field, doc.get(field));
+            }
+
+            resultMap.put(key, valueMap);
+        }
+
+        return resultMap;
+    }
+
 
     public Event generateEventFromModelExecution(String instrumentId,
                                                  String attributeId,
@@ -309,6 +409,7 @@ public class ExcelModelService {
         return null;
     }
 
+
     public Map<String, Map<String, Object>> generateSourceMappingEventDetails(InstrumentAttribute currentInstrumentAttribute,
                                                                               int attributePostingDate,
                                                                               int postingDate,
@@ -321,7 +422,7 @@ public class ExcelModelService {
 
         for (SourceMapping sourceMapping : configuration.getSourceMappings()) {
             Map<String, Object> tmpValueMap = new HashMap<>(0);
-            switch (sourceMapping.getSourceTable().getDisplayName().toLowerCase()) {
+            switch (sourceMapping.getSourceTable().toLowerCase()) {
                 case "attribute" -> {
                     // handle attribute
                     tmpValueMap = getValuesFromInstrumentAttribute(attributePostingDate,
@@ -349,7 +450,7 @@ public class ExcelModelService {
                 default -> {
                     // optional: handle unexpected case
                     throw new IllegalArgumentException("Unknown source table: "
-                            + sourceMapping.getSourceTable().getDisplayName());
+                            + sourceMapping.getSourceTable());
                 }
             }
         }

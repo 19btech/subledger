@@ -3,13 +3,14 @@ package com.reserv.dataloader.batch.processor;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.TransactionActivity;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.item.ItemProcessor;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
+@Slf4j
 public class AttributeLevelLtdProcessor
         implements ItemProcessor<TransactionActivity, List<Records.AttributeLevelLtdRecord>> {
 
@@ -24,6 +25,7 @@ public class AttributeLevelLtdProcessor
             return null;
         }
 
+        log.info(String.format("AttributeLevelLtdProcessor[%s]", activity.toString()));
         Set<String> metrics = transactionToMetrics.getOrDefault(activity.getTransactionName().toUpperCase(), Set.of());
 
         if (metrics.isEmpty()) {

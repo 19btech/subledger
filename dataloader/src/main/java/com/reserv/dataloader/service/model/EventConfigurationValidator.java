@@ -127,7 +127,7 @@ public class EventConfigurationValidator {
 
     private void validateSourceMappingColumns(List<String> columns, SourceMapping sourceMapping,
                                               String eventId, ValidationResult result) {
-        String sourceTable = sourceMapping.getSourceTable().getDisplayName();
+        String sourceTable = sourceMapping.getSourceTable();
 
         if ("ATTRIBUTE".equalsIgnoreCase(sourceTable)) {
             validateAttributeColumns(columns, sourceMapping, eventId, result);
@@ -139,7 +139,7 @@ public class EventConfigurationValidator {
     private void validateAttributeColumns(List<String> columns, SourceMapping sourceMapping,
                                           String eventId, ValidationResult result) {
         List<String> missingColumns = new ArrayList<>();
-        String sourceTable = sourceMapping.getSourceTable().getDisplayName();
+        String sourceTable = sourceMapping.getSourceTable();
         // For each source column and version type combination
         for (Option sourceColumn : sourceMapping.getSourceColumns()) {
             for (Option versionType : sourceMapping.getVersionType()) {
@@ -161,7 +161,7 @@ public class EventConfigurationValidator {
     private void validateTransactionOrBalanceColumns(List<String> columns, SourceMapping sourceMapping,
                                                      String eventId, ValidationResult result) {
         List<String> missingColumns = new ArrayList<>();
-        String sourceTable = sourceMapping.getSourceTable().getDisplayName();
+        String sourceTable = sourceMapping.getSourceTable();
         // For each source column and data mapping combination
         for (Option sourceColumn : sourceMapping.getSourceColumns()) {
             for (Option dataMapping : sourceMapping.getDataMapping()) {

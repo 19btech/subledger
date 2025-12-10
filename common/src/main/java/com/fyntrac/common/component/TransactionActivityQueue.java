@@ -13,7 +13,11 @@ import java.util.List;
 public class TransactionActivityQueue {
 
     private static final String CACHE_KEY = "transaction:activity:%s:%d";
+    private static final String LOCK_KEY = "lock:transaction:activity:%s:%d"; // New Lock Key
     private static final int TTL_SECONDS = 7200;
+    private static final int LOCK_TIMEOUT_SECONDS = 5; // Safety release if app crashes
+    private static final int MAX_RETRIES = 20;
+    private static final long RETRY_DELAY_MS = 100;
 
     private final MemcachedRepository memcachedRepository;
 
@@ -26,19 +30,68 @@ public class TransactionActivityQueue {
         return String.format(CACHE_KEY, tenantId, jobId);
     }
 
+    private String getLockKey(String tenantId, Long jobId) {
+        return String.format(LOCK_KEY, tenantId, jobId);
+    }
+
+    /**
+     * Adds an activity to the queue with Distributed Locking to prevent race conditions.
+     */
     public void add(String tenantId, Long jobId, TransactionActivity activity) {
         String key = getKey(tenantId, jobId);
+        String lockKey = getLockKey(tenantId, jobId);
+
+        boolean lockAcquired = false;
+        int attempts = 0;
+
         try {
+            // 1. Try to acquire lock (Spin Lock mechanism)
+            while (attempts < MAX_RETRIES) {
+                // 'add' is atomic in Memcached. It returns true ONLY if the key didn't exist.
+                // We set a short TTL (5s) so if the server crashes, the lock auto-releases.
+                lockAcquired = memcachedRepository.add(lockKey, "LOCKED", LOCK_TIMEOUT_SECONDS);
+
+                if (lockAcquired) {
+                    break;
+                }
+
+                // Wait and retry
+                Thread.sleep(RETRY_DELAY_MS);
+                attempts++;
+            }
+
+            if (!lockAcquired) {
+                throw new RuntimeException("Could not acquire lock to add transaction activity after " + MAX_RETRIES + " attempts.");
+            }
+
+            // 2. Critical Section: Read - Modify - Write
             CacheSet<TransactionActivity> set = memcachedRepository.getFromCache(key, CacheSet.class);
             if (set == null) {
                 set = new CacheSet<>();
             }
             set.add(activity);
             memcachedRepository.putInCache(key, set, TTL_SECONDS);
+
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Thread interrupted while waiting for lock", ie);
         } catch (Exception e) {
             throw new RuntimeException("Error adding record to Memcached", e);
+        } finally {
+            // 3. Always release the lock
+            if (lockAcquired) {
+                try {
+                    memcachedRepository.delete(lockKey);
+                } catch (Exception e) {
+                    // Log error but don't fail, TTL will clean it up eventually
+                    System.err.println("Failed to release lock: " + e.getMessage());
+                }
+            }
         }
     }
+
+    // ... (rest of your methods: size, getIterator, clear, readChunk, etc. remain the same)
+    // Note: readChunk usually doesn't need locking unless you need strict consistency while writing.
 
     public int size(String tenantId, Long jobId) {
         try {
@@ -66,15 +119,6 @@ public class TransactionActivityQueue {
         }
     }
 
-    /**
-     * Reads one chunk of activities from Memcached using the built-in CacheSet pagination logic.
-     *
-     * @param tenantId  Tenant ID
-     * @param jobId     Job ID
-     * @param chunkSize Size of each chunk
-     * @param chunkIndex Zero-based chunk index
-     * @return List of activities in the chunk, or empty list if no such chunk
-     */
     public List<TransactionActivity> readChunk(String tenantId, Long jobId, int chunkSize, int chunkIndex) {
         try {
             CacheSet<TransactionActivity> set = memcachedRepository.getFromCache(getKey(tenantId, jobId), CacheSet.class);
@@ -87,9 +131,6 @@ public class TransactionActivityQueue {
         }
     }
 
-    /**
-     * Returns total number of chunks for given chunk size
-     */
     public int getTotalChunks(String tenantId, Long jobId, int chunkSize) {
         try {
             CacheSet<TransactionActivity> set = memcachedRepository.getFromCache(getKey(tenantId, jobId), CacheSet.class);
