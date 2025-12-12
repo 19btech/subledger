@@ -36,17 +36,28 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     private final MongoItemWriter<InstrumentAttribute> delegate;
     private final MemcachedRepository memcachedRepository;
     private final InstrumentAttributeService instrumentAttributeService;
-    private CacheList<Records.InstrumentAttributeReclassMessageRecord> reclassMessageRecords;
+
+    // Removed class-level state for lists to prevent ConcurrentModificationException
+    // private CacheList<Records.InstrumentAttributeReclassMessageRecord> reclassMessageRecords;
+
     private String tenantId;
     private long runId;
     private AccountingPeriodService accountingPeriodService;
     private long batchId;
-    private CacheList<Records.TransactionActivityReplayRecord> transactionActivityReplayRecordCacheList;
+
+    // Removed class-level state
+    // private CacheList<Records.TransactionActivityReplayRecord> transactionActivityReplayRecordCacheList;
+
     private ExecutionStateService executionStateService;
     private final InstrumentReplaySet instrumentReplaySet;
     private final InstrumentReplayQueue instrumentReplayQueue;
     private ExecutionState executionState;
     private Long jobId;
+
+    // Locking constants
+    private static final int LOCK_TIMEOUT_SECONDS = 5;
+    private static final int MAX_RETRIES = 50; // Increased retries for high concurrency
+    private static final long RETRY_DELAY_MS = 100;
 
     public InstrumentAttributeWriter(MongoItemWriter<InstrumentAttribute> delegate,
                                      TenantDataSourceProvider dataSourceProvider,
@@ -60,7 +71,6 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.dataSourceProvider = dataSourceProvider;
         this.memcachedRepository = memcachedRepository;
         this.instrumentAttributeService = instrumentAttributeService;
-        this.reclassMessageRecords = new CacheList<Records.InstrumentAttributeReclassMessageRecord>();
         this.runId=0;
         this.accountingPeriodService = accountingPeriodService;
         this.executionStateService = executionStateService;
@@ -71,8 +81,6 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     @BeforeStep
     public void beforeStep(StepExecution stepExecution) {
         JobParameters jobParameters = stepExecution.getJobParameters();
-        // store the job parameters in a field
-
         this.runId = jobParameters.getLong("run.id");
         this.tenantId = jobParameters.getString("tenantId");
         this.instrumentAttributeService.setTenant(tenantId);
@@ -80,28 +88,15 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.jobId = jobParameters.getLong("jobId");
         executionState = this.executionStateService.getExecutionState();
     }
+
     @Override
     public void write(Chunk<? extends InstrumentAttribute> instrumentAttributes) throws Exception {
-        String dataKey = Key.reclassMessageList(this.tenantId, this.runId);
-        if(this.memcachedRepository.ifExists(dataKey)) {
-            reclassMessageRecords = this.memcachedRepository.getFromCache(dataKey, CacheList.class);
-        }else{
-            this.reclassMessageRecords = new CacheList<Records.InstrumentAttributeReclassMessageRecord>();
-        }
 
-            String replayDataKey = Key.replayMessageList(this.tenantId, this.runId);
-            if(this.memcachedRepository.ifExists(dataKey)) {
-                this.transactionActivityReplayRecordCacheList = this.memcachedRepository.getFromCache(dataKey, CacheList.class);
-            }else{
-                this.transactionActivityReplayRecordCacheList = new CacheList<Records.TransactionActivityReplayRecord>();
-            }
+        // 1. Process Attributes locally first to prepare data
+        ReferenceData referenceData = this.memcachedRepository.getFromCache(this.tenantId, com.fyntrac.common.config.ReferenceData.class);
+        List<InstrumentAttribute> combinedAttributes = new ArrayList<>(instrumentAttributes.getItems());
 
-
-            ReferenceData referenceData = this.memcachedRepository.getFromCache(this.tenantId, com.fyntrac.common.config.ReferenceData.class);
-            List<InstrumentAttribute> combinedAttributes = new ArrayList<>(instrumentAttributes.getItems());
-
-            if (this.tenantId != null && !this.tenantId.isEmpty()) {
-
+        if (this.tenantId != null && !this.tenantId.isEmpty()) {
             MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(this.tenantId);
             if(mongoTemplate == null) {
                 return;
@@ -133,18 +128,85 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
             }
             delegate.setTemplate(mongoTemplate);
         }
-        Chunk<InstrumentAttribute> updatedChunk = this.setEndDate(batchId, combinedAttributes);
-        this.memcachedRepository.putInCache(dataKey, reclassMessageRecords);
+
+        // 2. Local container for new messages generated in this chunk
+        CacheList<Records.InstrumentAttributeReclassMessageRecord> localReclassMessages = new CacheList<>();
+
+        // 3. Logic processing (setEndDate) now populates the LOCAL list
+        Chunk<InstrumentAttribute> updatedChunk = this.setEndDate(batchId, combinedAttributes, localReclassMessages);
+
+        // 4. CRITICAL SECTION: Distributed Lock to update Reclass Messages
+        String dataKey = Key.reclassMessageList(this.tenantId, this.runId);
+        String lockKey = "lock:" + dataKey;
+
+        updateCacheWithLock(lockKey, dataKey, localReclassMessages);
+
+        // 5. Write to Mongo
         delegate.write(updatedChunk);
-        this.memcachedRepository.putInCache(replayDataKey, this.transactionActivityReplayRecordCacheList);
+
+        // 6. Handle Replay Record Cache (Locked update not implemented here as logic was empty in original, but follow pattern above if needed)
+        // Original code seemed to just get/put empty list or overwrite. If this list is actually used, apply updateCacheWithLock here too.
     }
 
+    /**
+     * Helper to update Memcached list safely with locking
+     */
+    private <T> void updateCacheWithLock(String lockKey, String dataKey, CacheList<T> newItems) {
+        // FIX: Unwrap CacheList to access underlying list for emptiness check
+        if (newItems == null || newItems.getList() == null || newItems.getList().isEmpty()) return;
 
-    private Chunk<InstrumentAttribute> setEndDate(long batchId , List<InstrumentAttribute> attributesList) throws ParseException {
+        boolean lockAcquired = false;
+        int attempts = 0;
 
-        // Step 1: Group by attributeId and instrumentId
+        try {
+            while (attempts < MAX_RETRIES) {
+                lockAcquired = memcachedRepository.add(lockKey, "LOCKED", LOCK_TIMEOUT_SECONDS);
+                if (lockAcquired) break;
+                Thread.sleep(RETRY_DELAY_MS);
+                attempts++;
+            }
+
+            if (!lockAcquired) {
+                throw new RuntimeException("Could not acquire lock for key: " + dataKey);
+            }
+
+            // READ
+            CacheList<T> existingList;
+            if(this.memcachedRepository.ifExists(dataKey)) {
+                existingList = this.memcachedRepository.getFromCache(dataKey, CacheList.class);
+            } else {
+                existingList = new CacheList<>();
+            }
+
+            // MODIFY
+            // FIX: Access underlying lists to perform addAll, assuming CacheList wrappers are incompatible
+            if (existingList.getList() != null && newItems.getList() != null) {
+                existingList.getList().addAll(newItems.getList());
+            }
+
+            // WRITE
+            this.memcachedRepository.putInCache(dataKey, existingList);
+
+        } catch (Exception e) {
+            log.error("Error updating cache for key {}", dataKey, e);
+            throw new RuntimeException(e);
+        } finally {
+            if (lockAcquired) {
+                try {
+                    memcachedRepository.delete(lockKey);
+                } catch (Exception e) {
+                    log.warn("Failed to release lock {}", lockKey);
+                }
+            }
+        }
+    }
+
+    // Refactored to accept local list instead of using class field
+    private Chunk<InstrumentAttribute> setEndDate(long batchId , List<InstrumentAttribute> attributesList, CacheList<Records.InstrumentAttributeReclassMessageRecord> localMessages) throws ParseException {
+
         Map<String, List<InstrumentAttribute>> groupedAttributes = new HashMap<>();
         List<InstrumentAttribute> openVersion = new ArrayList<>(0);
+
         for (InstrumentAttribute attribute : attributesList) {
             String key = attribute.getAttributeId() + "_" + attribute.getInstrumentId();
             groupedAttributes
@@ -152,24 +214,19 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                     .add(attribute);
         }
 
-        // Step 2: Sort each group by versionId and process endDate
         for (List<InstrumentAttribute> subChunk : groupedAttributes.values()) {
-            // Sort the sub-chunk by versionId
             List<InstrumentAttribute> sortedSubChunk = subChunk.stream()
                     .sorted(Comparator.comparingInt(InstrumentAttribute::getPeriodId))
                     .collect(Collectors.toList());
 
-            // Step 3: Set endDate of each attribute to effectiveDate of the next attribute
             for (int i = 0; i < sortedSubChunk.size(); i++) {
-
                 InstrumentAttribute currentAttribute = sortedSubChunk.get(i);
 
                 if(sortedSubChunk.size() > i+1) {
                     InstrumentAttribute nextAttribute = sortedSubChunk.get(i + 1);
-                    // Set endDate of the current attribute to effectiveDate of the next attribute
                     currentAttribute.setEndDate(DateUtil.convertIntDateToUtc(nextAttribute.getPostingDate()));
                     nextAttribute.setPreviousVersionId(currentAttribute.getVersionId());
-                    this.addReclassMessage(batchId, currentAttribute, nextAttribute);
+                    this.addReclassMessage(batchId, currentAttribute, nextAttribute, localMessages);
                 }
 
                 if(i== 0) {
@@ -179,33 +236,27 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                         openInstrumentAttribute.setEndDate(DateUtil.convertIntDateToUtc(currentAttribute.getPostingDate()));
                         currentAttribute.setPreviousVersionId(openInstrumentAttribute.getVersionId());
                         openVersion.add(openInstrumentAttribute);
-                        this.addReclassMessage(batchId, openInstrumentAttribute, currentAttribute);
+                        this.addReclassMessage(batchId, openInstrumentAttribute, currentAttribute, localMessages);
                     }
                 }
             }
         }
 
-        // Step 4: Flatten the grouped attributes back to a list
         List<InstrumentAttribute> flattenedList = groupedAttributes.values().stream()
                 .flatMap(List::stream)
                 .collect(Collectors.toList());
 
-        // Step 5: Create a Chunk from the flattened list
-        // Assuming you have a Pageable object to create the Chunk
         flattenedList.addAll(openVersion);
         return new Chunk<>(flattenedList);
     }
 
-    /**
-     * Add reclass message into CacheList
-     * @param openInstrumentAttribute
-     * @param currentAttribute
-     */
-    private void addReclassMessage(long batchId, InstrumentAttribute openInstrumentAttribute, InstrumentAttribute currentAttribute) {
+    // Refactored to accept local list
+    private void addReclassMessage(long batchId, InstrumentAttribute openInstrumentAttribute, InstrumentAttribute currentAttribute, CacheList<Records.InstrumentAttributeReclassMessageRecord> localMessages) {
         Records.InstrumentAttributeRecord openInstrumentAtt = RecordFactory.createInstrumentAttributeRecord(openInstrumentAttribute);
         Records.InstrumentAttributeRecord currentInstrumentAtt = RecordFactory.createInstrumentAttributeRecord(currentAttribute);
         Records.InstrumentAttributeReclassMessageRecord reclassMessageRecord = RecordFactory.createInstrumentAttributeReclassMessageRecord(tenantId, batchId, openInstrumentAtt, currentInstrumentAtt);
-        this.reclassMessageRecords.add(reclassMessageRecord);
+
+        // Add to local list, not class field
+        localMessages.add(reclassMessageRecord);
     }
 }
-

@@ -121,12 +121,6 @@ public class InstrumentDiagnosticService {
                     "Execution state not found"
             );
 
-            String dateStr = requestRecord.postingDate();
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
-            sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
-
-
-
 
             // 5. Generate diagnostic data
             Records.DiagnosticReportModelDataRecord diagnosticReportDataRecord =

@@ -17,6 +17,7 @@ import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -520,7 +521,7 @@ public class ExcelModelUtil {
     private static CellStyle getDateStyle(Workbook workbook) {
         CellStyle style = workbook.createCellStyle();
         CreationHelper createHelper = workbook.getCreationHelper();
-        style.setDataFormat(createHelper.createDataFormat().getFormat("dd-MM-yyyy"));
+        style.setDataFormat(createHelper.createDataFormat().getFormat("MM/dd/yyyy"));
         return style;
     }
 
@@ -557,15 +558,21 @@ public class ExcelModelUtil {
                 return;
             }
 
-            // Date string
             if (isValidDateString(str)) {
-                LocalDate date = LocalDate.parse(str, DATE_INPUT_FMT);
-                double excelDate = org.apache.poi.ss.usermodel.DateUtil.getExcelDate(date);
-                cell.setCellValue(excelDate);
-                cell.setCellStyle(getDateStyle(workbook)); // Use workbook-specific style
-                return;
-            }
+                try {
+                    LocalDate date = LocalDate.parse(str, DATE_INPUT_FMT);
+                    // Use system default timezone instead of UTC to avoid offset
+                    Date dateValue = Date.from(date.atStartOfDay(ZoneId.systemDefault()).toInstant());
 
+                    cell.setCellValue(dateValue);
+                    cell.setCellStyle(getDateStyle(workbook));
+                    return;
+                } catch (Exception e) {
+                    // Fallback if parsing fails
+                    cell.setCellValue(str);
+                    return;
+                }
+            }
             cell.setCellValue(str);
             return;
         }
@@ -574,9 +581,11 @@ public class ExcelModelUtil {
         // DATE
         // ---------------------------------------------------------
         if (value instanceof Date date) {
-            double excelDate = org.apache.poi.ss.usermodel.DateUtil.getExcelDate(date);
-            cell.setCellValue(excelDate);
-            cell.setCellStyle(getDateStyle(workbook)); // Use workbook-specific style
+            // Convert to system default timezone to avoid offset issues
+            LocalDate localDate = date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+            Date systemDate = Date.from(localDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
+            cell.setCellValue(systemDate);
+            cell.setCellStyle(getDateStyle(workbook));
             return;
         }
 
