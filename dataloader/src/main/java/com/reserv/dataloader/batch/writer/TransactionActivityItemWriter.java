@@ -135,7 +135,7 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
                             , transactionActivity.getPostingDate(), transactionActivity.getEffectiveDate());
                     instrumentReplaySet.add(tenantId, this.jobId, replayRecord);
                     instrumentReplayQueue.add(tenantId, this.jobId, replayRecord);
-                }else{
+                }else if(transactionActivity.getEffectiveDate() == null){
                     transactionActivity.setEffectiveDate(transactionActivity.getPostingDate());
                 }
             }

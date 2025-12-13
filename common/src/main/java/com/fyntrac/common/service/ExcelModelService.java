@@ -224,7 +224,6 @@ public class ExcelModelService {
                 // logic for ON_MODEL_EXECUTION
                 valueMap = generateSourceMappingEventDetails(currentInstrumentAttribute, attributePostingDate,
                         postingDate, effectiveDate,
-                        null,
                         configuration);
             }
             case TriggerType.ON_INSTRUMENT_ADD -> {
@@ -241,12 +240,10 @@ public class ExcelModelService {
                         valueMap = generateSourceMappingEventDetails(currentInstrumentAttribute, attributePostingDate
                                 , postingDate,
                                 effectiveDate,
-                                null,
                                 configuration);
                     } else if (currentOpenVersion.getAttributes().size() > lastOpenVersion.getAttributes().size()) {
                             valueMap = generateSourceMappingEventDetails(currentInstrumentAttribute, attributePostingDate, postingDate,
                                     effectiveDate,
-                                    null,
                                     configuration);
                                           }
                 }
@@ -263,7 +260,6 @@ public class ExcelModelService {
                     if (hasChanged) {
                         valueMap = generateSourceMappingEventDetails(currentInstrumentAttribute, attributePostingDate, postingDate,
                                 effectiveDate,
-                                null,
                                 configuration);
                     }
                 }
@@ -271,20 +267,12 @@ public class ExcelModelService {
             case TriggerType.ON_TRANSACTION_POST -> {
                 // logic for ON_TRANSACTION_POST
                 List<Option> triggerSource = configuration.getTriggerSetup().getTriggerSource();
-                List<String> dataMappingColumns = triggerSource.stream()
-                        .map(Option::getValue)
-                        .toList();
 
-                List<TransactionActivity> activities = this.activityRepo.findActiveByTransactions(instrumentId, attributeId,
-                        postingDate,
-                        dataMappingColumns);
 
-                if (activities != null && !activities.isEmpty()) {
                     valueMap = generateSourceMappingEventDetails(currentInstrumentAttribute, attributePostingDate, postingDate,
                             effectiveDate,
-                            activities,
                             configuration);
-                }
+
             }
             case TriggerType.ON_CUSTOM_DATA_TRIGGER -> {
                 valueMap = generateSourceMappingEventDetails(instrumentId, attributeId,postingDate, effectiveDate, configuration);
@@ -414,7 +402,6 @@ public class ExcelModelService {
                                                                               int attributePostingDate,
                                                                               int postingDate,
                                                                               int effectiveDate,
-                                                                              List<TransactionActivity> activities,
                                                                               EventConfiguration configuration) throws ParseException {
         Map<String, Object> valueMap = new HashMap<>(0);
         String instrumentId = currentInstrumentAttribute.getInstrumentId();
@@ -433,6 +420,14 @@ public class ExcelModelService {
                 }
                 case "transactions" -> {
                     // handle transactions
+                    List<String> dataMappingColumns = sourceMapping.getDataMapping().stream()
+                            .map(Option::getValue)
+                            .toList();
+
+                    List<TransactionActivity> activities = this.activityRepo.findActiveByTransactions(instrumentId, attributeId,
+                            postingDate,
+                            dataMappingColumns);
+
                     tmpValueMap = this.getValuesFromTransactionActivity(instrumentId, attributeId, postingDate ,
                             effectiveDate, activities, sourceMapping);
                     valueMap.putAll(tmpValueMap);;
