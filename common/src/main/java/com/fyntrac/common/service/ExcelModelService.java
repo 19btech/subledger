@@ -223,7 +223,7 @@ public class ExcelModelService {
             case TriggerType.ON_MODEL_EXECUTION -> {
                 // logic for ON_MODEL_EXECUTION
                 valueMap = generateSourceMappingEventDetails(currentInstrumentAttribute, attributePostingDate,
-                        postingDate, effectiveDate,
+                        postingDate, postingDate,
                         configuration);
             }
             case TriggerType.ON_INSTRUMENT_ADD -> {
@@ -268,10 +268,21 @@ public class ExcelModelService {
                 // logic for ON_TRANSACTION_POST
                 List<Option> triggerSource = configuration.getTriggerSetup().getTriggerSource();
 
+                List<String> dataMappingColumns = triggerSource.stream()
+                        .map(Option::getValue)
+                        .toList();
 
+                List<TransactionActivity> activities = this.activityRepo.findActiveByTransactions(instrumentId, attributeId,
+                        postingDate,
+                        dataMappingColumns);
+
+                if (activities != null && !activities.isEmpty()) {
                     valueMap = generateSourceMappingEventDetails(currentInstrumentAttribute, attributePostingDate, postingDate,
                             effectiveDate,
                             configuration);
+                }
+
+
 
             }
             case TriggerType.ON_CUSTOM_DATA_TRIGGER -> {
@@ -403,7 +414,7 @@ public class ExcelModelService {
                                                                               int postingDate,
                                                                               int effectiveDate,
                                                                               EventConfiguration configuration) throws ParseException {
-        Map<String, Object> valueMap = new HashMap<>(0);
+        Map<String,  Object> valueMap = new HashMap<>(0);
         String instrumentId = currentInstrumentAttribute.getInstrumentId();
         String attributeId = currentInstrumentAttribute.getAttributeId();
 
@@ -428,9 +439,9 @@ public class ExcelModelService {
                             postingDate,
                             dataMappingColumns);
 
-                    tmpValueMap = this.getValuesFromTransactionActivity(instrumentId, attributeId, postingDate ,
+                    return this.getValuesFromTransactionActivity(instrumentId, attributeId, postingDate ,
                             effectiveDate, activities, sourceMapping);
-                    valueMap.putAll(tmpValueMap);;
+
                 }
                 case "balances" -> {
                     // handle balances
@@ -449,11 +460,12 @@ public class ExcelModelService {
                 }
             }
         }
-        return this.getExcelModelKeyMap(instrumentId, attributeId,
-                postingDate, effectiveDate, valueMap);
+        return this.getExcelModelKeyMap(currentInstrumentAttribute.getInstrumentId(),
+                currentInstrumentAttribute.getAttributeId(),
+                postingDate, postingDate, valueMap);
     }
 
-    public Map<String, Object> getValuesFromInstrumentAttribute(             Integer postingDate,
+    public Map<String, Object> getValuesFromInstrumentAttribute(Integer postingDate,
                                                                              Integer effectiveDate,
                                                                              InstrumentAttribute currentInstrumentAttribute,
                                                                              SourceMapping mapping) throws ParseException {
@@ -471,7 +483,7 @@ public class ExcelModelService {
                 attributeList.putAll(attributes);
             }
         }
-       return attributeList;
+        return attributeList;
     }
 
     public InstrumentAttribute getInstrumentAttribute(String version, InstrumentAttribute currentInstrumentAttribute) {
@@ -517,7 +529,7 @@ public class ExcelModelService {
                 ));
     }
 
-    public Map<String, Object> getValuesFromTransactionActivity(String instrumentId,
+    public Map<String, Map<String, Object>> getValuesFromTransactionActivity(String instrumentId,
                                                                              String attributeId,
                                                                              Integer postingDate,
                                                                              Integer effectiveDate,
@@ -531,13 +543,15 @@ public class ExcelModelService {
             Map<Integer, List<TransactionActivity>> groupedByEffectiveDate = activities.stream()
                     .collect(Collectors.groupingBy(TransactionActivity::getEffectiveDate));
 
-            Map<String, Object> valueMap = new HashMap<>(0);
+            Map<String, Map<String, Object>> valueMap = new HashMap<>(0);
             for (Integer effectiveDateKey : groupedByEffectiveDate.keySet()) {
                 List<TransactionActivity> groupedByEffectiveDateActivities = groupedByEffectiveDate.get(effectiveDateKey);
                 Map<String, Object> map = this.getValues(groupedByEffectiveDateActivities);
                 if(!map.isEmpty()) {
                     map.put("EffectiveDate", DateUtil.convertIntDateToUtc(effectiveDateKey));
-                    valueMap.putAll(map);
+                    Map<String, Map<String, Object>> tmpValueMap = this.getExcelModelKeyMap(instrumentId, attributeId,
+                            postingDate, effectiveDateKey, map);
+                    valueMap.putAll(tmpValueMap);
                 }
             }
 
@@ -581,13 +595,16 @@ public class ExcelModelService {
                             ));
 
 
-            Map<String, Object> valueMap = new HashMap<>(0);
+            Map<String, Map<String, Object>> valueMap = new HashMap<>(0);
             for (Integer effectiveDateKey : groupedByEffectiveDate.keySet()) {
                 List<Records.TransactionActivityAmountRecord> groupedActivities =
                         groupedByEffectiveDate.get(effectiveDateKey);
                 Map<String, Object> map = this.getAggregatedValues(groupedActivities);
                 map.put("EffectiveDate", DateUtil.convertIntDateToUtc(effectiveDateKey));
-                valueMap.putAll(map);
+                Map<String, Map<String, Object>> tmpValueMap = this.getExcelModelKeyMap(instrumentId, attributeId,
+                        postingDate, effectiveDateKey, map);
+
+                valueMap.putAll(tmpValueMap);
             }
 
             return valueMap;
@@ -607,7 +624,7 @@ public class ExcelModelService {
                 dataMappingColumns);
 
         Map<String, Object> valueMap = this.getBalanceValues(balances);
-    valueMap.put("EffectiveDate", DateUtil.convertIntDateToUtc(postingDate));
+        valueMap.put("EffectiveDate", DateUtil.convertIntDateToUtc(postingDate));
         return valueMap;
     }
 
@@ -659,7 +676,6 @@ public class ExcelModelService {
 
         valueMap.put(executionDate, executionState.getExecutionDate());
         valueMap.put(lastExecutionDate, executionState.getLastExecutionDate());
-
         return valueMap;
     }
 
