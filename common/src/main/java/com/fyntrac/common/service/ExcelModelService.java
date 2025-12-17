@@ -300,7 +300,7 @@ public class ExcelModelService {
     Map<String, Map<String, Object>> generateSourceMappingEventDetails(String instrumentId, String attributeId,
                                                                        int postingDate,
                                                                        int effectiveDate,
-                                                                       EventConfiguration configuration){
+                                                                       EventConfiguration configuration) throws ParseException {
         Map<String, Map<String, Object>> valueMap = new HashMap<>(0);
         //Custom Table event generation
         for (SourceMapping sourceMapping : configuration.getSourceMappings()) {
@@ -323,7 +323,7 @@ public class ExcelModelService {
             Integer postingDate,
             Integer effectiveDate,
             SourceMapping mapping
-    ) {
+    ) throws ParseException {
 
         Map<String, Map<String, Object>> resultMap = new LinkedHashMap<>();
 
@@ -353,11 +353,14 @@ public class ExcelModelService {
         // ✅ Build query
         Query query = new Query();
 
+//        query.addCriteria(
+//                Criteria.where("instrumentId").is(instrumentId).and("attributeId").is(attributeId).and("postingDate").is(postingDate)
+//                        .and("effectiveDate").gte(effectiveDate)
+//        );
+
         query.addCriteria(
                 Criteria.where("instrumentId").is(instrumentId).and("attributeId").is(attributeId).and("postingDate").is(postingDate)
-                        .and("effectiveDate").lte(effectiveDate)
         );
-
         // ✅ ORDER BY effectiveDate DESC
         query.with(Sort.by(Sort.Direction.DESC, "effectiveDate"));
 
@@ -377,7 +380,12 @@ public class ExcelModelService {
 
             Map<String, Object> valueMap = new HashMap<>();
             for (String field : doc.keySet()) {
-                valueMap.put(field, doc.get(field));
+                if(field.equalsIgnoreCase("postingDate") || field.equalsIgnoreCase("effectiveDate")) {
+                    Integer intDate = (Integer) doc.get(field);
+                    valueMap.put(field, DateUtil.convertIntDateToUtc(intDate));
+                }else {
+                    valueMap.put(field, doc.get(field));
+                }
             }
 
             resultMap.put(key, valueMap);
@@ -462,7 +470,7 @@ public class ExcelModelService {
         }
         return this.getExcelModelKeyMap(currentInstrumentAttribute.getInstrumentId(),
                 currentInstrumentAttribute.getAttributeId(),
-                postingDate, postingDate, valueMap);
+                postingDate, effectiveDate, valueMap);
     }
 
     public Map<String, Object> getValuesFromInstrumentAttribute(Integer postingDate,
@@ -506,27 +514,50 @@ public class ExcelModelService {
             default -> throw new IllegalArgumentException("Unknown version type: " + version);
         };
     }
-
     public Map<String, Object> filterAttributes(
             Map<String, Object> attributes,
             List<Option> attributeNames,
             String version,
-            String label) {
+            String label) { // Assuming effectiveDateKey is passed in or available
 
         if (attributes == null || attributeNames == null || version == null || label == null) {
             return Map.of();
         }
 
-        // Normalize version and label once
         String upperLabel = label.toUpperCase();
         String upperVersion = version.toUpperCase();
+        Map<String, Object> result = new HashMap<>();
 
-        return attributeNames.stream()
-                .filter(opt -> opt.getValue() != null && attributes.containsKey(opt.getValue()))
-                .collect(Collectors.toMap(
-                        opt -> upperLabel + "_" + opt.getValue() + "_" + upperVersion, // Replace dots with underscores
-                        opt -> attributes.get(opt.getValue())
-                ));
+        for (Option opt : attributeNames) {
+            String key = opt.getValue();
+
+            // Skip if key is null or not in the attributes map
+            if (key == null || !attributes.containsKey(key)) {
+                continue;
+            }
+
+            String newKey = upperLabel + "_" + key + "_" + upperVersion;
+            Object value = attributes.get(key);
+
+            // Custom logic for EffectiveDate
+            if ("EffectiveDate".equalsIgnoreCase(key)) {
+                try {
+                    Object intEffectiveDate = attributes.get(key);
+                    // Assuming effectiveDateKey is the integer date you want to convert
+                    if(intEffectiveDate instanceof Number) {
+                        value = DateUtil.convertIntDateToUtc((Integer) intEffectiveDate);
+                    }
+
+                } catch (Exception e) {
+                    // Log error or handle as needed, falling back to original value if conversion fails
+                    System.err.println("Error converting date: " + e.getMessage());
+                }
+            }
+
+            result.put(newKey, value);
+        }
+
+        return result;
     }
 
     public Map<String, Map<String, Object>> getValuesFromTransactionActivity(String instrumentId,

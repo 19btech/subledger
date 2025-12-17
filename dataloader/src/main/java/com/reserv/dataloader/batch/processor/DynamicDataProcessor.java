@@ -9,6 +9,7 @@ import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.file.transform.FieldSet;
 
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.Map;
@@ -43,8 +44,14 @@ public class DynamicDataProcessor implements ItemProcessor<FieldSet, Document> {
             Object convertedValue = convertData(rawValue, col.getDataType().name());
 
             if (colName.equalsIgnoreCase("POSTINGDATE") || colName.equalsIgnoreCase("EFFECTIVEDATE")) {
-                Date pDate = DateUtil.parseDate((String) convertedValue);
-                convertedValue = DateUtil.dateInNumber(pDate);
+                if (convertedValue instanceof String strDate) {
+                    Date date = DateUtil.parseDate(strDate);
+                    convertedValue =  DateUtil.convertToIntYYYYMMDDFromJavaDate(date);
+                }else if(convertedValue instanceof LocalDate lDate) {
+                    Date date  = Date.from(lDate.atStartOfDay(ZoneOffset.UTC).toInstant());
+                    convertedValue =  DateUtil.convertToIntYYYYMMDDFromJavaDate(date);
+                }
+
             }
 
             document.append(colName, convertedValue);

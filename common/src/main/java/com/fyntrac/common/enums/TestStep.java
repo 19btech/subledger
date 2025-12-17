@@ -6,7 +6,9 @@ public enum TestStep {
     MODEL_UPLOAD,
     MODEL_CONFIGURATION,
     MODEL_EXECUTION,
-    EVENT_CONFIGURATION;
+    EVENT_CONFIGURATION,
+    CUSTOM_TABLE_DEFINITION,
+    UPLOAD_CUSTOM_DATA;
 
     public static TestStep step(String value) {
         if (value == null || value.isBlank()) {
