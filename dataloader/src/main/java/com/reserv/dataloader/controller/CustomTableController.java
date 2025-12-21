@@ -4,11 +4,13 @@ import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.CustomTableColumn;
 import com.fyntrac.common.entity.CustomTableDefinition;
+import com.fyntrac.common.entity.Option;
 import com.fyntrac.common.enums.CustomTableType;
 import com.fyntrac.common.service.CustomTableDefinitionService;
 import com.fyntrac.common.service.DataService;
 import com.reserv.dataloader.service.upload.FileUploadService;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -295,6 +297,131 @@ public class CustomTableController {
         } catch (Throwable e) {
             log.error(e.getLocalizedMessage());
             throw new RuntimeException(e);
+        }
+    }
+
+    @GetMapping("/get/values/operational_table/{reference}")
+    public ResponseEntity<Records.ApiResponseRecord<List<Option>>> getOperationalTableValues(@PathVariable String reference) {
+        try {
+            CustomTableDefinition tableDefinition = tableDefinitionService.getCustomTableDefinition(reference);
+
+            // 1. Check if definition exists
+            if (tableDefinition == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Records.ApiResponseRecord.error("Table definition not found for: " + reference));
+            }
+
+            // 2. Check if it is the correct type
+            if (tableDefinition.getTableType() != CustomTableType.OPERATIONAL) {
+                return ResponseEntity.badRequest()
+                        .body(Records.ApiResponseRecord.error("Table '" + reference + "' is not of type OPERATIONAL."));
+            }
+
+            // 3. Perform logic
+            String referenceTable = tableDefinition.getReferenceTable();
+
+            // Optional safety check if referenceTable can be null
+            if (referenceTable == null || referenceTable.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Records.ApiResponseRecord.error("No Reference Table linked to Operational Table: " + reference));
+            }
+
+            List<Option> options = new ArrayList<>();
+
+            if(tableDefinition.getPrimaryKeys() != null && !tableDefinition.getPrimaryKeys().isEmpty()) {
+                String primaryKey = tableDefinition.getPrimaryKeys().get(0);
+
+                List< Document> data = this.dataService.findSelectedFieldsAsMap(referenceTable,List.of(primaryKey));
+
+                for (Document doc : data) {
+                    // Extract the value using the field name.
+                    // We cast to String, or use toString() to be safe if it's an ObjectId or Integer.
+                    Object rawValue = doc.get(primaryKey);
+
+                    if (rawValue != null) {
+                        String val = rawValue.toString();
+
+                        // Create the Option object (Label = Value in this case)
+                        Option option = Option.builder()
+                                .label(val)
+                                .value(val)
+                                .build();
+
+                        options.add(option);
+                    }
+                }
+            }
+            return ResponseEntity.ok(Records.ApiResponseRecord.success(options));
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Records.ApiResponseRecord.error(e.getMessage()));
+        } catch (Exception e) {
+            // Using Internal Server Error (500) for unexpected exceptions is generally better practice than Bad Request (400)
+            return ResponseEntity.internalServerError()
+                    .body(Records.ApiResponseRecord.error("Failed to get table stats: " + e.getMessage()));
+        }
+    }
+
+
+    @GetMapping("/get/values/reference_table/{reference}")
+    public ResponseEntity<Records.ApiResponseRecord<List<Option>>> getReferenceTableValues(@PathVariable String reference) {
+        try {
+            CustomTableDefinition tableDefinition = tableDefinitionService.getCustomTableDefinition(reference);
+
+            // 1. Check if definition exists
+            if (tableDefinition == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Records.ApiResponseRecord.error("Table definition not found for: " + reference));
+            }
+
+            // 2. Check if it is the correct type
+            if (tableDefinition.getTableType() != CustomTableType.REFERENCE) {
+                return ResponseEntity.badRequest()
+                        .body(Records.ApiResponseRecord.error("Table '" + reference + "' is not of type OPERATIONAL."));
+            }
+
+            // 3. Perform logic
+            String referenceTable = tableDefinition.getReferenceTable();
+
+            // Optional safety check if referenceTable can be null
+            if (referenceTable == null || referenceTable.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Records.ApiResponseRecord.error("No Reference Table linked to Operational Table: " + reference));
+            }
+
+            List<Option> options = new ArrayList<>();
+
+            if(tableDefinition.getPrimaryKeys() != null && !tableDefinition.getPrimaryKeys().isEmpty()) {
+                String primaryKey = tableDefinition.getPrimaryKeys().get(0);
+
+                List< Document> data = this.dataService.findSelectedFieldsAsMap(referenceTable,List.of(primaryKey));
+
+                for (Document doc : data) {
+                    // Extract the value using the field name.
+                    // We cast to String, or use toString() to be safe if it's an ObjectId or Integer.
+                    Object rawValue = doc.get(primaryKey);
+
+                    if (rawValue != null) {
+                        String val = rawValue.toString();
+
+                        // Create the Option object (Label = Value in this case)
+                        Option option = Option.builder()
+                                .label(val)
+                                .value(val)
+                                .build();
+
+                        options.add(option);
+                    }
+                }
+            }
+            return ResponseEntity.ok(Records.ApiResponseRecord.success(options));
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Records.ApiResponseRecord.error(e.getMessage()));
+        } catch (Exception e) {
+            // Using Internal Server Error (500) for unexpected exceptions is generally better practice than Bad Request (400)
+            return ResponseEntity.internalServerError()
+                    .body(Records.ApiResponseRecord.error("Failed to get table stats: " + e.getMessage()));
         }
     }
 }

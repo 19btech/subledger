@@ -383,6 +383,46 @@ public class DataService<T> {
         return attributesWithTypes;
     }
 
+
+    /**
+     * Approach 2: Dynamic / Raw Data
+     * Returns a List of Documents (Map<String, Object>).
+     * Best if you don't want to handle a POJO with null fields.
+     *
+     * @param collectionName The name of the collection in Mongo
+     * @param criteria       Filtering logic
+     * @param fields         The column names to retrieve
+     * @return List of BSON Documents
+     */
+    public List<Document> findSelectedFieldsAsMap(String collectionName, Criteria criteria, List<String> fields) {
+        var query = new Query(criteria);
+
+        if (fields != null && !fields.isEmpty()) {
+            fields.forEach(f -> query.fields().include(f));
+        }
+
+        return this.getMongoTemplate().find(query, Document.class, collectionName);
+    }
+
+    /**
+     * Approach 2: Dynamic / Raw Data
+     * Returns a List of Documents (Map<String, Object>).
+     * Best if you don't want to handle a POJO with null fields.
+     *
+     * @param collectionName The name of the collection in Mongo
+     * @param fields         The column names to retrieve
+     * @return List of BSON Documents
+     */
+    public List<Document> findSelectedFieldsAsMap(String collectionName, List<String> fields) {
+        var query = new Query();
+
+        if (fields != null && !fields.isEmpty()) {
+            fields.forEach(f -> query.fields().include(f));
+        }
+
+        return this.getMongoTemplate().findAll(Document.class, collectionName);
+    }
+
     private void extractAttributesWithTypes(Document document, List<Records.DocumentAttribute> attributesWithTypes) {
         for (String key : document.keySet()) {
             // Skip _id and _class fields

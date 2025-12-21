@@ -3,13 +3,12 @@ package com.reserv.dataloader.service.model;
 import com.fyntrac.common.entity.EventConfiguration;
 import com.fyntrac.common.entity.Option;
 import com.fyntrac.common.entity.SourceMapping;
+import com.fyntrac.common.entity.TriggerSetup;
+import com.fyntrac.common.enums.TriggerType;
 import org.apache.poi.ss.usermodel.*;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 @Component
 public class EventConfigurationValidator {
@@ -31,6 +30,14 @@ public class EventConfigurationValidator {
         // Validate each event configuration
         for (EventConfiguration config : configurations) {
             if (Boolean.TRUE.equals(config.getIsActive()) && !Boolean.TRUE.equals(config.getIsDeleted())) {
+                TriggerSetup setup =config.getTriggerSetup();
+                TriggerType triggerType = setup.getTriggerType();
+                if(triggerType == TriggerType.ON_CUSTOM_DATA_TRIGGER) {
+                    String triggerSource = setup.getTriggerSource().getFirst().getValue();
+                    if (Objects.equals(triggerSource, "reference_table")) {
+                        continue;
+                    }
+                }
                 validateEventConfiguration(workbook, config, result);
             }
         }

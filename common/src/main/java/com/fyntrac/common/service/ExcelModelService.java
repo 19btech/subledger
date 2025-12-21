@@ -4,6 +4,7 @@ import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.*;
+import com.fyntrac.common.enums.CustomTableType;
 import com.fyntrac.common.enums.EventStatus;
 import com.fyntrac.common.enums.SourceType;
 import com.fyntrac.common.enums.TriggerType;
@@ -38,6 +39,7 @@ public class ExcelModelService {
     private final ExecutionStateService executionStateService;
     private final EventRepository eventRepository;
     private final DataService<?> dataService;
+    private final CustomTableDefinitionService customTableDefinitionService;
     private List<TransactionActivity> transactionActivities;
     private List<InstrumentAttribute> instrumentAttributes;
 
@@ -52,6 +54,7 @@ public class ExcelModelService {
                              InstrumentAttributeService instrumentAttributeService,
                              ExecutionStateService executionStateService,
                              EventRepository eventRepository,
+                             CustomTableDefinitionService customTableDefinitionService,
                              DataService<?> dataService
     ) {
         this.instrumentRepo = instrumentRepo;
@@ -62,6 +65,7 @@ public class ExcelModelService {
         this.executionStateService = executionStateService;
         this.eventRepository = eventRepository;
         this.dataService = dataService;
+        this.customTableDefinitionService = customTableDefinitionService;
         transactionActivities = new ArrayList<>(0);
         instrumentAttributes = new ArrayList<>(0);
     }
@@ -81,12 +85,114 @@ public class ExcelModelService {
 
         List<Event> result = new ArrayList<>();
 
+        // Correct Type: Outer Key = TableName, Inner Key = RowID, Value = RowData
+        Map<String, Map<String, Map<String, Object>>> referenceDataValueMap = new HashMap<>();
+
         for (EventConfiguration cfg : configurationList) {
+            // 1. Skip if trigger type doesn't match
+            if (cfg.getTriggerSetup() == null ||
+                    cfg.getTriggerSetup().getTriggerType() != TriggerType.ON_CUSTOM_DATA_TRIGGER) {
+                continue;
+            }
+
+            // 2. Validate Source Mappings
+            if (cfg.getSourceMappings() == null || cfg.getSourceMappings().isEmpty()) {
+                continue;
+            }
+
+            SourceMapping mapping = cfg.getSourceMappings().get(0);
+            String sourceTable = mapping.getSourceTable();
+
+            // 3. Fetch Table Definition
+            CustomTableDefinition tableDefinition = customTableDefinitionService.getCustomTableDefinition(sourceTable);
+            if (tableDefinition == null) {
+                continue;
+            }
+
+            // 4. Determine Reference Table Name
+            String referenceTableName = null;
+            if (tableDefinition.getTableType() == CustomTableType.OPERATIONAL) {
+                referenceTableName = tableDefinition.getReferenceTable();
+            } else if (tableDefinition.getTableType() == CustomTableType.REFERENCE) {
+                referenceTableName = tableDefinition.getTableName();
+            }
+
+            // 5. Fetch Data if Reference Table is valid
+            if (referenceTableName != null && !referenceTableName.isEmpty()) {
+
+                // Check if we already fetched data for this table to avoid redundant DB calls
+                // This lambda correctly returns Map<String, Map<String, Object>> matching the inner Map type
+                Map<String, Map<String, Object>> tableDataRows =
+                        referenceDataValueMap.computeIfAbsent(referenceTableName, k -> {
+
+                            Map<String, Map<String, Object>> rows = new HashMap<>();
+                            List<Document> documents = this.dataService.getMongoTemplate().findAll(Document.class, k);
+
+                            for (Document doc : documents) {
+                                // Safe check for _id
+                                Object idObj = doc.get("_id");
+                                if (idObj == null) continue;
+
+                                String rowKey = idObj.toString();
+
+                                // Create a mutable copy of the document data
+                                Map<String, Object> values = new HashMap<>(doc);
+
+                                // Add/Overwrite system fields
+                                values.put("instrumentId", "system");
+                                values.put("attributeId", "system");
+
+                                try {
+                                    Date dateVal = DateUtil.convertIntDateToUtc(postingDate);
+                                    values.put("postingDate", dateVal);
+                                    values.put("effectiveDate", dateVal);
+                                } catch (ParseException e) {
+                                    throw new RuntimeException("Error parsing date: " + postingDate, e);
+                                }
+
+                                rows.put(rowKey, values);
+                            }
+                            return rows;
+                        });
+
+                // 6. Build Event only if data exists
+                if (!tableDataRows.isEmpty()) {
+
+                    EventDetail detail = EventDetail.builder()
+                            .sourceKey("System")
+                            .sourceTable(referenceTableName)
+                            .sourceType(SourceType.SYSTEM)
+                            .values(tableDataRows)
+                            .build();
+
+                    Event event = Event.builder()
+                            .eventId(cfg.getEventId())
+                            .eventName(cfg.getEventName())
+                            .priority(cfg.getPriority())
+                            .instrumentId(instrumentId)
+                            .postingDate(postingDate)
+                            .effectiveDate(postingDate)
+                            .lastPlayedPostingDate(postingDate)
+                            .status(EventStatus.NOT_STARTED)
+                            .eventDetail(detail)
+                            .build();
+
+                    result.add(event);
+                }
+            }
+        }
+
+        // Existing logic for other event configurations
+        for (EventConfiguration cfg : configurationList) {
+            // Skip Custom Data Triggers here to avoid duplication if the intent was to separate logic
+            if (cfg.getTriggerSetup() != null &&
+                    cfg.getTriggerSetup().getTriggerType() == TriggerType.ON_CUSTOM_DATA_TRIGGER) {
+                continue;
+            }
 
             Map<String, Map<String, Object>> valueMap = new HashMap<>();
 
             for (InstrumentAttribute attr : attributes) {
-
                 Map<String, Map<String, Object>> configVals =
                         generateEvent(
                                 attr,
@@ -95,11 +201,11 @@ public class ExcelModelService {
                                 DateUtil.dateInNumber(attr.getEffectiveDate()),
                                 cfg
                         );
-
                 valueMap.putAll(configVals);
             }
 
-            if(!valueMap.isEmpty()) {
+            if (!valueMap.isEmpty()) {
+
                 EventDetail detail = EventDetail.builder()
                         .sourceKey("System")
                         .sourceTable("System")
@@ -126,7 +232,7 @@ public class ExcelModelService {
         return result;
     }
 
-    public void generateEvent(int postingDate) {
+    public void generateEvent(int postingDate) throws Exception{
         final String tenant = TenantContextHolder.getTenant();
 
         int pageNumber = 0;
@@ -318,81 +424,116 @@ public class ExcelModelService {
         return valueMap;
     }
 
-    public Map<String, Map<String, Object>> getValuesFromCustomTable(String instrumentId,
+    public Map<String, Map<String, Object>> getValuesFromCustomTable(
+            String instrumentId,
             String attributeId,
             Integer postingDate,
             Integer effectiveDate,
             SourceMapping mapping
     ) throws ParseException {
 
-        Map<String, Map<String, Object>> resultMap = new LinkedHashMap<>();
-
-        // ✅ Mandatory columns
-        List<String> mandatoryColumns = List.of(
-                "instrumentId",
-                "attributeId",
-                "postingDate",
-                "effectiveDate",
-                "periodId"
-        );
-
-        // ✅ Projection columns (mandatory + dynamic)
-        List<String> projectionColumns = new ArrayList<>(mandatoryColumns);
-
-        List<String> columns = Optional.ofNullable(mapping.getSourceColumns())
-                .orElse(List.of())
-                .stream()
-                .map(Option::getValue)   // adjust if needed
-                .filter(Objects::nonNull)
-                .toList();
-
-        projectionColumns.addAll(columns);
+        // 1. Validate inputs early
+        if (mapping == null) {
+            return Collections.emptyMap();
+        }
 
         String collectionName = mapping.getSourceTable();
+        if (collectionName == null || collectionName.trim().isEmpty()) {
+            return Collections.emptyMap();
+        }
 
-        // ✅ Build query
-        Query query = new Query();
+        // 2. Fetch definition to get the correct Reference Column
+        CustomTableDefinition customTableDefinition =
+                customTableDefinitionService.getCustomTableDefinition(collectionName);
 
-//        query.addCriteria(
-//                Criteria.where("instrumentId").is(instrumentId).and("attributeId").is(attributeId).and("postingDate").is(postingDate)
-//                        .and("effectiveDate").gte(effectiveDate)
-//        );
+        if (customTableDefinition == null) {
+            // Optional: Log warning or throw exception if definition is missing for a valid collection name
+            return Collections.emptyMap();
+        }
 
-        query.addCriteria(
-                Criteria.where("instrumentId").is(instrumentId).and("attributeId").is(attributeId).and("postingDate").is(postingDate)
-        );
-        // ✅ ORDER BY effectiveDate DESC
+        String referenceColumn = customTableDefinition.getReferenceColumn();
+
+        // 3. Build Projection List (Mandatory + Source Columns)
+        Set<String> projectionColumns = new LinkedHashSet<>();
+        projectionColumns.add("instrumentId");
+        projectionColumns.add("attributeId");
+        projectionColumns.add("postingDate");
+        projectionColumns.add("effectiveDate");
+        projectionColumns.add("periodId");
+        projectionColumns.add("_id"); // Explicitly add _id as it is used for the key
+
+        // Safely add dynamic source columns
+        if (mapping.getSourceColumns() != null) {
+            mapping.getSourceColumns().stream()
+                    .filter(Objects::nonNull)
+                    .map(Option::getValue)
+                    .filter(Objects::nonNull)
+                    .forEach(projectionColumns::add);
+        }
+
+        // 4. Build Query Criteria
+        Criteria criteria = Criteria.where("instrumentId").is(instrumentId)
+                .and("attributeId").is(attributeId)
+                .and("postingDate").is(postingDate);
+
+        // Apply 'IN' clause for Reference Column if data mapping values exist
+        // Check for null to avoid NPE on mapping.getDataMapping()
+        if (mapping.getDataMapping() != null && !mapping.getDataMapping().isEmpty()) {
+            List<String> mappingValues = mapping.getDataMapping().stream()
+                    .filter(Objects::nonNull)
+                    .map(Option::getValue)
+                    .filter(Objects::nonNull)
+                    .toList();
+
+            if (!mappingValues.isEmpty() && referenceColumn != null) {
+                criteria.and(referenceColumn).in(mappingValues);
+            }
+        }
+
+        Query query = new Query(criteria);
+
+        // 5. Apply Sort
         query.with(Sort.by(Sort.Direction.DESC, "effectiveDate"));
 
-        // ✅ Projection
-        projectionColumns.forEach(query.fields()::include);
-        query.fields().include("_id");
+        // 6. Apply Projection
+        projectionColumns.forEach(field -> query.fields().include(field));
 
-        // ✅ Fetch MULTIPLE records
+        // 7. Execute Query
         List<Document> documents = this.dataService
                 .getMongoTemplate()
                 .find(query, Document.class, collectionName);
 
-        // ✅ Convert to Map<String, Map<String, Object>>
-        for (Document doc : documents) {
+        // 8. Transform Results
+        Map<String, Map<String, Object>> resultMap = new LinkedHashMap<>();
 
-            String key = doc.getObjectId("_id").toHexString(); // ✅ OUTER MAP KEY
+        for (Document doc : documents) {
+            // Safe extraction of ObjectId
+            Object idObj = doc.get("_id");
+            String key = (idObj != null) ? idObj.toString() : UUID.randomUUID().toString();
 
             Map<String, Object> valueMap = new HashMap<>();
+
             for (String field : doc.keySet()) {
-                if(field.equalsIgnoreCase("postingDate") || field.equalsIgnoreCase("effectiveDate")) {
-                    Integer intDate = (Integer) doc.get(field);
-                    valueMap.put(field, DateUtil.convertIntDateToUtc(intDate));
-                }else {
-                    valueMap.put(field, doc.get(field));
+                Object rawValue = doc.get(field);
+
+                // Apply specific Date conversion logic
+                if ("postingDate".equalsIgnoreCase(field) || "effectiveDate".equalsIgnoreCase(field)) {
+                    if (rawValue instanceof Integer) {
+                        valueMap.put(field, DateUtil.convertIntDateToUtc((Integer) rawValue));
+                    } else {
+                        // Fallback if data is corrupted or not an Integer
+                        valueMap.put(field, rawValue);
+                    }
+                } else {
+                    valueMap.put(field, rawValue);
                 }
             }
-
             resultMap.put(key, valueMap);
         }
 
         return resultMap;
     }
+
 
 
     public Event generateEventFromModelExecution(String instrumentId,

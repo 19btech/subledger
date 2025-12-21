@@ -108,6 +108,17 @@ public class CustomTableDefinitionService {
         return stats;
     }
 
+    /**
+     * Gets table statistics using appropriate strategy
+     */
+    public CustomTableDefinition getCustomTableDefinition(String tableName) {
+        CustomTableDefinition tableDefinition = tableDefinitionRepository.findByTableName(tableName)
+                .orElseThrow(() -> new IllegalArgumentException("Table definition not found for: " + tableName));
+
+
+        return tableDefinition;
+    }
+
     // Private helper methods
     private CustomTableDefinition convertToTableDefinition(Records.CustomTableRequestRecord  request) {
         CustomTableDefinition tableDefinition = new CustomTableDefinition();
