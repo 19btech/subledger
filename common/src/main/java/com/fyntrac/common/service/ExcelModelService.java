@@ -166,9 +166,9 @@ public class ExcelModelService {
                             .build();
 
                     Event event = Event.builder()
-                            .eventId(cfg.getEventId())
-                            .eventName(cfg.getEventName())
-                            .priority(cfg.getPriority())
+                            .eventId(referenceTableName)
+                            .eventName(referenceTableName)
+                            .priority(0)
                             .instrumentId(instrumentId)
                             .postingDate(postingDate)
                             .effectiveDate(postingDate)
@@ -184,11 +184,6 @@ public class ExcelModelService {
 
         // Existing logic for other event configurations
         for (EventConfiguration cfg : configurationList) {
-            // Skip Custom Data Triggers here to avoid duplication if the intent was to separate logic
-            if (cfg.getTriggerSetup() != null &&
-                    cfg.getTriggerSetup().getTriggerType() == TriggerType.ON_CUSTOM_DATA_TRIGGER) {
-                continue;
-            }
 
             Map<String, Map<String, Object>> valueMap = new HashMap<>();
 

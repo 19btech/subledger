@@ -446,6 +446,9 @@ public class ExcelModelUtil {
 
         Sheet sheet = getSheetIgnoreCase(workbook, sheetName);
 
+        if(sheet == null) {
+            return;
+        }
         log.info("Requested Sheet Name: {}", sheetName);
         log.info("Excel Sheet Name: {}", sheet.getSheetName());
 
