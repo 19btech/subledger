@@ -6,7 +6,8 @@ public enum TriggerType {
     ON_TRANSACTION_POST("On Transaction Post"),
     ON_CONDITION_MATCH("On Condition Match"),
     ON_ATTRIBUTE_CHANGE("On Attribute Change"),
-    ON_CUSTOM_DATA_TRIGGER("On Custom Data Trigger");
+    ON_CUSTOM_DATA_TRIGGER("On Custom Data Trigger"),
+    ON_REPLAY("On Replay");
 
     private final String displayName;
 
