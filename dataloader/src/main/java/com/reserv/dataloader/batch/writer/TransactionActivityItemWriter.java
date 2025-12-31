@@ -107,7 +107,7 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
 
         // Process each transaction activity
         for (TransactionActivity transactionActivity : activity) {
-            int accountingPeriodId = DateUtil.getAccountingPeriodId(transactionActivity.getTransactionDate());
+            int accountingPeriodId = DateUtil.getAccountingPeriodId(transactionActivity.getPostingDate());
             AccountingPeriod effectiveAccountingPeriod = this.accountingPeriodService.getAccountingPeriod(accountingPeriodId, tenant);
 
             if (effectiveAccountingPeriod != null) {
