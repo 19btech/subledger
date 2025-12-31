@@ -84,7 +84,8 @@ public class ModelExecutionService {
             if (!chunk.isEmpty()) {
                 // Process this chunk, e.g., send it to your REST API
                 //send message to consumen
-                this.postModelExecutionMessage(executionDate, new ArrayList<>(instrumentIdChunk), pageNumber);
+                boolean isLastPage = Boolean.FALSE;
+                this.postModelExecutionMessage(executionDate, new ArrayList<>(instrumentIdChunk), pageNumber, isLastPage);
                 pageNumber++;  // Move to the next page
             } else {
                 // No more data to fetch
@@ -138,8 +139,8 @@ public class ModelExecutionService {
                                             .map(Event::getInstrumentId)
                                             .filter(Objects::nonNull)
                                             .collect(Collectors.toSet());
-
-                                    this.postModelExecutionMessage(executionDate, new ArrayList<>(instrumentIdChunk), currentPage);
+                                    this.postModelExecutionMessage(executionDate, new ArrayList<>(instrumentIdChunk),
+                                            currentPage, (currentPage  == totalPages - 1));
                                     log.debug("Successfully processed page {}/{}", currentPage + 1, totalPages);
                                     return true;
                                 }
@@ -176,14 +177,15 @@ public class ModelExecutionService {
         }
     }
 
-    private void postModelExecutionMessage(Date executionDate, List<String> instruments, int page) {
+    private void postModelExecutionMessage(Date executionDate, List<String> instruments, int page, boolean isLast) {
         CacheList<String> cacheList = new CacheList<>();
         instruments.forEach(cacheList::add);
         int hashCode = Objects.hash(cacheList);
         String tenantId = TenantContextHolder.getTenant();
         String key = "Model" + tenantId + hashCode;
         this.memcachedRepository.putInCache(key, cacheList);
-        this.modelExecutionProducer.sendModelExecutionMessage(RecordFactory.createModelExecutionMessage(tenantId, DateUtil.dateInNumber(executionDate), key));
+        this.modelExecutionProducer.sendModelExecutionMessage(RecordFactory.createModelExecutionMessage(tenantId,
+                DateUtil.dateInNumber(executionDate), key, isLast));
         // Collect into CacheList
 
     }

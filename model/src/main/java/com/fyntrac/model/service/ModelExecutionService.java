@@ -209,6 +209,14 @@ public class ModelExecutionService {
                 this.memcachedRepository.putInCache(transactionActivityKey, activityList);
                 Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(this.transactionActivityService.getDataService().getTenantId(), jobId);
                 generalLedgerMessageProducer.bookTempGL(glRec);
+
+                if(msg.isLast()) {
+                    if(postingDate > executionState.getExecutionDate()) {
+                        executionState.setLastExecutionDate(executionState.getExecutionDate());
+                        executionState.setExecutionDate(postingDate);
+                        executionStateService.update(executionState);
+                    }
+                }
             }
         }catch (Exception exp){
             log.error(StringUtil.getStackTrace(exp));

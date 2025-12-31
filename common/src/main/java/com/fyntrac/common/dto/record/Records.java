@@ -85,7 +85,7 @@ public class Records {
         private static final long serialVersionUID = -4338320429519961695L;
     }
 
-    public record ModelExecutionMessageRecord(String tenantId, Integer executionDate, String key)implements Serializable {
+    public record ModelExecutionMessageRecord(String tenantId, Integer executionDate, String key, boolean isLast)implements Serializable {
         private static final long serialVersionUID = -1788629874681694218L;
     }
 
@@ -208,7 +208,7 @@ public class Records {
         private static final long serialVersionUID = 666959603291768207L;
     }
 
-    public record InstrumentReplayRecord(String instrumentId, int postingDate, int effectiveDate) implements Serializable {
+    public record InstrumentReplayRecord(String instrumentId,String attributeId, int postingDate, int effectiveDate) implements Serializable {
         private static final long serialVersionUID = 1132335290303185578L;
 
     }

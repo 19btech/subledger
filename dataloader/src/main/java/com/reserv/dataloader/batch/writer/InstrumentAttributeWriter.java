@@ -14,6 +14,7 @@ import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.InstrumentAttributeService;
+import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
@@ -66,7 +67,8 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                                      AccountingPeriodService accountingPeriodService
             , ExecutionStateService executionStateService
             , InstrumentReplaySet instrumentReplaySet
-            , InstrumentReplayQueue instrumentReplayQueue) {
+            , InstrumentReplayQueue instrumentReplayQueue
+    ) {
         this.delegate = delegate;
         this.dataSourceProvider = dataSourceProvider;
         this.memcachedRepository = memcachedRepository;
@@ -76,6 +78,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.executionStateService = executionStateService;
         this.instrumentReplaySet = instrumentReplaySet;
         this.instrumentReplayQueue = instrumentReplayQueue;
+
     }
 
     @BeforeStep
@@ -121,7 +124,10 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 int intEffectiveDate = DateUtil.convertToIntYYYYMMDDFromJavaDate(instrumentAttribute.getEffectiveDate());
 
                 if(executionState != null && executionState.getExecutionDate() > intEffectiveDate) {
-                    Records.InstrumentReplayRecord replayRecord = RecordFactory.createInstrumentReplayRecord(instrumentAttribute.getInstrumentId(), instrumentAttribute.getPostingDate(), intEffectiveDate);
+                    Records.InstrumentReplayRecord replayRecord =
+                            RecordFactory.createInstrumentReplayRecord(instrumentAttribute.getInstrumentId(),
+                                    instrumentAttribute.getAttributeId(),
+                                    instrumentAttribute.getPostingDate(), intEffectiveDate);
                     instrumentReplaySet.add(tenantId, this.jobId,replayRecord);
                     instrumentReplayQueue.add(tenantId, this.jobId,replayRecord);
                 }

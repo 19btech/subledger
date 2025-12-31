@@ -31,6 +31,11 @@ public interface TransactionActivityRepository extends MongoRepository<Transacti
     @Query("{ 'instrumentId': ?0, 'attributeId': ?1, 'source': ?2 }")
     Optional<TransactionActivity> findActiveBySource(String instrumentId, String attributeId, Source source);
 
+    @Query("{ 'instrumentId': ?0, 'attributeId': ?1, 'postingDate': { $gte: ?2 }, 'transactionName': { $in: ?3 } }")
+    List<TransactionActivity> findActivityByTransactions(String instrumentId,
+                                                       String attributeId,
+                                                       Integer postingDate,
+                                                       List<String> transactions);
     /**
      * Aggregate total amount grouped by transactionName and effectiveDate
      */

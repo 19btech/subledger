@@ -43,8 +43,10 @@ public class InstrumentReplayStateService extends CacheBasedService<InstrumentRe
         return List.of();
     }
 
-    public InstrumentReplayState getInstrumentAttributeReplayState(String instrumentId, String attributeId) {
-        Query query = new Query(Criteria.where("instrumentId").is(instrumentId).and("attributeId").is(attributeId));
+    public InstrumentReplayState getInstrumentAttributeReplayState(String instrumentId, String attributeId, int postingDate) {
+        Query query =
+                new Query(Criteria.where("instrumentId").is(instrumentId).and("attributeId").is(attributeId).and(
+                        "maxPostingDate").is(postingDate));
         return (InstrumentReplayState)this.dataService.getMongoTemplate().findOne(query, InstrumentReplayState.class);
     }
 

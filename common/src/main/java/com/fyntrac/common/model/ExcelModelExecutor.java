@@ -63,7 +63,8 @@ public class ExcelModelExecutor {
     }
 
     public Map<String, Map<String, Object>> sortEventValues(
-            Map<String, Map<String, Object>> values
+            Map<String, Map<String, Object>> values,
+            boolean isAscendingOrder
     ) {
         if (values == null || values.isEmpty()) {
             return new LinkedHashMap<>();
@@ -76,7 +77,7 @@ public class ExcelModelExecutor {
                         this::compareAttributeId
                 ).thenComparing(
                         (Map.Entry<String, Map<String, Object>> entry) -> extractEffectiveDate(entry.getValue()),
-                        Comparator.reverseOrder() // Descending
+                        isAscendingOrder ? Comparator.naturalOrder() : Comparator.reverseOrder()// Descending
                 );
 
         return values.entrySet()
@@ -178,7 +179,7 @@ public class ExcelModelExecutor {
         // Fill data into template sheets
         for (Event event : events) {
             List<Map<String, Object>> rows =
-                    this.sortEventValues(event.getEventDetail().getValues())
+                    this.sortEventValues(event.getEventDetail().getValues(), event.getEventDetail().isAscendingOrder())
                             .values()
                             .stream()
                             .toList();

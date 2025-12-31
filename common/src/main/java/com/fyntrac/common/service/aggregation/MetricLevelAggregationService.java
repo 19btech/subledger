@@ -335,4 +335,18 @@ public class MetricLevelAggregationService extends CacheBasedService<MetricLevel
         return StringUtil.generateSHA256Hash(cleanedKey);
     }
 
+    public MetricLevelLtd findLatestByPostingDate(int targetDate) {
+        // 1. Create the criteria: postingDate <= providedDate
+        var criteria = Criteria.where("postingDate").lte(targetDate);
+
+        // 2. Build the query
+        var query = new Query(criteria);
+
+        // 3. Sort Descending (Max First) and Limit to 1
+        query.with(Sort.by(Sort.Direction.DESC, "postingDate"));
+        query.limit(1);
+
+        // 4. Execute
+        return this.dataService.getMongoTemplate().findOne(query, MetricLevelLtd.class);
+    }
 }

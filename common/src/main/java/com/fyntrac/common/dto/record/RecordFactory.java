@@ -106,8 +106,10 @@ public class RecordFactory {
         return createRecord(() -> new Records.AccountingPeriodCloseMessageRecord(tenant, batches));
     }
 
-    public static Records.ModelExecutionMessageRecord createModelExecutionMessage(String tenant, Integer executionDate, String key) {
-        return createRecord(() -> new Records.ModelExecutionMessageRecord(tenant, executionDate, key));
+    public static Records.ModelExecutionMessageRecord createModelExecutionMessage(String tenant,
+                                                                                  Integer executionDate, String key,
+                                                                                  boolean isLast) {
+        return createRecord(() -> new Records.ModelExecutionMessageRecord(tenant, executionDate, key, isLast));
     }
 
     public static Records.ModelRecord createModelRecord(Model model, ModelFile modelFile) {
@@ -327,8 +329,11 @@ public class RecordFactory {
 
     }
 
-    public static Records.InstrumentReplayRecord createInstrumentReplayRecord(String instrumentId, int postingDate, int effectiveDate) {
-        return createRecord(() -> new Records.InstrumentReplayRecord(instrumentId, postingDate, effectiveDate));
+    public static Records.InstrumentReplayRecord createInstrumentReplayRecord(String instrumentId,
+                                                                              String attributeId, int postingDate,
+                                                                              int effectiveDate) {
+        return createRecord(() -> new Records.InstrumentReplayRecord(instrumentId,attributeId, postingDate,
+                effectiveDate));
     }
 
     public static Records.AttributeLevelLtdRecord createAttributeLevelLtdRecord(String metricName, String instrumentId, String attributeId, int postingDate, int accountingPeriod, BigDecimal amount) {

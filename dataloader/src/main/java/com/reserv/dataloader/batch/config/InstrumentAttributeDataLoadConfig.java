@@ -8,6 +8,7 @@ import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.InstrumentAttributeService;
+import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
 import com.reserv.dataloader.batch.listener.InstrumentAttributeJobCompletionListener;
 import com.reserv.dataloader.batch.processor.InstrumentAttributeItemProcessor;
 import com.reserv.dataloader.batch.writer.InstrumentAttributeWriter;
@@ -46,6 +47,7 @@ public class InstrumentAttributeDataLoadConfig {
     private final InstrumentReplaySet instrumentReplaySet;
     private final InstrumentReplayQueue instrumentReplayQueue;
     private final BatchCommonConfig batchCommonConfig;
+
 
     public InstrumentAttributeDataLoadConfig(JobRepository jobRepository, MongoTemplate mongoTemplate,
                                              TenantDataSourceProvider dataSourceProvider,
@@ -102,17 +104,20 @@ public class InstrumentAttributeDataLoadConfig {
 
     @Bean
     public ItemWriter<InstrumentAttribute> instrumentAttributeWriter(TenantDataSourceProvider dataSourceProvider,
-                                                                     MemcachedRepository memcachedRepository
-                                                            , InstrumentAttributeService instrumentAttributeService
-                                                            , AccountingPeriodService accountingPeriodService
-    , ExecutionStateService executionStateService
-    , InstrumentReplaySet instrumentReplaySet, InstrumentReplayQueue instrumentReplayQueue
+                                                                     MemcachedRepository memcachedRepository,
+                                                            InstrumentAttributeService instrumentAttributeService,
+                                                            AccountingPeriodService accountingPeriodService,
+    ExecutionStateService executionStateService,
+    InstrumentReplaySet instrumentReplaySet,
+                                                                     InstrumentReplayQueue instrumentReplayQueue
                                                                      ) {
         MongoItemWriter<InstrumentAttribute> delegate = new MongoItemWriterBuilder<InstrumentAttribute>()
                 .template(mongoTemplate)
                 .collection("InstrumentAttribute")
                 .build();
 
-        return new InstrumentAttributeWriter(delegate, dataSourceProvider,  memcachedRepository, instrumentAttributeService, accountingPeriodService, executionStateService, instrumentReplaySet, instrumentReplayQueue);
+        return new InstrumentAttributeWriter(delegate, dataSourceProvider,  memcachedRepository,
+                instrumentAttributeService, accountingPeriodService, executionStateService, instrumentReplaySet,
+                instrumentReplayQueue);
     }
 }

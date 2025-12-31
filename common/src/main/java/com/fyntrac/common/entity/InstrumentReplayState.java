@@ -22,6 +22,7 @@ public class InstrumentReplayState implements Serializable {
     @Id
     private String id;
     private String instrumentId;
+    private String attributeId;
     private Integer minEffectiveDate;
     private Integer maxPostingDate;//
 
@@ -32,9 +33,10 @@ public class InstrumentReplayState implements Serializable {
     @Override
     public String toString() {
         return "InstrumentReplayState{" +
-                "instrumentId='" + instrumentId + '\'' +
-                ", minTransactionDate=" + minEffectiveDate +
-                ", maxPostingDate=" + maxPostingDate +
+                "instrumentId:'" + instrumentId + '\'' +
+                "attributeId:'" + attributeId + '\'' +
+                ", minTransactionDate:" + minEffectiveDate +
+                ", maxPostingDate:" + maxPostingDate +
                 '}';
     }
 

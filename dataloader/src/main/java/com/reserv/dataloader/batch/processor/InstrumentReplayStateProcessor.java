@@ -8,6 +8,7 @@ public class InstrumentReplayStateProcessor implements ItemProcessor<Records.Ins
     @Override
     public InstrumentReplayState process(Records.InstrumentReplayRecord record) {
         return InstrumentReplayState.builder().instrumentId(record.instrumentId())
+                .attributeId(record.attributeId())
                 .minEffectiveDate(record.effectiveDate())
                 .maxPostingDate(record.postingDate())
                 .build();

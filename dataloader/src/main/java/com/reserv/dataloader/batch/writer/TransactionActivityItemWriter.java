@@ -130,12 +130,13 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
             transactionActivity.setPeriodId(transactionActivity.getAccountingPeriod().getPeriodId());
             if(executionState != null && (transactionActivity.getEffectiveDate() < executionState.getExecutionDate())) {
                 // add into replay List
-                if(transactionActivity.getIsReplayable() != 0) {
                     Records.InstrumentReplayRecord replayRecord = RecordFactory.createInstrumentReplayRecord(transactionActivity.getInstrumentId()
+                            , transactionActivity.getAttributeId()
                             , transactionActivity.getPostingDate(), transactionActivity.getEffectiveDate());
                     instrumentReplaySet.add(tenantId, this.jobId, replayRecord);
-                    instrumentReplayQueue.add(tenantId, this.jobId, replayRecord);
-                }else if(transactionActivity.getEffectiveDate() == null){
+                    // instrumentReplayQueue.add(tenantId, this.jobId, replayRecord);
+
+                if(transactionActivity.getEffectiveDate() == null){
                     transactionActivity.setEffectiveDate(transactionActivity.getPostingDate());
                 }
             }

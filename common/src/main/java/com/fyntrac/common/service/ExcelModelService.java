@@ -9,6 +9,7 @@ import com.fyntrac.common.enums.EventStatus;
 import com.fyntrac.common.enums.SourceType;
 import com.fyntrac.common.enums.TriggerType;
 import com.fyntrac.common.repository.*;
+import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
 import com.fyntrac.common.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -40,6 +41,8 @@ public class ExcelModelService {
     private final EventRepository eventRepository;
     private final DataService<?> dataService;
     private final CustomTableDefinitionService customTableDefinitionService;
+    private final InstrumentReplayStateService instrumentReplayStateService;
+    private final MetricLevelAggregationService aggregationService;
     private List<TransactionActivity> transactionActivities;
     private List<InstrumentAttribute> instrumentAttributes;
 
@@ -55,6 +58,8 @@ public class ExcelModelService {
                              ExecutionStateService executionStateService,
                              EventRepository eventRepository,
                              CustomTableDefinitionService customTableDefinitionService,
+                             InstrumentReplayStateService instrumentReplayStateService,
+                             MetricLevelAggregationService aggregationService,
                              DataService<?> dataService
     ) {
         this.instrumentRepo = instrumentRepo;
@@ -66,6 +71,8 @@ public class ExcelModelService {
         this.eventRepository = eventRepository;
         this.dataService = dataService;
         this.customTableDefinitionService = customTableDefinitionService;
+        this.instrumentReplayStateService = instrumentReplayStateService;
+        this.aggregationService = aggregationService;
         transactionActivities = new ArrayList<>(0);
         instrumentAttributes = new ArrayList<>(0);
     }
@@ -162,6 +169,7 @@ public class ExcelModelService {
                             .sourceKey("System")
                             .sourceTable(referenceTableName)
                             .sourceType(SourceType.SYSTEM)
+                            .isAscendingOrder(Boolean.FALSE)
                             .values(tableDataRows)
                             .build();
 
@@ -186,7 +194,7 @@ public class ExcelModelService {
         for (EventConfiguration cfg : configurationList) {
 
             Map<String, Map<String, Object>> valueMap = new HashMap<>();
-
+            boolean isDescendingOrder = cfg.getTriggerSetup().getTriggerType() == TriggerType.ON_REPLAY;
             for (InstrumentAttribute attr : attributes) {
                 Map<String, Map<String, Object>> configVals =
                         generateEvent(
@@ -205,6 +213,7 @@ public class ExcelModelService {
                         .sourceKey("System")
                         .sourceTable("System")
                         .sourceType(SourceType.SYSTEM)
+                        .isAscendingOrder(isDescendingOrder)
                         .values(valueMap)
                         .build();
 
@@ -313,8 +322,6 @@ public class ExcelModelService {
 
     public Map<String, Map<String, Object>> generateEvent(InstrumentAttribute currentInstrumentAttribute,
             int attributePostingDate, int postingDate, int effectiveDate, EventConfiguration configuration) throws ParseException {
-        Integer eventEffectiveDate = postingDate;
-        Integer eventPostingDate = postingDate;
 
         Map<String, Map<String, Object>> valueMap = new HashMap<>(0);
         String instrumentId = currentInstrumentAttribute.getInstrumentId();
@@ -388,6 +395,33 @@ public class ExcelModelService {
             }
             case TriggerType.ON_CUSTOM_DATA_TRIGGER -> {
                 valueMap = generateSourceMappingEventDetails(instrumentId, attributeId,postingDate, effectiveDate, configuration);
+            }case TriggerType.ON_REPLAY -> {
+
+                InstrumentReplayState replayState =
+                        this.instrumentReplayStateService.getInstrumentAttributeReplayState(instrumentId,
+                                attributeId, postingDate);
+
+                if(replayState == null){
+                    return valueMap;
+                }
+
+                MetricLevelLtd ltd =  this.aggregationService.findLatestByPostingDate(replayState.getMinEffectiveDate());
+                int replayDate = ltd.getPostingDate();
+                List<Option> triggerSource = configuration.getTriggerSetup().getTriggerSource();
+
+                List<String> dataMappingColumns = triggerSource.stream()
+                        .map(Option::getValue)
+                        .toList();
+
+                List<TransactionActivity> activities = this.activityRepo.findActivityByTransactions(instrumentId,
+                        attributeId,
+                        replayDate,
+                        dataMappingColumns);
+
+                if (activities != null && !activities.isEmpty()) {
+                    valueMap = getValuesFromReplay(currentInstrumentAttribute,postingDate, replayDate, effectiveDate,
+                            activities, configuration);
+                }
             }
             default -> {
                 // optional: handle unexpected value
@@ -417,6 +451,113 @@ public class ExcelModelService {
             valueMap.putAll(tmpValueMap);
         }
         return valueMap;
+    }
+
+    public Map<String, Map<String, Object>> getValuesFromReplay(InstrumentAttribute currentInstrumentAttribute,
+            Integer postingDate,
+            Integer replayDate,
+            Integer effectiveDate,
+                                                                List<TransactionActivity> timeLineActivities,
+            EventConfiguration configuration
+    ) throws ParseException {
+
+        Map<String, Map<String, Object>> valueMap = new LinkedHashMap<>();
+
+        //check if qualify for replay
+
+        String instrumentId = currentInstrumentAttribute.getInstrumentId();
+        String attributeId = currentInstrumentAttribute.getAttributeId();
+
+
+
+            Map<String, Object> tmpValueMap = new HashMap<>(0);
+        for (SourceMapping sourceMapping : configuration.getSourceMappings()) {
+
+            // 1. Validate inputs early
+            if (sourceMapping == null) {
+                return Collections.emptyMap();
+            }
+
+            String collectionName = sourceMapping.getSourceTable();
+            if (collectionName == null || collectionName.trim().isEmpty()) {
+                return Collections.emptyMap();
+            }
+
+
+            switch (sourceMapping.getSourceTable().toLowerCase()) {
+                case "attribute" -> {
+                    // handle attribute
+                    tmpValueMap = getValuesFromInstrumentAttribute(replayDate,
+                            effectiveDate,
+                            currentInstrumentAttribute,
+                            sourceMapping);
+
+                }
+                case "transactions" -> {
+                    // handle transactions
+                    List<String> dataMappingColumns = sourceMapping.getDataMapping().stream()
+                            .map(Option::getValue)
+                            .toList();
+
+                    List<TransactionActivity> activities = this.activityRepo.findActivityByTransactions(instrumentId, attributeId,
+                            replayDate,
+                            dataMappingColumns);
+
+                    valueMap.putAll(this.getReplayValuesFromTransactionActivity(instrumentId, attributeId,
+                            postingDate, replayDate,
+                            timeLineActivities, activities));
+                    //return  valueMap;
+                }
+                case "balances" -> {
+                    // handle balances
+                    tmpValueMap = this.getValuesFromBalance(instrumentId, attributeId, replayDate, sourceMapping);
+
+                }
+                case "executionstate" -> {
+                    // handle execution state
+                    tmpValueMap = getExecutionStateValues();
+
+                }
+                default -> {
+                    // optional: handle unexpected case
+                    throw new IllegalArgumentException("Unknown source table: "
+                            + sourceMapping.getSourceTable());
+                }
+            }
+        }
+        String sanitizedAttributeId = attributeId.replace('.', '_');
+        String key = String.format("%s_%s_%d_%d", instrumentId, sanitizedAttributeId, postingDate, replayDate);
+        if(valueMap.containsKey(key)) {
+            Map<String, Object> vm = valueMap.get(key);
+
+            for(Map.Entry<String, Object> entry : tmpValueMap.entrySet()){
+                if(!vm.containsKey(entry.getKey())) {
+                    vm.put(entry.getKey(), entry.getValue());
+                }
+            }
+
+            valueMap.put(key, vm);
+            return valueMap;
+        }else if(!valueMap.isEmpty()) {
+            Map<String, Object> vm = new HashMap<>(0);
+            for(Map.Entry<String, Object> entry : tmpValueMap.entrySet()){
+                if(!vm.containsKey(entry.getKey())) {
+                    vm.put(entry.getKey(), entry.getValue());
+                }
+            }
+
+            Map<String, Map<String, Object>> tvm =
+                    this.getExcelModelKeyMap(currentInstrumentAttribute.getInstrumentId(),
+                    currentInstrumentAttribute.getAttributeId(),
+                    postingDate, effectiveDate, vm);
+
+            valueMap.putAll(tvm);
+            return valueMap;
+        }
+
+        return this.getExcelModelKeyMap(currentInstrumentAttribute.getInstrumentId(),
+                currentInstrumentAttribute.getAttributeId(),
+                postingDate, effectiveDate, tmpValueMap);
     }
 
     public Map<String, Map<String, Object>> getValuesFromCustomTable(
@@ -778,6 +919,91 @@ public class ExcelModelService {
         }
     }
 
+    public Map<Integer, List<Records.TransactionActivityAmountRecord>> groupActivitiesByEffectiveDate(List<TransactionActivity> activities) {
+        if (activities == null || activities.isEmpty()) {
+            return Map.of();
+        }
+
+        return activities.stream()
+                .collect(Collectors.groupingBy(
+                        TransactionActivity::getEffectiveDate,
+                        Collectors.collectingAndThen(
+                                // 1. Group by TransactionName and Sum Amounts
+                                Collectors.groupingBy(
+                                        TransactionActivity::getTransactionName,
+                                        Collectors.reducing(
+                                                BigDecimal.ZERO,
+                                                TransactionActivity::getAmount,
+                                                BigDecimal::add
+                                        )
+                                ),
+                                // 2. Transform the intermediate Map<String, BigDecimal> into List<Record>
+                                map -> map.entrySet().stream()
+                                        .map(e -> RecordFactory.createTransactionActivityAmountRecord(
+                                                e.getKey(),    // transactionName
+                                                null,          // effectiveDate (placeholder, will be set by outer collector)
+                                                e.getValue()   // totalAmount
+                                        ))
+                                        .toList()
+                        )
+                ))
+                .entrySet()
+                .stream()
+                // 3. Re-map to set the correct EffectiveDate from the key
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> entry.getValue().stream()
+                                .map(r -> RecordFactory.createTransactionActivityAmountRecord(
+                                        r.transactionName(),
+                                        entry.getKey(), // Set actual effectiveDate here
+                                        r.totalAmount()
+                                ))
+                                .toList()
+                ));
+    }
+
+    public Map<String, Map<String, Object>> getReplayValuesFromTransactionActivity(String instrumentId,
+                                                                             String attributeId,
+                                                                             Integer postingDate,
+                                                                             Integer replayDate,
+                                                                                   List<TransactionActivity> timeLineActivities,
+                                                                             List<TransactionActivity> activities) throws ParseException {
+            Map<Integer, List<Records.TransactionActivityAmountRecord>> groupedByEffectiveDateActivities =
+                    groupActivitiesByEffectiveDate(activities);
+
+        Map<Integer, List<Records.TransactionActivityAmountRecord>> groupedByEffectiveDateTimeLines =
+                groupActivitiesByEffectiveDate(timeLineActivities);
+
+            Map<String, Map<String, Object>> valueMap = new HashMap<>(0);
+
+        List<Integer> distinctEffectiveDates = timeLineActivities.stream()
+                .map(TransactionActivity::getEffectiveDate) // Extract the effectiveDate
+                .distinct()                                 // Keep only unique values
+                .sorted()                                   // Optional: Sort the dates
+                .toList();
+
+            for (Integer effectiveDateKey : distinctEffectiveDates) {
+                List<Records.TransactionActivityAmountRecord> groupedActivities = new ArrayList<>(0);
+                if(groupedByEffectiveDateActivities.containsKey(effectiveDateKey)) {
+                    groupedActivities =
+                            groupedByEffectiveDateActivities.get(effectiveDateKey);
+                }else{
+                    groupedActivities =
+                            groupedByEffectiveDateTimeLines.get(effectiveDateKey);
+                }
+
+                Map<String, Object> map = this.getAggregatedValues(groupedActivities);
+                map.put("EffectiveDate", DateUtil.convertIntDateToUtc(effectiveDateKey));
+                Map<String, Map<String, Object>> tmpValueMap = this.getExcelModelKeyMap(instrumentId, attributeId,
+                        postingDate, effectiveDateKey, map);
+
+                valueMap.putAll(tmpValueMap);
+            }
+
+            return valueMap;
+
+    }
+
     public Map<String, Object> getValuesFromBalance(String instrumentId,
                                                                  String attributeId,
                                                                  Integer postingDate,
@@ -789,6 +1015,27 @@ public class ExcelModelService {
         List<AttributeLevelLtd> balances = this.balanceRepo.findLatestBalanceByMetrics(instrumentId, attributeId,
                 postingDate,
                 dataMappingColumns);
+        List<AttributeLevelLtd> newBalances = new ArrayList<>(0);
+
+            for(AttributeLevelLtd agg : balances) {
+                if(agg.getPostingDate() < postingDate) {
+                    BaseLtd balance = BaseLtd.builder().beginningBalance(agg.getBalance().getEndingBalance())
+                            .activity(BigDecimal.valueOf(0.0d))
+                            .endingBalance(agg.getBalance().getEndingBalance()).build();
+                    AttributeLevelLtd newBalance =
+                            AttributeLevelLtd.builder().accountingPeriodId(agg.getAccountingPeriodId())
+                                    .instrumentId(agg.getInstrumentId())
+                                    .attributeId(agg.getAttributeId())
+                                    .metricName(agg.getMetricName())
+                                    .postingDate(postingDate)
+                                    .balance(balance).build();
+                    newBalances.add(newBalance);
+                }
+            }
+
+            if(!newBalances.isEmpty()) {
+                balances = newBalances;
+            }
 
         Map<String, Object> valueMap = this.getBalanceValues(balances);
         valueMap.put("EffectiveDate", DateUtil.convertIntDateToUtc(postingDate));
