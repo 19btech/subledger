@@ -7,6 +7,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.util.Date;
 import java.util.List;
 
 @Repository
@@ -27,6 +28,8 @@ public interface InstrumentAttributeRepository extends MongoRepository<Instrumen
     @Query("{ 'instrumentId': ?0, 'attributeId': ?1, 'postingDate': ?2, 'endDate': null }")
     InstrumentAttribute findByInstrumentIdAndPostingDate(String instrumentId,String attributeId, Integer postingDate);
 
+    @Query("{ 'instrumentId': ?0, 'attributeId': ?1, 'effectiveDate': { $gte: ?2 }, 'endDate': null }")
+    List<InstrumentAttribute> findByInstrumentIdAndAttributeIdAndEffectiveDateGte(String instrumentId, String attributeId, Date effectiveDate);
 
     @Query("{ 'versionId': ?0 }")
     InstrumentAttribute findByVersionId(Long versionId);

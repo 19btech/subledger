@@ -109,6 +109,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 int effectivePeriodId = com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(instrumentAttribute.getEffectiveDate());
                 AccountingPeriod effectiveAccountingPeriod = this.accountingPeriodService.getAccountingPeriod(effectivePeriodId, this.tenantId);
                 instrumentAttribute.setEndDate(null);
+                instrumentAttribute.setCloseDate(null);
                 instrumentAttribute.setPreviousVersionId(0L);
                 if(effectiveAccountingPeriod != null){
                     if(effectiveAccountingPeriod.getStatus() !=0) {
@@ -230,7 +231,8 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
 
                 if(sortedSubChunk.size() > i+1) {
                     InstrumentAttribute nextAttribute = sortedSubChunk.get(i + 1);
-                    currentAttribute.setEndDate(DateUtil.convertIntDateToUtc(nextAttribute.getPostingDate()));
+                    currentAttribute.setEndDate(nextAttribute.getEffectiveDate());
+                    currentAttribute.setCloseDate(DateUtil.convertIntDateToUtc(nextAttribute.getPostingDate()));
                     nextAttribute.setPreviousVersionId(currentAttribute.getVersionId());
                     this.addReclassMessage(batchId, currentAttribute, nextAttribute, localMessages);
                 }
@@ -239,7 +241,8 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                     List<InstrumentAttribute> openInstrumentAttributes =
                             this.instrumentAttributeService.getOpenInstrumentAttributes(currentAttribute.getAttributeId(), currentAttribute.getInstrumentId(), this.tenantId);
                     for(InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
-                        openInstrumentAttribute.setEndDate(DateUtil.convertIntDateToUtc(currentAttribute.getPostingDate()));
+                        openInstrumentAttribute.setEndDate(currentAttribute.getEffectiveDate());
+                        openInstrumentAttribute.setCloseDate(DateUtil.convertIntDateToUtc(currentAttribute.getPostingDate()));
                         currentAttribute.setPreviousVersionId(openInstrumentAttribute.getVersionId());
                         openVersion.add(openInstrumentAttribute);
                         this.addReclassMessage(batchId, openInstrumentAttribute, currentAttribute, localMessages);

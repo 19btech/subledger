@@ -414,7 +414,8 @@ public class Records {
     public record TransactionActivityAmountRecord(
             String transactionName,
             Integer effectiveDate,
-            BigDecimal totalAmount
+            BigDecimal totalAmount,
+            Map<String, Object> attributes
     ) implements Serializable {private static final long serialVersionUID = -7045460909449564112L;}
 
     public record ExcelModelEventKey(

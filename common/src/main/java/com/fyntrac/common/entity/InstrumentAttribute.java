@@ -38,6 +38,8 @@ public class InstrumentAttribute implements Serializable {
     private long batchId;
     @Field(write = Field.Write.ALWAYS)
     private Date endDate;
+    @Field(write = Field.Write.ALWAYS)
+    private Date closeDate;
     @Indexed
     private int periodId;
     @Indexed // Separate index on versionId
@@ -67,6 +69,7 @@ public class InstrumentAttribute implements Serializable {
         json.append("\"instrumentId\":\"").append(instrumentId).append("\",");
         json.append("\"attributeId\":\"").append(attributeId).append("\",");
         json.append("\"endDate\":\"").append(endDate).append("\",");
+        json.append("\"closeDate\":\"").append(closeDate).append("\",");
         json.append("\"periodId\":").append(periodId).append(",");
         json.append("\"versionId\":").append(versionId).append(",");
         json.append("\"previousVersionId\":").append(previousVersionId).append(",");

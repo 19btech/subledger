@@ -535,8 +535,10 @@ public class RecordFactory {
 
     public static Records.TransactionActivityAmountRecord createTransactionActivityAmountRecord(String transactionName,
                                                                                                 Integer effectiveDate,
-                                                                                                BigDecimal totalAmount) {
-        return createRecord(() -> new Records.TransactionActivityAmountRecord(transactionName, effectiveDate, totalAmount));
+                                                                                                BigDecimal totalAmount,
+                                                                                                Map<String, Object> attributes) {
+        return createRecord(() -> new Records.TransactionActivityAmountRecord(transactionName, effectiveDate,
+                totalAmount, attributes));
     }
 
     public static Records.CustomTableRequestRecord createCreateCustomTableRequestRecord(String tableName,

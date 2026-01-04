@@ -453,111 +453,123 @@ public class ExcelModelService {
         return valueMap;
     }
 
-    public Map<String, Map<String, Object>> getValuesFromReplay(InstrumentAttribute currentInstrumentAttribute,
+    private Map<String, SourceMapping> getOrderedSourceMappings(List<SourceMapping> allMappings) {
+        Map<String, SourceMapping> sourceMapping = new HashMap<>();
+
+        // First add all transactions to queue
+        for (SourceMapping mapping : allMappings) {
+            if (mapping.getSourceTable().toLowerCase().contains("transactions")) {
+                sourceMapping.put("transactions", mapping);  // or queue.add(mapping)
+            }
+        }
+
+        // Then add all balances to queue
+        for (SourceMapping mapping : allMappings) {
+            if (mapping.getSourceTable().toLowerCase().contains("balances")) {
+                sourceMapping.put("balances", mapping);
+            }
+        }
+
+        // Finally add all attributes to queue
+        for (SourceMapping mapping : allMappings) {
+            if (mapping.getSourceTable().toLowerCase().contains("attribute")) {
+                sourceMapping.put("attribute", mapping);
+            }
+        }
+
+        return sourceMapping;
+    }
+
+    public Map<String, Map<String, Object>> getValuesFromReplay(
+            InstrumentAttribute currentInstrumentAttribute,
             Integer postingDate,
             Integer replayDate,
             Integer effectiveDate,
-                                                                List<TransactionActivity> timeLineActivities,
+            List<TransactionActivity> timeLineActivities,
             EventConfiguration configuration
     ) throws ParseException {
 
-        Map<String, Map<String, Object>> valueMap = new LinkedHashMap<>();
-
-        //check if qualify for replay
+        // 1. Early Validation
+        if (configuration == null || currentInstrumentAttribute == null) {
+            return new LinkedHashMap<>();
+        }
 
         String instrumentId = currentInstrumentAttribute.getInstrumentId();
         String attributeId = currentInstrumentAttribute.getAttributeId();
 
+        // 2. Resolve Mappings
+        Map<String, SourceMapping> sourceMappingMap = getOrderedSourceMappings(configuration.getSourceMappings());
+        SourceMapping transactionSourceMapping = sourceMappingMap.get("transactions");
+        SourceMapping attributeSourceMapping = sourceMappingMap.get("attribute");
+        SourceMapping balanceSourceMapping = sourceMappingMap.get("balances");
 
-
-            Map<String, Object> tmpValueMap = new HashMap<>(0);
-        for (SourceMapping sourceMapping : configuration.getSourceMappings()) {
-
-            // 1. Validate inputs early
-            if (sourceMapping == null) {
-                return Collections.emptyMap();
-            }
-
-            String collectionName = sourceMapping.getSourceTable();
-            if (collectionName == null || collectionName.trim().isEmpty()) {
-                return Collections.emptyMap();
-            }
-
-
-            switch (sourceMapping.getSourceTable().toLowerCase()) {
-                case "attribute" -> {
-                    // handle attribute
-                    tmpValueMap = getValuesFromInstrumentAttribute(replayDate,
-                            effectiveDate,
-                            currentInstrumentAttribute,
-                            sourceMapping);
-
-                }
-                case "transactions" -> {
-                    // handle transactions
-                    List<String> dataMappingColumns = sourceMapping.getDataMapping().stream()
-                            .map(Option::getValue)
-                            .toList();
-
-                    List<TransactionActivity> activities = this.activityRepo.findActivityByTransactions(instrumentId, attributeId,
-                            replayDate,
-                            dataMappingColumns);
-
-                    valueMap.putAll(this.getReplayValuesFromTransactionActivity(instrumentId, attributeId,
-                            postingDate, replayDate,
-                            timeLineActivities, activities));
-                    //return  valueMap;
-                }
-                case "balances" -> {
-                    // handle balances
-                    tmpValueMap = this.getValuesFromBalance(instrumentId, attributeId, replayDate, sourceMapping);
-
-                }
-                case "executionstate" -> {
-                    // handle execution state
-                    tmpValueMap = getExecutionStateValues();
-
-                }
-                default -> {
-                    // optional: handle unexpected case
-                    throw new IllegalArgumentException("Unknown source table: "
-                            + sourceMapping.getSourceTable());
-                }
-            }
+        if (transactionSourceMapping == null) {
+            return Collections.emptyMap();
         }
+
+        // 3. Process Transactions
+        // Extract column names safely
+        List<String> dataMappingColumns = Optional.ofNullable(transactionSourceMapping.getDataMapping())
+                .orElse(Collections.emptyList())
+                .stream()
+                .map(Option::getValue)
+                .filter(Objects::nonNull)
+                .toList();
+
+        List<TransactionActivity> activities = this.activityRepo.findActivityByTransactions(
+                instrumentId, attributeId, replayDate, dataMappingColumns
+        );
+
+        List<Option> attributeSourceColumns = (attributeSourceMapping != null)
+                ? attributeSourceMapping.getSourceColumns()
+                : Collections.emptyList();
+
+        // Fetch transaction values (resultMap corresponds to 'valueMap' in original)
+        Map<String, Map<String, Object>> resultMap = new LinkedHashMap<>(
+                this.getReplayValuesFromTransactionActivity(
+                        instrumentId, attributeId, postingDate, replayDate,
+                        timeLineActivities, activities, attributeSourceColumns
+                )
+        );
+
+        // 4. Process Balances (balanceValues corresponds to 'tmpValueMap' in original)
+        Map<String, Object> balanceValues = new HashMap<>();
+        // Assuming getValuesFromBalance handles null mapping or we skip if null
+        if (balanceSourceMapping != null) {
+            balanceValues.putAll(this.getValuesFromBalance(instrumentId, attributeId, replayDate, balanceSourceMapping));
+        }
+
+        // 5. Merge Logic
+        // Construct the specific key for the Replay Date entry
         String sanitizedAttributeId = attributeId.replace('.', '_');
         String key = String.format("%s_%s_%d_%d", instrumentId, sanitizedAttributeId, postingDate, replayDate);
-        if(valueMap.containsKey(key)) {
-            Map<String, Object> vm = valueMap.get(key);
 
-            for(Map.Entry<String, Object> entry : tmpValueMap.entrySet()){
-                if(!vm.containsKey(entry.getKey())) {
-                    vm.put(entry.getKey(), entry.getValue());
-                }
+        if (resultMap.containsKey(key)) {
+            // Scenario A: Transaction data exists for the exact replay date. Merge balances into it.
+            Map<String, Object> existingRow = resultMap.get(key);
+            for (Map.Entry<String, Object> entry : balanceValues.entrySet()) {
+                existingRow.putIfAbsent(entry.getKey(), entry.getValue());
             }
+            // No need to put back into resultMap as existingRow is a reference to the map value
+            return resultMap;
 
-            valueMap.put(key, vm);
-            return valueMap;
-        }else if(!valueMap.isEmpty()) {
-            Map<String, Object> vm = new HashMap<>(0);
-            for(Map.Entry<String, Object> entry : tmpValueMap.entrySet()){
-                if(!vm.containsKey(entry.getKey())) {
-                    vm.put(entry.getKey(), entry.getValue());
-                }
-            }
+        } else {
+            // Scenario B: No transaction data for replay date.
+            // We create a new entry for the 'effectiveDate' containing the balances.
+            // If resultMap was not empty (other dates), we append this.
+            // If resultMap was empty, we just return this new entry.
 
-            Map<String, Map<String, Object>> tvm =
-                    this.getExcelModelKeyMap(currentInstrumentAttribute.getInstrumentId(),
-                    currentInstrumentAttribute.getAttributeId(),
-                    postingDate, effectiveDate, vm);
+            Map<String, Map<String, Object>> balanceEntryMap = this.getExcelModelKeyMap(
+                    instrumentId,
+                    attributeId,
+                    postingDate,
+                    effectiveDate, // Use effectiveDate for the fallback entry
+                    balanceValues
+            );
 
-            valueMap.putAll(tvm);
-            return valueMap;
+            resultMap.putAll(balanceEntryMap);
+            return resultMap;
         }
-
-        return this.getExcelModelKeyMap(currentInstrumentAttribute.getInstrumentId(),
-                currentInstrumentAttribute.getAttributeId(),
-                postingDate, effectiveDate, tmpValueMap);
     }
 
     public Map<String, Map<String, Object>> getValuesFromCustomTable(
@@ -870,36 +882,26 @@ public class ExcelModelService {
                             .collect(Collectors.groupingBy(
                                     TransactionActivity::getEffectiveDate,
                                     Collectors.collectingAndThen(
-                                            Collectors.groupingBy(
+                                            Collectors.toMap(
                                                     TransactionActivity::getTransactionName,
-                                                    Collectors.reducing(
-                                                            BigDecimal.ZERO,
-                                                            TransactionActivity::getAmount,
-                                                            BigDecimal::add
+                                                    // Value Mapper: Create initial Record with attributes
+                                                    act -> RecordFactory.createTransactionActivityAmountRecord(
+                                                            act.getTransactionName(),
+                                                            act.getEffectiveDate(),
+                                                            act.getAmount(),
+                                                            act.getAttributes() // Capture attributes here
+                                                    ),
+                                                    // Merge Function: Sum amounts if key exists
+                                                    (existing, replacement) -> RecordFactory.createTransactionActivityAmountRecord(
+                                                            existing.transactionName(),
+                                                            existing.effectiveDate(),
+                                                            existing.totalAmount().add(replacement.totalAmount()), // Sum
+                                                            existing.attributes() // Keep existing attributes
                                                     )
                                             ),
-                                            map -> map.entrySet().stream()
-                                                    .map(e ->
-                                                            RecordFactory.createTransactionActivityAmountRecord(
-                                                                    e.getKey(),                 // transactionName
-                                                                    null,                       // temporary
-                                                                    e.getValue()                // totalAmount
-                                                            )
-                                                    )
-                                                    .toList()
+                                            // Finish: Convert Map values to List
+                                            map -> List.copyOf(map.values())
                                     )
-                            ))
-                            .entrySet()
-                            .stream()
-                            .collect(Collectors.toMap(
-                                    Map.Entry::getKey,
-                                    entry -> entry.getValue().stream()
-                                            .map(r -> RecordFactory.createTransactionActivityAmountRecord(
-                                                    r.transactionName(),
-                                                    entry.getKey(),              // set effectiveDate here
-                                                    r.totalAmount()
-                                            ))
-                                            .toList()
                             ));
 
 
@@ -928,82 +930,143 @@ public class ExcelModelService {
                 .collect(Collectors.groupingBy(
                         TransactionActivity::getEffectiveDate,
                         Collectors.collectingAndThen(
-                                // 1. Group by TransactionName and Sum Amounts
-                                Collectors.groupingBy(
+                                Collectors.toMap(
                                         TransactionActivity::getTransactionName,
-                                        Collectors.reducing(
-                                                BigDecimal.ZERO,
-                                                TransactionActivity::getAmount,
-                                                BigDecimal::add
+                                        // Value Mapper: Create initial Record with attributes
+                                        act -> RecordFactory.createTransactionActivityAmountRecord(
+                                                act.getTransactionName(),
+                                                act.getEffectiveDate(),
+                                                act.getAmount(),
+                                                act.getAttributes() // Capture attributes here
+                                        ),
+                                        // Merge Function: Sum amounts if key exists
+                                        (existing, replacement) -> RecordFactory.createTransactionActivityAmountRecord(
+                                                existing.transactionName(),
+                                                existing.effectiveDate(),
+                                                existing.totalAmount().add(replacement.totalAmount()), // Sum
+                                                existing.attributes() // Keep existing attributes
                                         )
                                 ),
-                                // 2. Transform the intermediate Map<String, BigDecimal> into List<Record>
-                                map -> map.entrySet().stream()
-                                        .map(e -> RecordFactory.createTransactionActivityAmountRecord(
-                                                e.getKey(),    // transactionName
-                                                null,          // effectiveDate (placeholder, will be set by outer collector)
-                                                e.getValue()   // totalAmount
-                                        ))
-                                        .toList()
+                                // Finish: Convert Map values to List
+                                map -> List.copyOf(map.values())
                         )
-                ))
-                .entrySet()
-                .stream()
-                // 3. Re-map to set the correct EffectiveDate from the key
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        entry -> entry.getValue().stream()
-                                .map(r -> RecordFactory.createTransactionActivityAmountRecord(
-                                        r.transactionName(),
-                                        entry.getKey(), // Set actual effectiveDate here
-                                        r.totalAmount()
-                                ))
-                                .toList()
                 ));
     }
 
-    public Map<String, Map<String, Object>> getReplayValuesFromTransactionActivity(String instrumentId,
-                                                                             String attributeId,
-                                                                             Integer postingDate,
-                                                                             Integer replayDate,
-                                                                                   List<TransactionActivity> timeLineActivities,
-                                                                             List<TransactionActivity> activities) throws ParseException {
-            Map<Integer, List<Records.TransactionActivityAmountRecord>> groupedByEffectiveDateActivities =
-                    groupActivitiesByEffectiveDate(activities);
+    public InstrumentAttribute findAttributeActiveOnDate(List<InstrumentAttribute> attributes, Date targetDate) {
+        if (attributes == null || targetDate == null) {
+            return null;
+        }
+
+        return attributes.stream()
+                .filter(attr -> {
+                    Date effective = attr.getEffectiveDate();
+                    Date end = attr.getEndDate();
+
+                    // Check if targetDate is on or after effectiveDate
+                    boolean isAfterStart = effective != null && !targetDate.before(effective);
+
+                    // Check if targetDate is before endDate (or endDate is null/open)
+                    boolean isBeforeEnd = end == null || targetDate.before(end);
+
+                    return isAfterStart && isBeforeEnd;
+                })
+                .findFirst()
+                .orElse(null);
+    }
+
+    public Map<String, Map<String, Object>> getReplayValuesFromTransactionActivity(
+            String instrumentId,
+            String attributeId,
+            Integer postingDate,
+            Integer replayDate,
+            List<TransactionActivity> timeLineActivities,
+            List<TransactionActivity> activities,
+            List<Option> attributeSourceColumns // input is List<Option>
+    ) throws ParseException {
+
+        // 1. Fetch relevant Instrument Attributes based on Replay Date
+        List<InstrumentAttribute> instrumentAttributes =
+                this.instrumentAttributeService.getInstrumentAttributeByEffectiveDateGte(
+                        instrumentId,
+                        attributeId,
+                        DateUtil.convertIntDateToUtc(replayDate)
+                );
+
+        // 2. Group Activities by Effective Date
+        Map<Integer, List<Records.TransactionActivityAmountRecord>> groupedByEffectiveDateActivities =
+                groupActivitiesByEffectiveDate(activities);
 
         Map<Integer, List<Records.TransactionActivityAmountRecord>> groupedByEffectiveDateTimeLines =
                 groupActivitiesByEffectiveDate(timeLineActivities);
 
-            Map<String, Map<String, Object>> valueMap = new HashMap<>(0);
+        Map<String, Map<String, Object>> valueMap = new HashMap<>();
 
+        // 3. Get Distinct Dates from Timeline
         List<Integer> distinctEffectiveDates = timeLineActivities.stream()
-                .map(TransactionActivity::getEffectiveDate) // Extract the effectiveDate
-                .distinct()                                 // Keep only unique values
-                .sorted()                                   // Optional: Sort the dates
+                .map(TransactionActivity::getEffectiveDate)
+                .distinct()
+                .sorted()
                 .toList();
 
-            for (Integer effectiveDateKey : distinctEffectiveDates) {
-                List<Records.TransactionActivityAmountRecord> groupedActivities = new ArrayList<>(0);
-                if(groupedByEffectiveDateActivities.containsKey(effectiveDateKey)) {
-                    groupedActivities =
-                            groupedByEffectiveDateActivities.get(effectiveDateKey);
-                }else{
-                    groupedActivities =
-                            groupedByEffectiveDateTimeLines.get(effectiveDateKey);
-                }
+        // 4. FIX: Pre-process attributeDataMapping into a Set of Strings for lookup
+        // You cannot check if a List<Option> contains a String directly.
+        Set<String> validAttributeKeys = attributeSourceColumns == null ? Collections.emptySet() :
+                attributeSourceColumns.stream()
+                        .map(Option::getValue)
+                        .collect(Collectors.toSet());
 
-                Map<String, Object> map = this.getAggregatedValues(groupedActivities);
-                map.put("EffectiveDate", DateUtil.convertIntDateToUtc(effectiveDateKey));
-                Map<String, Map<String, Object>> tmpValueMap = this.getExcelModelKeyMap(instrumentId, attributeId,
-                        postingDate, effectiveDateKey, map);
+        for (Integer effectiveDateKey : distinctEffectiveDates) {
 
-                valueMap.putAll(tmpValueMap);
+            // 5. Find the Attribute active on this specific date
+            InstrumentAttribute timeLineAttribute = findAttributeActiveOnDate(
+                    instrumentAttributes,
+                    DateUtil.convertIntDateToUtc(effectiveDateKey)
+            );
+
+            // 6. Determine which group of activities to use (New/Replay vs Old/Timeline)
+            List<Records.TransactionActivityAmountRecord> groupedActivities;
+            if (groupedByEffectiveDateActivities.containsKey(effectiveDateKey)) {
+                groupedActivities = groupedByEffectiveDateActivities.get(effectiveDateKey);
+            } else {
+                groupedActivities = groupedByEffectiveDateTimeLines.get(effectiveDateKey);
             }
 
-            return valueMap;
+            // 7. Aggregate Values
+            Map<String, Object> map = this.getReplayAggregatedValues(groupedActivities);
 
+            // 8. Process Attributes
+            if (timeLineAttribute != null) {
+                Map<String, Object> attributes = timeLineAttribute.getAttributes();
+
+                if (attributes != null) {
+                    for (String attributeKey : attributes.keySet()) {
+                        // FIX: Check against the Set<String>, not List<Option>
+                        if (validAttributeKeys.contains(attributeKey)) {
+                            Object value = attributes.get(attributeKey);
+                            String newAttributeKey = String.format("%s_%s_%s", "ATTRIBUTE", attributeKey.toUpperCase(), "CURRENT");
+                            map.put(newAttributeKey, value);
+                        }
+                    }
+                }
+            }
+
+            // 9. Add Date and Generate final Map keys
+            map.put("EffectiveDate", DateUtil.convertIntDateToUtc(effectiveDateKey));
+
+            Map<String, Map<String, Object>> tmpValueMap = this.getExcelModelKeyMap(
+                    instrumentId,
+                    attributeId,
+                    postingDate,
+                    effectiveDateKey,
+                    map
+            );
+
+            valueMap.putAll(tmpValueMap);
+        }
+
+        return valueMap;
     }
-
     public Map<String, Object> getValuesFromBalance(String instrumentId,
                                                                  String attributeId,
                                                                  Integer postingDate,
@@ -1059,6 +1122,22 @@ public class ExcelModelService {
             String key = String.format("%s_%s_%s", "TRANSACTIONS", "AMOUNT", // Replace dots with underscores
                     activity.transactionName().toUpperCase());
             valueMap.put(key, activity.totalAmount().doubleValue());
+        }
+        return valueMap;
+    }
+
+    public Map<String, Object> getReplayAggregatedValues(List<Records.TransactionActivityAmountRecord> activities) {
+        Map<String, Object> valueMap = new HashMap<>(0);
+        for (Records.TransactionActivityAmountRecord activity : activities) {
+            String key = String.format("%s_%s_%s", "TRANSACTIONS", "AMOUNT", // Replace dots with underscores
+                    activity.transactionName().toUpperCase());
+            valueMap.put(key, activity.totalAmount().doubleValue());
+
+            for( String attributeKey : activity.attributes().keySet()) {
+                String newKey = String.format("%s_%s_%s", "ATTRIBUTE",attributeKey, "CURRENT");
+                Object value = activity.attributes().get(attributeKey);
+                valueMap.put(newKey, value);
+            }
         }
         return valueMap;
     }

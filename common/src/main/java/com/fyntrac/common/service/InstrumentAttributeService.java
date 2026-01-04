@@ -431,4 +431,9 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         return  mongoTemplate.findOne(query, InstrumentAttribute.class);
     }
 
+    public List<InstrumentAttribute> getInstrumentAttributeByEffectiveDateGte(String instrumentId, String attributeId
+            , Date effectiveDate) {
+       return  this.instrumentAttributeRepository.findByInstrumentIdAndAttributeIdAndEffectiveDateGte(instrumentId,
+                attributeId, effectiveDate);
+    }
 }

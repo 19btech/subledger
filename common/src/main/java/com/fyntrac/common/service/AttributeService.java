@@ -29,6 +29,11 @@ public class AttributeService extends CacheBasedService<Attributes> {
         return dataService.fetchData(query, Attributes.class);
     }
 
+    public Collection<Attributes> getVersionableAttributes() {
+        Query query = new Query(Criteria.where("isVersionable").is(1));
+        return this.dataService.fetchData(query, Attributes.class);
+    }
+
     public Collection<Attributes> getReclassableAttributes(String tenantId) {
         String key = Key.reclassAttributes(tenantId);
         CacheList<Attributes> attributes = new CacheList<>();
