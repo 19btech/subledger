@@ -524,11 +524,27 @@ public class ExcelModelService {
                 ? attributeSourceMapping.getSourceColumns()
                 : Collections.emptyList();
 
+        // 1. Fetch relevant Instrument Attributes based on Replay Date
+        List<InstrumentAttribute> instrumentAttributes =
+                this.instrumentAttributeService.getInstrumentAttributeByEffectiveDateGte(
+                        instrumentId,
+                        attributeId,
+                        DateUtil.convertIntDateToUtc(replayDate)
+                );
+
         // Fetch transaction values (resultMap corresponds to 'valueMap' in original)
+
+        // 4. FIX: Pre-process attributeDataMapping into a Set of Strings for lookup
+        // You cannot check if a List<Option> contains a String directly.
+        Set<String> validAttributeKeys = attributeSourceColumns == null ? Collections.emptySet() :
+                attributeSourceColumns.stream()
+                        .map(Option::getValue)
+                        .collect(Collectors.toSet());
+
         Map<String, Map<String, Object>> resultMap = new LinkedHashMap<>(
                 this.getReplayValuesFromTransactionActivity(
                         instrumentId, attributeId, postingDate, replayDate,
-                        timeLineActivities, activities, attributeSourceColumns
+                        timeLineActivities, activities, validAttributeKeys, instrumentAttributes
                 )
         );
 
@@ -537,6 +553,26 @@ public class ExcelModelService {
         // Assuming getValuesFromBalance handles null mapping or we skip if null
         if (balanceSourceMapping != null) {
             balanceValues.putAll(this.getValuesFromBalance(instrumentId, attributeId, replayDate, balanceSourceMapping));
+
+            InstrumentAttribute timeLineAttribute = findAttributeActiveOnDate(
+                    instrumentAttributes,
+                    DateUtil.convertIntDateToUtc(replayDate)
+            );
+
+            if (timeLineAttribute != null) {
+                Map<String, Object> attributes = timeLineAttribute.getAttributes();
+
+                if (attributes != null) {
+                    for (String attributeKey : attributes.keySet()) {
+                        // FIX: Check against the Set<String>, not List<Option>
+                        if (validAttributeKeys.contains(attributeKey)) {
+                            Object value = attributes.get(attributeKey);
+                            String newAttributeKey = String.format("%s_%s_%s", "ATTRIBUTE", attributeKey.toUpperCase(), "CURRENT");
+                            balanceValues.put(newAttributeKey, value);
+                        }
+                    }
+                }
+            }
         }
 
         // 5. Merge Logic
@@ -982,16 +1018,11 @@ public class ExcelModelService {
             Integer replayDate,
             List<TransactionActivity> timeLineActivities,
             List<TransactionActivity> activities,
-            List<Option> attributeSourceColumns // input is List<Option>
+            Set<String> validAttributeKeys,
+            List<InstrumentAttribute> instrumentAttributes// input is List<Option>
     ) throws ParseException {
 
-        // 1. Fetch relevant Instrument Attributes based on Replay Date
-        List<InstrumentAttribute> instrumentAttributes =
-                this.instrumentAttributeService.getInstrumentAttributeByEffectiveDateGte(
-                        instrumentId,
-                        attributeId,
-                        DateUtil.convertIntDateToUtc(replayDate)
-                );
+
 
         // 2. Group Activities by Effective Date
         Map<Integer, List<Records.TransactionActivityAmountRecord>> groupedByEffectiveDateActivities =
@@ -1009,12 +1040,7 @@ public class ExcelModelService {
                 .sorted()
                 .toList();
 
-        // 4. FIX: Pre-process attributeDataMapping into a Set of Strings for lookup
-        // You cannot check if a List<Option> contains a String directly.
-        Set<String> validAttributeKeys = attributeSourceColumns == null ? Collections.emptySet() :
-                attributeSourceColumns.stream()
-                        .map(Option::getValue)
-                        .collect(Collectors.toSet());
+
 
         for (Integer effectiveDateKey : distinctEffectiveDates) {
 

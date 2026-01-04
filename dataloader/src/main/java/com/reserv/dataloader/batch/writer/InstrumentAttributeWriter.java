@@ -130,7 +130,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                                     instrumentAttribute.getAttributeId(),
                                     instrumentAttribute.getPostingDate(), intEffectiveDate);
                     instrumentReplaySet.add(tenantId, this.jobId,replayRecord);
-                    instrumentReplayQueue.add(tenantId, this.jobId,replayRecord);
+                    // instrumentReplayQueue.add(tenantId, this.jobId,replayRecord);
                 }
             }
             delegate.setTemplate(mongoTemplate);
