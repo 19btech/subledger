@@ -27,6 +27,7 @@ import java.text.ParseException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @Slf4j
@@ -406,7 +407,7 @@ public class ExcelModelService {
                 }
 
                 MetricLevelLtd ltd =  this.aggregationService.findLatestByPostingDate(replayState.getMinEffectiveDate());
-                int replayDate = ltd.getPostingDate();
+                int replayDate =  (ltd == null ? replayState.getMinEffectiveDate() : ltd.getPostingDate());
                 List<Option> triggerSource = configuration.getTriggerSetup().getTriggerSource();
 
                 List<String> dataMappingColumns = triggerSource.stream()
@@ -420,7 +421,7 @@ public class ExcelModelService {
 
                 if (activities != null && !activities.isEmpty()) {
                     valueMap = getValuesFromReplay(currentInstrumentAttribute,postingDate, replayDate, effectiveDate,
-                            activities, configuration);
+                            activities, configuration, replayState);
                 }
             }
             default -> {
@@ -486,7 +487,8 @@ public class ExcelModelService {
             Integer replayDate,
             Integer effectiveDate,
             List<TransactionActivity> timeLineActivities,
-            EventConfiguration configuration
+            EventConfiguration configuration,
+            InstrumentReplayState replayState
     ) throws ParseException {
 
         // 1. Early Validation
@@ -544,7 +546,7 @@ public class ExcelModelService {
         Map<String, Map<String, Object>> resultMap = new LinkedHashMap<>(
                 this.getReplayValuesFromTransactionActivity(
                         instrumentId, attributeId, postingDate, replayDate,
-                        timeLineActivities, activities, validAttributeKeys, instrumentAttributes
+                        timeLineActivities, activities, validAttributeKeys, instrumentAttributes, replayState
                 )
         );
 
@@ -599,7 +601,7 @@ public class ExcelModelService {
                     instrumentId,
                     attributeId,
                     postingDate,
-                    effectiveDate, // Use effectiveDate for the fallback entry
+                    replayDate, // Use effectiveDate for the fallback entry
                     balanceValues
             );
 
@@ -1019,7 +1021,8 @@ public class ExcelModelService {
             List<TransactionActivity> timeLineActivities,
             List<TransactionActivity> activities,
             Set<String> validAttributeKeys,
-            List<InstrumentAttribute> instrumentAttributes// input is List<Option>
+            List<InstrumentAttribute> instrumentAttributes,
+            InstrumentReplayState replayState// input is List<Option>
     ) throws ParseException {
 
 
@@ -1034,13 +1037,13 @@ public class ExcelModelService {
         Map<String, Map<String, Object>> valueMap = new HashMap<>();
 
         // 3. Get Distinct Dates from Timeline
-        List<Integer> distinctEffectiveDates = timeLineActivities.stream()
-                .map(TransactionActivity::getEffectiveDate)
-                .distinct()
-                .sorted()
-                .toList();
-
-
+        List<Integer> distinctEffectiveDates = Stream.concat(
+                        timeLineActivities.stream().map(TransactionActivity::getEffectiveDate),
+                        Stream.of(replayState.getMinEffectiveDate())
+                )
+                .distinct() // Removes duplicates (checks both the list and the added date)
+                .sorted()   // Sorts everything together
+                .toList();  // (Use .collect(Collectors.toList()) if using Java version < 16)
 
         for (Integer effectiveDateKey : distinctEffectiveDates) {
 
@@ -1059,7 +1062,10 @@ public class ExcelModelService {
             }
 
             // 7. Aggregate Values
-            Map<String, Object> map = this.getReplayAggregatedValues(groupedActivities);
+            Map<String, Object> map = new HashMap<>(0);
+            if(groupedActivities != null && !groupedActivities.isEmpty()) {
+                map = this.getReplayAggregatedValues(groupedActivities);
+            }
 
             // 8. Process Attributes
             if (timeLineAttribute != null) {

@@ -14,10 +14,10 @@ import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.InstrumentAttributeService;
-import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.types.ObjectId;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.annotation.BeforeStep;
@@ -38,26 +38,17 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     private final MemcachedRepository memcachedRepository;
     private final InstrumentAttributeService instrumentAttributeService;
 
-    // Removed class-level state for lists to prevent ConcurrentModificationException
-    // private CacheList<Records.InstrumentAttributeReclassMessageRecord> reclassMessageRecords;
-
     private String tenantId;
     private long runId;
     private AccountingPeriodService accountingPeriodService;
     private long batchId;
 
-    // Removed class-level state
-    // private CacheList<Records.TransactionActivityReplayRecord> transactionActivityReplayRecordCacheList;
-
     private ExecutionStateService executionStateService;
-    private final InstrumentReplaySet instrumentReplaySet;
-    private final InstrumentReplayQueue instrumentReplayQueue;
     private ExecutionState executionState;
     private Long jobId;
 
-    // Locking constants
-    private static final int LOCK_TIMEOUT_SECONDS = 5;
-    private static final int MAX_RETRIES = 50; // Increased retries for high concurrency
+    private static final int LOCK_TIMEOUT_SECONDS = 10;
+    private static final int MAX_RETRIES = 10;
     private static final long RETRY_DELAY_MS = 100;
 
     public InstrumentAttributeWriter(MongoItemWriter<InstrumentAttribute> delegate,
@@ -66,18 +57,15 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                                      InstrumentAttributeService instrumentAttributeService,
                                      AccountingPeriodService accountingPeriodService
             , ExecutionStateService executionStateService
-            , InstrumentReplaySet instrumentReplaySet
-            , InstrumentReplayQueue instrumentReplayQueue
+
     ) {
         this.delegate = delegate;
         this.dataSourceProvider = dataSourceProvider;
         this.memcachedRepository = memcachedRepository;
         this.instrumentAttributeService = instrumentAttributeService;
-        this.runId=0;
+        this.runId = 0;
         this.accountingPeriodService = accountingPeriodService;
         this.executionStateService = executionStateService;
-        this.instrumentReplaySet = instrumentReplaySet;
-        this.instrumentReplayQueue = instrumentReplayQueue;
 
     }
 
@@ -95,71 +83,64 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     @Override
     public void write(Chunk<? extends InstrumentAttribute> instrumentAttributes) throws Exception {
 
-        // 1. Process Attributes locally first to prepare data
         ReferenceData referenceData = this.memcachedRepository.getFromCache(this.tenantId, com.fyntrac.common.config.ReferenceData.class);
         List<InstrumentAttribute> combinedAttributes = new ArrayList<>(instrumentAttributes.getItems());
 
         if (this.tenantId != null && !this.tenantId.isEmpty()) {
             MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(this.tenantId);
-            if(mongoTemplate == null) {
+            if (mongoTemplate == null) {
                 return;
             }
 
-            for(InstrumentAttribute instrumentAttribute : combinedAttributes) {
-                int effectivePeriodId = com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(instrumentAttribute.getEffectiveDate());
+            for (InstrumentAttribute instrumentAttribute : combinedAttributes) {
+
+                // --- FIX 1: FORCE ID GENERATION ---
+                // We generate the ID *before* adding to cache. This ensures the cache
+                // has a valid ID, so when we retrieve it during Retry, linking works.
+                if (instrumentAttribute.getId() == null) {
+                    instrumentAttribute.setId(new ObjectId().toString());
+                }
+
+                int effectivePeriodId =
+                        com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(instrumentAttribute.getEffectiveDate());
                 AccountingPeriod effectiveAccountingPeriod = this.accountingPeriodService.getAccountingPeriod(effectivePeriodId, this.tenantId);
                 instrumentAttribute.setEndDate(null);
                 instrumentAttribute.setCloseDate(null);
                 instrumentAttribute.setPreviousVersionId(0L);
-                if(effectiveAccountingPeriod != null){
-                    if(effectiveAccountingPeriod.getStatus() !=0) {
+
+                if (effectiveAccountingPeriod != null) {
+                    if (effectiveAccountingPeriod.getStatus() != 0) {
                         instrumentAttribute.setPeriodId(referenceData.getCurrentAccountingPeriodId());
-                    }else{
+                    } else {
                         instrumentAttribute.setPeriodId(effectiveAccountingPeriod.getPeriodId());
                     }
-                }else {
+                } else {
                     instrumentAttribute.setPeriodId(referenceData.getCurrentAccountingPeriodId());
                 }
-                instrumentAttribute.setBatchId(batchId);
-                this.instrumentAttributeService.addIntoCache(this.tenantId, instrumentAttribute);
-                int intEffectiveDate = DateUtil.convertToIntYYYYMMDDFromJavaDate(instrumentAttribute.getEffectiveDate());
 
-                if(executionState != null && executionState.getExecutionDate() > intEffectiveDate) {
-                    Records.InstrumentReplayRecord replayRecord =
-                            RecordFactory.createInstrumentReplayRecord(instrumentAttribute.getInstrumentId(),
-                                    instrumentAttribute.getAttributeId(),
-                                    instrumentAttribute.getPostingDate(), intEffectiveDate);
-                    instrumentReplaySet.add(tenantId, this.jobId,replayRecord);
-                    // instrumentReplayQueue.add(tenantId, this.jobId,replayRecord);
-                }
+                instrumentAttribute.setBatchId(batchId);
+
+                // Now added to cache WITH an ID
+                this.instrumentAttributeService.addIntoCache(this.tenantId, instrumentAttribute);
+
             }
             delegate.setTemplate(mongoTemplate);
         }
 
-        // 2. Local container for new messages generated in this chunk
         CacheList<Records.InstrumentAttributeReclassMessageRecord> localReclassMessages = new CacheList<>();
 
-        // 3. Logic processing (setEndDate) now populates the LOCAL list
+        // Logic processing
         Chunk<InstrumentAttribute> updatedChunk = this.setEndDate(batchId, combinedAttributes, localReclassMessages);
 
-        // 4. CRITICAL SECTION: Distributed Lock to update Reclass Messages
         String dataKey = Key.reclassMessageList(this.tenantId, this.runId);
         String lockKey = "lock:" + dataKey;
 
         updateCacheWithLock(lockKey, dataKey, localReclassMessages);
 
-        // 5. Write to Mongo
         delegate.write(updatedChunk);
-
-        // 6. Handle Replay Record Cache (Locked update not implemented here as logic was empty in original, but follow pattern above if needed)
-        // Original code seemed to just get/put empty list or overwrite. If this list is actually used, apply updateCacheWithLock here too.
     }
 
-    /**
-     * Helper to update Memcached list safely with locking
-     */
     private <T> void updateCacheWithLock(String lockKey, String dataKey, CacheList<T> newItems) {
-        // FIX: Unwrap CacheList to access underlying list for emptiness check
         if (newItems == null || newItems.getList() == null || newItems.getList().isEmpty()) return;
 
         boolean lockAcquired = false;
@@ -177,21 +158,21 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 throw new RuntimeException("Could not acquire lock for key: " + dataKey);
             }
 
-            // READ
             CacheList<T> existingList;
-            if(this.memcachedRepository.ifExists(dataKey)) {
+            if (this.memcachedRepository.ifExists(dataKey)) {
                 existingList = this.memcachedRepository.getFromCache(dataKey, CacheList.class);
             } else {
                 existingList = new CacheList<>();
             }
 
-            // MODIFY
-            // FIX: Access underlying lists to perform addAll, assuming CacheList wrappers are incompatible
-            if (existingList.getList() != null && newItems.getList() != null) {
+            if (existingList.getList() == null) {
+                existingList.addAll(new ArrayList<>());
+            }
+
+            if (newItems.getList() != null) {
                 existingList.getList().addAll(newItems.getList());
             }
 
-            // WRITE
             this.memcachedRepository.putInCache(dataKey, existingList);
 
         } catch (Exception e) {
@@ -208,8 +189,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         }
     }
 
-    // Refactored to accept local list instead of using class field
-    private Chunk<InstrumentAttribute> setEndDate(long batchId , List<InstrumentAttribute> attributesList, CacheList<Records.InstrumentAttributeReclassMessageRecord> localMessages) throws ParseException {
+    private Chunk<InstrumentAttribute> setEndDate(long batchId, List<InstrumentAttribute> attributesList, CacheList<Records.InstrumentAttributeReclassMessageRecord> localMessages) throws ParseException {
 
         Map<String, List<InstrumentAttribute>> groupedAttributes = new HashMap<>();
         List<InstrumentAttribute> openVersion = new ArrayList<>(0);
@@ -226,25 +206,50 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                     .sorted(Comparator.comparingInt(InstrumentAttribute::getPeriodId))
                     .collect(Collectors.toList());
 
+            // DEBUG LOG: See if we are in Retry Mode
+            if (sortedSubChunk.size() == 1) {
+                log.info("Processing SINGLE item (Retry Mode) for Instrument: {}", sortedSubChunk.get(0).getInstrumentId());
+            }
+
             for (int i = 0; i < sortedSubChunk.size(); i++) {
                 InstrumentAttribute currentAttribute = sortedSubChunk.get(i);
 
-                if(sortedSubChunk.size() > i+1) {
+                // --- SCENARIO 1: FORWARD LINKING (Normal Chunking) ---
+                if (sortedSubChunk.size() > i + 1) {
                     InstrumentAttribute nextAttribute = sortedSubChunk.get(i + 1);
                     currentAttribute.setEndDate(nextAttribute.getEffectiveDate());
                     currentAttribute.setCloseDate(DateUtil.convertIntDateToUtc(nextAttribute.getPostingDate()));
+
+                    // ID is guaranteed by Fix 1
                     nextAttribute.setPreviousVersionId(currentAttribute.getVersionId());
+
                     this.addReclassMessage(batchId, currentAttribute, nextAttribute, localMessages);
                 }
 
-                if(i== 0) {
+                // --- SCENARIO 2: BACKWARD LINKING (Retry Mode / First Item) ---
+                if (i == 0) {
                     List<InstrumentAttribute> openInstrumentAttributes =
                             this.instrumentAttributeService.getOpenInstrumentAttributes(currentAttribute.getAttributeId(), currentAttribute.getInstrumentId(), this.tenantId);
-                    for(InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
+
+                    // LOG: Check what we found
+                    if (sortedSubChunk.size() == 1) {
+                        log.info("Retry Mode: Found {} open attributes for linking", openInstrumentAttributes.size());
+                    }
+
+                    for (InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
+
+                        // Safety: Don't link to yourself (if service returns current uncommitted record)
+                        if (Objects.equals(openInstrumentAttribute.getVersionId(), currentAttribute.getVersionId())) {
+                            continue;
+                        }
+
                         openInstrumentAttribute.setEndDate(currentAttribute.getEffectiveDate());
                         openInstrumentAttribute.setCloseDate(DateUtil.convertIntDateToUtc(currentAttribute.getPostingDate()));
+
                         currentAttribute.setPreviousVersionId(openInstrumentAttribute.getVersionId());
                         openVersion.add(openInstrumentAttribute);
+
+                        // THIS CATCHES THE REPLAY LOGIC IN RETRY
                         this.addReclassMessage(batchId, openInstrumentAttribute, currentAttribute, localMessages);
                     }
                 }
@@ -259,13 +264,11 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         return new Chunk<>(flattenedList);
     }
 
-    // Refactored to accept local list
     private void addReclassMessage(long batchId, InstrumentAttribute openInstrumentAttribute, InstrumentAttribute currentAttribute, CacheList<Records.InstrumentAttributeReclassMessageRecord> localMessages) {
         Records.InstrumentAttributeRecord openInstrumentAtt = RecordFactory.createInstrumentAttributeRecord(openInstrumentAttribute);
         Records.InstrumentAttributeRecord currentInstrumentAtt = RecordFactory.createInstrumentAttributeRecord(currentAttribute);
         Records.InstrumentAttributeReclassMessageRecord reclassMessageRecord = RecordFactory.createInstrumentAttributeReclassMessageRecord(tenantId, batchId, openInstrumentAtt, currentInstrumentAtt);
 
-        // Add to local list, not class field
         localMessages.add(reclassMessageRecord);
     }
 }

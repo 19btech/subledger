@@ -51,6 +51,8 @@ public class InstrumentAttribute implements Serializable {
     private Map<String,Object> attributes;
     @NotNull
     private Integer postingDate;
+    @NotNull
+    private Integer intEffectiveDate;
 
 
 

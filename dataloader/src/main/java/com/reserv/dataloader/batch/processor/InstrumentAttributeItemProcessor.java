@@ -3,6 +3,7 @@ package com.reserv.dataloader.batch.processor;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.utils.DateUtil;
+import org.bson.types.ObjectId; // Make sure to import this for ID generation
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.annotation.BeforeStep;
@@ -26,7 +27,6 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
 
     @BeforeStep
     public void beforeStep(StepExecution stepExecution) {
-        // Access JobParameters from StepExecution
         this.runId = stepExecution.getJobParameters().getLong("run.id");
         this.tenantId = stepExecution.getJobParameters().getString("tenantId");
     }
@@ -78,7 +78,7 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
             }
         }
 
-        return instrumentAttributeFactory.create(
+        InstrumentAttribute result = instrumentAttributeFactory.create(
                 this.tenantId,
                 instrumentId,
                 attributeId,
@@ -88,6 +88,16 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
                 Source.ETL,
                 attributes
         );
+
+        // --- CRITICAL FIX: PRE-GENERATE ID ---
+        // This ensures the ID exists before the Writer tries to use it for linking.
+        // If your entity uses "VersionId" as the primary key or link, ensure that field is populated.
+        // Assuming 'Id' is the MongoDB _id:
+        if (result.getId() == null) {
+            result.setId(new ObjectId().toString());
+        }
+
+        return result;
     }
 
     private Object inferType(Object value) {
@@ -96,12 +106,10 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
         if (value instanceof String strVal) {
             String trimmed = strVal.trim();
 
-            // Try boolean
             if (trimmed.equalsIgnoreCase("true") || trimmed.equalsIgnoreCase("false")) {
                 return Boolean.parseBoolean(trimmed);
             }
 
-            // Try integer/long/decimal
             try {
                 if (trimmed.contains(".")) {
                     return Double.parseDouble(trimmed);
@@ -110,14 +118,12 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
                 }
             } catch (NumberFormatException ignored) {}
 
-            // Try date format
             try {
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
                 LocalDate localDate = LocalDate.parse(trimmed, formatter);
                 return Date.from(localDate.atStartOfDay(ZoneOffset.UTC).toInstant());
             } catch (Exception ignored) {}
 
-            // Default to string
             return trimmed;
         }
 
@@ -125,6 +131,6 @@ public class InstrumentAttributeItemProcessor implements ItemProcessor<Map<Strin
             return value;
         }
 
-        return value.toString(); // fallback
+        return value.toString();
     }
 }

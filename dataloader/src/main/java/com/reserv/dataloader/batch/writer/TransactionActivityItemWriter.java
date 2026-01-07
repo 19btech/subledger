@@ -41,9 +41,7 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
     private Long runId;
     private final ExecutionStateService executionStateService;
     private ExecutionState executionState;
-    private final InstrumentReplaySet instrumentReplaySet;
     private final TransactionActivityQueue transactionActivityQueue;
-    private final InstrumentReplayQueue instrumentReplayQueue;
     private Long jobId;
 
     public TransactionActivityItemWriter(MongoItemWriter<TransactionActivity> delegate,
@@ -55,9 +53,8 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
             , AccountingPeriodService accountingPeriodService
             , TransactionService transactionService
     , ExecutionStateService executionStateService
-    , InstrumentReplaySet instrumentReplaySet
     , TransactionActivityQueue transactionActivityQueue
-    , InstrumentReplayQueue instrumentReplayQueue) {
+    ) {
         this.delegate = delegate;
         this.dataSourceProvider = dataSourceProvider;
         this.tenantContextHolder = tenantContextHolder;
@@ -67,9 +64,8 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
         this.accountingPeriodService = accountingPeriodService;
         this.transactionService = transactionService;
         this.executionStateService = executionStateService;
-        this.instrumentReplaySet = instrumentReplaySet;
         this.transactionActivityQueue = transactionActivityQueue;
-        this.instrumentReplayQueue = instrumentReplayQueue;
+
     }
 
     @BeforeStep
@@ -129,12 +125,6 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
             transactionActivity.setIsReplayable(transaction.getIsReplayable());
             transactionActivity.setPeriodId(transactionActivity.getAccountingPeriod().getPeriodId());
             if(executionState != null && (transactionActivity.getEffectiveDate() < executionState.getExecutionDate())) {
-                // add into replay List
-                    Records.InstrumentReplayRecord replayRecord = RecordFactory.createInstrumentReplayRecord(transactionActivity.getInstrumentId()
-                            , transactionActivity.getAttributeId()
-                            , transactionActivity.getPostingDate(), transactionActivity.getEffectiveDate());
-                    instrumentReplaySet.add(tenantId, this.jobId, replayRecord);
-                    // instrumentReplayQueue.add(tenantId, this.jobId, replayRecord);
 
                 if(transactionActivity.getEffectiveDate() == null){
                     transactionActivity.setEffectiveDate(transactionActivity.getPostingDate());

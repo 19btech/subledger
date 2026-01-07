@@ -1,7 +1,10 @@
 package com.reserv.dataloader.batch.listener;
 
+import com.fyntrac.common.entity.ExecutionState;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodService;
+import com.fyntrac.common.service.ExecutionStateService;
+import com.fyntrac.common.service.TransactionActivityService;
 import com.fyntrac.common.service.TransactionService;
 import com.fyntrac.common.service.aggregation.AggregationService;
 import com.reserv.dataloader.pulsar.producer.GeneralLedgerMessageProducer;
@@ -12,6 +15,7 @@ import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.NoSuchElementException;
 import java.util.concurrent.ExecutionException;
 
 @Component
@@ -45,6 +49,15 @@ public class TransactionActivityJobCompletionListener implements JobExecutionLis
     @Autowired
     Job instrumentReplayStateJob;
 
+    private final ExecutionStateService executionStateService;
+    private final TransactionActivityService transactionActivityService;
+
+    @Autowired
+    public TransactionActivityJobCompletionListener(ExecutionStateService executionStateService,
+                                                    TransactionActivityService transactionActivityService) {
+        this.executionStateService = executionStateService;
+        this.transactionActivityService = transactionActivityService;
+    }
     @Override
     public void beforeJob(JobExecution jobExecution) {
         // No-op
@@ -97,9 +110,10 @@ public class TransactionActivityJobCompletionListener implements JobExecutionLis
                             .addLong("jobId", jobId)
                             .addLong("key", key)
                             .toJobParameters();
+                    updateExecutionState(tenantId);
 
-                     jobLauncher.run(reversalJob, jobParameters);
                      jobLauncher.run(instrumentReplayStateJob, jobParameters);
+                    jobLauncher.run(reversalJob, jobParameters);
                 } catch (Exception e) {
                     this.memcachedRepository.flush(5);
                     throw new RuntimeException(e);
@@ -126,5 +140,45 @@ public class TransactionActivityJobCompletionListener implements JobExecutionLis
         }
     }
 
+    private ExecutionState updateExecutionState(String tenantId) {
+        // Attempt to update the last accounting period of transaction activity upload
+        try {
+            // Retrieve the execution state directly (assuming it returns null if not found)
+            ExecutionState executionState = this.executionStateService.getExecutionState();
 
+            // Check if the execution state is not null
+            if (executionState != null) {
+                // Retrieve the latest activity posting date for the given tenant
+                int latestPostingDate = this.transactionActivityService.getMaxPostingDate();
+
+                // Update the activity posting date in the execution state
+                if (latestPostingDate > executionState.getExecutionDate()) {
+                    executionState.setLastExecutionDate(executionState.getExecutionDate());
+                    executionState.setExecutionDate(latestPostingDate);
+                    // Persist the updated execution state
+                    return this.executionStateService.update(executionState);
+                }
+            } else {
+                // Retrieve the latest activity posting date for the given tenant
+                int latestPostingDate = this.transactionActivityService.getMaxPostingDate();
+
+                // Create a new execution state since none was found
+                ExecutionState executionStateNew = ExecutionState.builder()
+                        .executionDate(latestPostingDate)
+                        .lastExecutionDate(0)
+                        .build();
+
+                // Persist the new execution state
+                log.warn("No execution state found for updating the last transaction activity posting date.");
+                return this.executionStateService.update(executionStateNew);
+            }
+            return executionState;
+        } catch (NoSuchElementException e) {
+            log.error("Execution state not found when trying to update the last transaction activity upload reporting period.", e);
+        } catch (Exception e) {
+            log.error("Failed to update settings with the last transaction activity upload reporting period for tenantId: {}", tenantId, e);
+        }
+
+        return null;
+    }
 }

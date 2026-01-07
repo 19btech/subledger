@@ -82,8 +82,6 @@ public class TransactionActivityDataLoadConfig {
     private  final InstrumentLevelAggregationService instrumentLevelAggregationService;
     private final MetricLevelAggregationService metricLevelAggregationService;
     private final TransactionService transactionService;
-    private final InstrumentReplaySet instrumentReplaySet;
-    private final InstrumentReplayQueue instrumentReplayQueue;
     private final TransactionActivityQueue transactionActivityQueue;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("M/d/yyyy");
     @Autowired
@@ -104,9 +102,8 @@ public class TransactionActivityDataLoadConfig {
     , InstrumentLevelAggregationService instrumentLevelAggregationService
     , MetricLevelAggregationService metricLevelAggregationService
     , TransactionService transactionService
-    , InstrumentReplaySet instrumentReplaySet
     , TransactionActivityQueue transactionActivityQueue
-    , InstrumentReplayQueue instrumentReplayQueue) {
+    ) {
         this.jobRepository = jobRepository;
         this.tenantContextHolder = tenantContextHolder;
         this.dataSourceProvider = dataSourceProvider;
@@ -124,9 +121,8 @@ public class TransactionActivityDataLoadConfig {
         this.instrumentLevelAggregationService = instrumentLevelAggregationService;
         this.metricLevelAggregationService = metricLevelAggregationService;
         this.transactionService = transactionService;
-        this.instrumentReplaySet = instrumentReplaySet;
         this.transactionActivityQueue = transactionActivityQueue;
-        this.instrumentReplayQueue = instrumentReplayQueue;
+
     }
 
     @Bean("transactionActivityUploadJob")
@@ -151,9 +147,8 @@ public class TransactionActivityDataLoadConfig {
                         , this.instrumentAttributeService
                         , this.attributeService
                         , this.accountingPeriodService
-                        , this.instrumentReplaySet
                 , this.transactionActivityQueue
-                , this.instrumentReplayQueue))
+                ))
                 .build();
     }
 
@@ -220,9 +215,8 @@ public class TransactionActivityDataLoadConfig {
             , InstrumentAttributeService instrumentAttributeService
             , AttributeService attributeService
             , AccountingPeriodService accountingPeriodService
-    , InstrumentReplaySet instrumentReplaySet
     , TransactionActivityQueue transactionActivityQueue
-    , InstrumentReplayQueue instrumentReplayQueue) {
+    ) {
         MongoItemWriter<TransactionActivity> delegate = new MongoItemWriterBuilder<TransactionActivity>()
                 .template(mongoTemplate)
                 .collection("TransactionActivity")
@@ -236,9 +230,8 @@ public class TransactionActivityDataLoadConfig {
                 , accountingPeriodService
         , transactionService
         , executionStateService
-        , instrumentReplaySet
         , transactionActivityQueue
-        , instrumentReplayQueue);
+        );
     }
 
     @Bean

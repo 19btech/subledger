@@ -8,7 +8,6 @@ import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.InstrumentAttributeService;
-import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
 import com.reserv.dataloader.batch.listener.InstrumentAttributeJobCompletionListener;
 import com.reserv.dataloader.batch.processor.InstrumentAttributeItemProcessor;
 import com.reserv.dataloader.batch.writer.InstrumentAttributeWriter;
@@ -44,8 +43,6 @@ public class InstrumentAttributeDataLoadConfig {
     private InstrumentAttributeService instrumentAttributeService;
     private AccountingPeriodService accountingPeriodService;
     private ExecutionStateService executionStateService;
-    private final InstrumentReplaySet instrumentReplaySet;
-    private final InstrumentReplayQueue instrumentReplayQueue;
     private final BatchCommonConfig batchCommonConfig;
 
 
@@ -55,8 +52,6 @@ public class InstrumentAttributeDataLoadConfig {
                                              InstrumentAttributeService instrumentAttributeService,
                                              AccountingPeriodService accountingPeriodService,
                                              ExecutionStateService executionStateService,
-                                             InstrumentReplaySet instrumentReplaySet,
-                                             InstrumentReplayQueue instrumentReplayQueue,
                                              BatchCommonConfig batchCommonConfig) {
         this.jobRepository = jobRepository;
         this.dataSourceProvider = dataSourceProvider;
@@ -65,8 +60,6 @@ public class InstrumentAttributeDataLoadConfig {
         this.instrumentAttributeService = instrumentAttributeService;
         this.accountingPeriodService = accountingPeriodService;
         this.executionStateService = executionStateService;
-        this.instrumentReplaySet = instrumentReplaySet;
-        this.instrumentReplayQueue = instrumentReplayQueue;
         this.batchCommonConfig = batchCommonConfig;
     }
 
@@ -91,9 +84,7 @@ public class InstrumentAttributeDataLoadConfig {
                         , this.memcachedRepository
                         , this.instrumentAttributeService
                         , this.accountingPeriodService
-                        , this.executionStateService
-                        , this.instrumentReplaySet
-                , this.instrumentReplayQueue))
+                        , this.executionStateService))
                 .build();
     }
 
@@ -105,19 +96,16 @@ public class InstrumentAttributeDataLoadConfig {
     @Bean
     public ItemWriter<InstrumentAttribute> instrumentAttributeWriter(TenantDataSourceProvider dataSourceProvider,
                                                                      MemcachedRepository memcachedRepository,
-                                                            InstrumentAttributeService instrumentAttributeService,
-                                                            AccountingPeriodService accountingPeriodService,
-    ExecutionStateService executionStateService,
-    InstrumentReplaySet instrumentReplaySet,
-                                                                     InstrumentReplayQueue instrumentReplayQueue
-                                                                     ) {
+                                                                     InstrumentAttributeService instrumentAttributeService,
+                                                                     AccountingPeriodService accountingPeriodService,
+                                                                     ExecutionStateService executionStateService
+    ) {
         MongoItemWriter<InstrumentAttribute> delegate = new MongoItemWriterBuilder<InstrumentAttribute>()
                 .template(mongoTemplate)
                 .collection("InstrumentAttribute")
                 .build();
 
         return new InstrumentAttributeWriter(delegate, dataSourceProvider,  memcachedRepository,
-                instrumentAttributeService, accountingPeriodService, executionStateService, instrumentReplaySet,
-                instrumentReplayQueue);
+                instrumentAttributeService, accountingPeriodService, executionStateService);
     }
 }

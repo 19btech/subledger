@@ -5,6 +5,7 @@ import com.fyntrac.common.enums.SequenceNames;
 import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.service.SequenceGeneratorService;
+import com.fyntrac.common.utils.DateUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -42,6 +43,7 @@ public class InstrumentAttributeFactory {
                 .source(source)
                 .endDate(null) // Assuming endDate is initialized to null
                 .postingDate(postingDate)
+                .intEffectiveDate(DateUtil.dateInNumber(effectiveDate))
                 .build();
     }
 
@@ -67,6 +69,7 @@ public class InstrumentAttributeFactory {
                 .source(source)
                 .endDate(null) // Assuming endDate is initialized to null
                 .postingDate(postingDate)
+                .intEffectiveDate(DateUtil.dateInNumber(effectiveDate))
                 .build();
     }
 }

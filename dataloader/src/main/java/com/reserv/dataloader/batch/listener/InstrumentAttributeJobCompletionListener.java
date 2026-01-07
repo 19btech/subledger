@@ -83,7 +83,7 @@ public class InstrumentAttributeJobCompletionListener implements JobExecutionLis
                                 .addLong("jobId", jobId)
                                 .addLong("key", runId)
                                 .toJobParameters();
-
+                        updateExecutionState(tenantId);
                         jobLauncher.run(reversalJob, jobParameters);
                         jobLauncher.run(instrumentReplayStateJob, jobParameters);
                     }
@@ -94,13 +94,6 @@ public class InstrumentAttributeJobCompletionListener implements JobExecutionLis
                     String dataKey= Key.reclassMessageList(tenantId, runId);
                     Records.ReclassMessageRecord reclassMessageRecord = RecordFactory.createReclassMessageRecord(tenantId, dataKey);
                     reclassMessagProducer.sendReclassMessage(reclassMessageRecord);}
-                ExecutionState executionState = updateExecutionState(tenantId);
-
-                JobParameters jobParameters = new JobParametersBuilder()
-                        .addLong("execution-date", (long) executionState.getExecutionDate())
-                        .addString("activity-type", ActivityType.INSTRUMENT_ATTRIBUTE.toString())
-                        .toJobParameters();
-
             }
 
         }else if(jobExecution.getStatus() == BatchStatus.FAILED) {
