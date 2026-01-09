@@ -1,7 +1,8 @@
 package com.reserv.dataloader.controller;
 
+import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.AccountTypes;
-import com.fyntrac.common.entity.ActivityLog;
+import com.reserv.dataloader.entity.ActivityLog;
 import com.reserv.dataloader.service.ActivityLogService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,9 +23,9 @@ public class ActivityLogController {
     ActivityLogService activityLogService;
 
     @GetMapping("/get/recent/loads")
-    public ResponseEntity<Collection<ActivityLog>> getAllAggregates() {
+    public ResponseEntity<Collection<Records.ActivityLogRecord>> getAllAggregates() {
         try {
-            Collection<ActivityLog> logs = activityLogService.getRecentLoad();
+            Collection<Records.ActivityLogRecord> logs = activityLogService.getRecentActivityLog();
             return new ResponseEntity<>(logs, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes

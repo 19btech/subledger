@@ -3,6 +3,7 @@ package com.fyntrac.common.dto.record;
 import com.fyntrac.common.entity.*;
 import com.fyntrac.common.enums.*;
 import com.fyntrac.common.model.ModelWorkflowContext;
+import jakarta.persistence.Column;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.format.annotation.NumberFormat;
@@ -37,6 +38,7 @@ public class Records {
             );
         }
     }
+
     public record TransactionActivityRecord(
             String tenantId,
             String id,
@@ -52,17 +54,17 @@ public class Records {
     }
 
     public record InstrumentAttributeRecord(Date effectiveDate,
-            String instrumentId,
-            String attributeId,
-            Date endDate,
-            int periodId,
-            long versionId,
-            Map<String,Object> attributes
-) implements Serializable {
+                                            String instrumentId,
+                                            String attributeId,
+                                            Date endDate,
+                                            int periodId,
+                                            long versionId,
+                                            Map<String, Object> attributes
+    ) implements Serializable {
         private static final long serialVersionUID = 3287905346762365888L; // Optional, but good practice
     }
 
-    public record ReclassMessageRecord(String tenantId, String dataKey)implements Serializable {
+    public record ReclassMessageRecord(String tenantId, String dataKey) implements Serializable {
         private static final long serialVersionUID = -8149874708782902606L; // Optional, but good practice
     }
 
@@ -73,23 +75,25 @@ public class Records {
         private static final long serialVersionUID = -8473589388962080923L; // Optional, but good practice
     }
 
-    public record AccountingPeriodCloseMessageRecord(String tenantId, Collection<Batch> batches)implements Serializable {
+    public record AccountingPeriodCloseMessageRecord(String tenantId,
+                                                     Collection<Batch> batches) implements Serializable {
         private static final long serialVersionUID = 322984303560312158L;
     }
 
-    public record MetricNameRecord(String metricName)implements Serializable {
+    public record MetricNameRecord(String metricName) implements Serializable {
         private static final long serialVersionUID = -4338320429519961695L;
     }
 
-    public record TransactionNameRecord(String transactionName)implements Serializable {
+    public record TransactionNameRecord(String transactionName) implements Serializable {
         private static final long serialVersionUID = -4338320429519961695L;
     }
 
-    public record ModelExecutionMessageRecord(String tenantId, Integer executionDate, String key, boolean isLast)implements Serializable {
+    public record ModelExecutionMessageRecord(String tenantId, Integer executionDate, String key,
+                                              boolean isLast) implements Serializable {
         private static final long serialVersionUID = -1788629874681694218L;
     }
 
-    public record ModelRecord(Model model, ModelFile modelFile)implements Serializable {
+    public record ModelRecord(Model model, ModelFile modelFile) implements Serializable {
         private static final long serialVersionUID = -8716704041115418296L;
     }
 
@@ -97,7 +101,9 @@ public class Records {
         private static final long serialVersionUID = 58415234907355427L;
     }
 
-    public record MetricRecord(String MetricName, String Instrumentid, String attributeId, int AccountingPeriod, Date postingDate, BigDecimal BeginningBalance, BigDecimal Activity, BigDecimal EndingBalance) implements Serializable {
+    public record MetricRecord(String MetricName, String Instrumentid, String attributeId, int AccountingPeriod,
+                               Date postingDate, BigDecimal BeginningBalance, BigDecimal Activity,
+                               BigDecimal EndingBalance) implements Serializable {
         private static final long serialVersionUID = -1801701397561747928L;
     }
 
@@ -105,31 +111,42 @@ public class Records {
         private static final long serialVersionUID = 3196156514121109291L;
     }
 
-    public record ModelOutputData(List<Map<String, Object>> transactionActivityList, List<Map<String, Object>> instrumentAttributeList)  implements  Serializable{
+    public record ModelOutputData(List<Map<String, Object>> transactionActivityList,
+                                  List<Map<String, Object>> instrumentAttributeList) implements Serializable {
         private static final long serialVersionUID = 721671730137381082L;
     }
 
-    public record DocumentAttribute(String attributeName, String attributeAlias, String dataType) implements Serializable{
+    public record DocumentAttribute(String attributeName, String attributeAlias,
+                                    String dataType) implements Serializable {
         private static final long serialVersionUID = 8318251040744803358L;
     }
 
-    public record QueryCriteriaItem(String attributeName, String operator,String values, List<String> filters, String logicalOperator) implements Serializable{
+    public record QueryCriteriaItem(String attributeName, String operator, String values, List<String> filters,
+                                    String logicalOperator) implements Serializable {
         private static final long serialVersionUID = -6100862855198499095L;
     }
 
-    public record TransactionActivityReplayRecord(String instrumentId, String attributeId, Integer replayDate) implements Serializable{
+    public record TransactionActivityReplayRecord(String instrumentId, String attributeId,
+                                                  Integer replayDate) implements Serializable {
         private static final long serialVersionUID = 3735691512748555397L;
     }
 
-    public record TransactionActivityReversalRecord(String instrumentId, String attributeId, String transactionType, int effectiveDate, BigDecimal totalAmount, Map<String, Object> attributes, long instrumentAttributeVersionId, int originalPeriodId, Date transactionDate, AccountingPeriod accountingPeriod, long batchId) implements Serializable{
+    public record TransactionActivityReversalRecord(String instrumentId, String attributeId, String transactionType,
+                                                    int effectiveDate, BigDecimal totalAmount,
+                                                    Map<String, Object> attributes, long instrumentAttributeVersionId,
+                                                    int originalPeriodId, Date transactionDate,
+                                                    AccountingPeriod accountingPeriod,
+                                                    long batchId) implements Serializable {
         private static final long serialVersionUID = -8661375155752282087L;
     }
 
-    public record ExecutionDateRecord(Date executionDate, Date	lastExecutionDate, Date	replayDate) implements Serializable{
+    public record ExecutionDateRecord(Date executionDate, Date lastExecutionDate,
+                                      Date replayDate) implements Serializable {
         private static final long serialVersionUID = -8940702485412412978L;
     }
 
-    public record ExecuteAggregationMessageRecord(String tenantId, Long jobId, Long aggregationDate) implements Serializable {
+    public record ExecuteAggregationMessageRecord(String tenantId, Long jobId,
+                                                  Long aggregationDate) implements Serializable {
         private static final long serialVersionUID = -588100000724731968L;
 
         public static ExecuteAggregationMessageRecord withDefaults(String tenantId, Long jobId, Long aggregationDate) {
@@ -140,18 +157,20 @@ public class Records {
             );
         }
     }
+
     public record GroupedMetricsByInstrumentAttribute(String instrumentId,
-            String attributeId, // Assuming attributeId is String - adjust if needed
-            String metricName) {
+                                                      String attributeId,
+                                                      // Assuming attributeId is String - adjust if needed
+                                                      String metricName) {
         private static final long serialVersionUID = 8087138613941001670L;
     }
 
     public record GroupedMetricsByInstrument(String instrumentId,
-                                                      String metricName) {
+                                             String metricName) {
         private static final long serialVersionUID = -7455631766826985863L;
     }
 
-    public record ExcelTestStepRecord(TestStep step, String typ, String input){
+    public record ExcelTestStepRecord(TestStep step, String typ, String input) {
         private static final long serialVersionUID = -4174200146849813549L;
     }
 
@@ -171,7 +190,7 @@ public class Records {
 
     public record TransactionActivityModelRecord(
             String id,
-             Date transactionDate,
+            Date transactionDate,
             String instrumentId,
             String transactionName,
             @NumberFormat(pattern = "#.####")
@@ -190,7 +209,7 @@ public class Records {
         private static final long serialVersionUID = 8444760102552307163L;
     }
 
-    public record InstrumentAttributeModelRecord (
+    public record InstrumentAttributeModelRecord(
             InstrumentAttributeVersionType type,
             String id,
             Date effectiveDate,
@@ -208,27 +227,32 @@ public class Records {
         private static final long serialVersionUID = 666959603291768207L;
     }
 
-    public record InstrumentReplayRecord(String instrumentId,String attributeId, int postingDate, int effectiveDate) implements Serializable {
+    public record InstrumentReplayRecord(String instrumentId, String attributeId, int postingDate,
+                                         int effectiveDate) implements Serializable {
         private static final long serialVersionUID = 1132335290303185578L;
 
     }
 
-    public record AttributeLevelLtdRecord(String metricName, String instrumentId, String attributeId, int postingDate, int accountingPeriod, BigDecimal amount) implements Serializable {
+    public record AttributeLevelLtdRecord(String metricName, String instrumentId, String attributeId, int postingDate,
+                                          int accountingPeriod, BigDecimal amount) implements Serializable {
         private static final long serialVersionUID = 8657459429669577477L;
 
     }
 
-    public record InstrumentLevelLtdRecord(String metricName, String instrumentId, int postingDate, int accountingPeriod, BigDecimal amount) implements Serializable {
+    public record InstrumentLevelLtdRecord(String metricName, String instrumentId, int postingDate,
+                                           int accountingPeriod, BigDecimal amount) implements Serializable {
         private static final long serialVersionUID = -1870745717812788971L;
 
     }
 
-    public record MetricLevelLtdRecord(String metricName, int postingDate, int accountingPeriod, BigDecimal amount) implements Serializable {
+    public record MetricLevelLtdRecord(String metricName, int postingDate, int accountingPeriod,
+                                       BigDecimal amount) implements Serializable {
         private static final long serialVersionUID = -8848774298173647510L;
 
     }
 
-    public record TrendAnalysisRecord(String metricName, String[] accountingPeriods, BigDecimal[] endingBalances) implements Serializable {
+    public record TrendAnalysisRecord(String metricName, String[] accountingPeriods,
+                                      BigDecimal[] endingBalances) implements Serializable {
         private static final long serialVersionUID = 9154995883257602702L;
     }
 
@@ -236,11 +260,13 @@ public class Records {
         private static final long serialVersionUID = 605044639104245053L;
     }
 
-    public record MonthOverMonthActivityRecord(Integer accountingPeriodId, String metricName, BigDecimal activityAmount) implements Serializable {
+    public record MonthOverMonthActivityRecord(Integer accountingPeriodId, String metricName,
+                                               BigDecimal activityAmount) implements Serializable {
         private static final long serialVersionUID = -5096405985388460563L;
     }
 
-    public record MonthOverMonthMetricActivityRecord(List<Map<String, String>> monthOverMonthSeries, List<Map<String, Object>> momData) implements Serializable {
+    public record MonthOverMonthMetricActivityRecord(List<Map<String, String>> monthOverMonthSeries,
+                                                     List<Map<String, Object>> momData) implements Serializable {
         private static final long serialVersionUID = -4585296236786537726L;
     }
 
@@ -255,7 +281,7 @@ public class Records {
             @Field("balance.activity") BigDecimal activity,
             @Field("balance.beginningBalance") BigDecimal beginningBalance,
             @Field("balance.endingBalance") BigDecimal endingBalance
-    )  implements Serializable {
+    ) implements Serializable {
         private static final long serialVersionUID = -7010894295118952584L;
     }
 
@@ -269,7 +295,7 @@ public class Records {
             @Field("balance.activity") BigDecimal activity,
             @Field("balance.beginningBalance") BigDecimal beginningBalance,
             @Field("balance.endingBalance") BigDecimal endingBalance
-    )  implements Serializable {
+    ) implements Serializable {
         private static final long serialVersionUID = -7010894295118952584L;
     }
 
@@ -282,7 +308,7 @@ public class Records {
             @Field("balance.activity") BigDecimal activity,
             @Field("balance.beginningBalance") BigDecimal beginningBalance,
             @Field("balance.endingBalance") BigDecimal endingBalance
-    )  implements Serializable {
+    ) implements Serializable {
         private static final long serialVersionUID = -2108325930955107947L;
     }
 
@@ -291,7 +317,8 @@ public class Records {
         private static final long serialVersionUID = 4708400430638644109L;
     }
 
-    public record DiagnosticReportModelDataRecord(ModelWorkflowContext excelData, File excelMode) implements Serializable {
+    public record DiagnosticReportModelDataRecord(ModelWorkflowContext excelData,
+                                                  File excelMode) implements Serializable {
         private static final long serialVersionUID = 8522699881876081280L;
     }
 
@@ -304,7 +331,8 @@ public class Records {
         private static final long serialVersionUID = 2455439474427522772L;
     }
 
-    public record InstrumentMessageRecord(String tenantId, String[] instrumentIds, String[] models) implements Serializable {
+    public record InstrumentMessageRecord(String tenantId, String[] instrumentIds,
+                                          String[] models) implements Serializable {
         private static final long serialVersionUID = 4754051711821283813L;
     }
 
@@ -322,7 +350,9 @@ public class Records {
 
             @NotBlank(message = "Value is required")
             String value
-    ) implements Serializable {private static final long serialVersionUID = 3111803440852648881L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = 3111803440852648881L;
+    }
 
     public record SourceMappingRequest(
             @NotNull(message = "Source table is required")
@@ -336,7 +366,9 @@ public class Records {
             List<OptionRequest> dataMapping,
             @NotNull(message = "Source columns are required")
             String fieldType
-    ) implements Serializable {private static final long serialVersionUID = -6688173484561516379L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = -6688173484561516379L;
+    }
 
     public record TriggerSetupRequest(
             @NotNull(message = "Trigger type is required")
@@ -345,7 +377,9 @@ public class Records {
             String triggerCondition,
 
             List<OptionRequest> triggerSource
-    ) implements Serializable {private static final long serialVersionUID = 5176050122493280517L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = 5176050122493280517L;
+    }
 
     public record EventConfigurationRequest(
             @NotBlank(message = "Event ID is required")
@@ -365,12 +399,16 @@ public class Records {
 
             @NotNull(message = "Source mappings are required")
             List<SourceMappingRequest> sourceMappings
-    ) implements Serializable {private static final long serialVersionUID = 3791186632733494104L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = 3791186632733494104L;
+    }
 
     public record OptionResponse(
             String label,
             String value
-    ) implements Serializable {private static final long serialVersionUID = 1180567008956378960L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = 1180567008956378960L;
+    }
 
     public record SourceMappingResponse(
             String sourceTable,
@@ -378,13 +416,17 @@ public class Records {
             List<OptionResponse> versionType,
             List<OptionResponse> dataMapping,
             String fieldType
-    ) implements Serializable {private static final long serialVersionUID = 6415178979282662812L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = 6415178979282662812L;
+    }
 
     public record TriggerSetupResponse(
             String triggerType,
             String triggerCondition,
             List<OptionResponse> triggerSource
-    ) implements Serializable {private static final long serialVersionUID = -298061981443835860L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = -298061981443835860L;
+    }
 
     public record EventConfigurationResponse(
             String id,
@@ -400,7 +442,9 @@ public class Records {
             String updatedBy,
             Boolean isActive,
             Boolean isDeleted
-    ) implements Serializable {private static final long serialVersionUID = 9082175583455561988L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = 9082175583455561988L;
+    }
 
     public record EventConfigurationBasicResponse(
             String id,
@@ -409,23 +453,31 @@ public class Records {
             Integer priority,
             String description,
             LocalDateTime createdAt
-    ) implements Serializable {private static final long serialVersionUID = 7199490834201351323L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = 7199490834201351323L;
+    }
 
     public record TransactionActivityAmountRecord(
             String transactionName,
             Integer effectiveDate,
             BigDecimal totalAmount,
             Map<String, Object> attributes
-    ) implements Serializable {private static final long serialVersionUID = -7045460909449564112L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = -7045460909449564112L;
+    }
 
     public record ExcelModelEventKey(
             Integer postingDate,
             Integer effectiveDate,
             String instrumentId,
             String attributeId
-    ) implements Serializable {private static final long serialVersionUID = 4292426438651236257L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = 4292426438651236257L;
+    }
 
-    public record TransactionKeyRecord(String transactionName, Integer effectiveDate) implements Serializable {private static final long serialVersionUID = 3338343449065429379L;}
+    public record TransactionKeyRecord(String transactionName, Integer effectiveDate) implements Serializable {
+        private static final long serialVersionUID = 3338343449065429379L;
+    }
 
     public record CustomTableRequestRecord(
             @NotBlank(message = "Table name is required")
@@ -448,7 +500,9 @@ public class Records {
             String referenceColumn,
 
             String referenceTable
-    ) implements Serializable {private static final long serialVersionUID = -2354948109672778094L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = -2354948109672778094L;
+    }
 
     public record CustromTableResponseRecord(
             String id,
@@ -457,7 +511,9 @@ public class Records {
             CustomTableType tableType,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
-    ) implements Serializable {private static final long serialVersionUID = 6620969286174533592L;}
+    ) implements Serializable {
+        private static final long serialVersionUID = 6620969286174533592L;
+    }
 
     public record ApiResponseRecord<T>(
             boolean success,
@@ -482,5 +538,25 @@ public class Records {
         }
     }
 
-    public record CustomTableColumnsRecord(String tableName, List<String> columns) {private static final long serialVersionUID = -7350503432076490961L;}
+    public record CustomTableColumnsRecord(String tableName, List<String> columns) implements Serializable {
+        private static final long serialVersionUID = -7350503432076490961L;
+    }
+
+    public record ActivityLogDetailRecord(String tableName, Long recordsRead,
+                                          Long recordsWritten,
+                                          Long recordsSkipped,
+                                          LocalDateTime starting,
+                                          LocalDateTime endTime,
+                                          String errorMessage) implements Serializable {
+        private static final long serialVersionUID = 5078375840736574228L;
+    }
+
+    public record ActivityLogRecord(long uploadId, String jobName,
+                                    LocalDateTime starting,
+                                    LocalDateTime endTime,
+                                    String activityStatus,
+                                    List<ActivityLogDetailRecord> details) implements Serializable {
+        private static final long serialVersionUID = -4291181294245150358L;
+    }
+
 }

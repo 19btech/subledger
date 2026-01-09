@@ -26,7 +26,7 @@ public class AttributeBalanceUploadService extends UploadService {
     @Autowired
     protected JobLauncher jobLauncher;
 
-    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException {
+    public void uploadData(long uploadId,String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException {
         LocalDateTime startingTime = DateUtil.getDateTime();
         long runid = System.currentTimeMillis();
         StringBuilder columnNames = new StringBuilder();
@@ -47,7 +47,7 @@ public class AttributeBalanceUploadService extends UploadService {
                 .addString("columnName", columnNames.toString())
                 .addLong("run.id", runid)
                 .toJobParameters();
-        super.uploadData(jobLauncher
+        super.uploadData(uploadId,jobLauncher
                 ,attributeBalanceUploadJob
                 ,jobParameters
                 ,runid

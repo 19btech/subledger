@@ -1,6 +1,6 @@
 package com.reserv.dataloader.batch.listener;
 
-import com.fyntrac.common.repository.ActivityLogRepo;
+import com.reserv.dataloader.repository.ActivityLogRepo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.BatchStatus;

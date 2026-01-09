@@ -45,12 +45,14 @@ public class TransactionActivityUploadService extends UploadService {
         this.transactionActivityService = transactionActivityService;
         this.cacheService = cacheService;
     }
-    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
-        this.uploadData(jobLauncher, transactionActivityUploadJob, filePath, FileUploadActivityType.TRANSACTION_ACTIVITY);
+    public void uploadData(long uploadId,String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+        this.uploadData(uploadId,jobLauncher, transactionActivityUploadJob, filePath,
+                FileUploadActivityType.TRANSACTION_ACTIVITY);
     }
 
     @Override
-    public void uploadData(JobLauncher jobLauncher, Job job, String filePath, FileUploadActivityType activityType) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+    public void uploadData(long uploadId,JobLauncher jobLauncher, Job job, String filePath,
+                           FileUploadActivityType activityType) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
         this.accountingPeriodService.loadIntoCache();
         this.aggregationService.loadIntoCache();
         this.cacheService.loadIntoCache();
@@ -80,7 +82,7 @@ public class TransactionActivityUploadService extends UploadService {
                 .addString("aggregation-key", key)
                 .addString("tenantId", this.dataService.getTenantId())
                 .toJobParameters();
-        this.uploadData(jobLauncher
+        this.uploadData(uploadId,jobLauncher
                 ,job
                 ,jobParameters
                 ,runId

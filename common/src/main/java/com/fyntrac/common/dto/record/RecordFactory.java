@@ -572,5 +572,24 @@ public class RecordFactory {
                                                                                  List<String> columns) {
         return createRecord(() -> new Records.CustomTableColumnsRecord(tableName, columns));
     }
+
+    public static Records.ActivityLogDetailRecord createActivityLogDetailRecord(String tableName, Long recordsRead,
+                                          Long recordsWritten,
+                                          Long recordsSkipped,
+                                          LocalDateTime startTime,
+                                          LocalDateTime endTime,
+                                          String errorMessage) {
+        return createRecord(() -> new Records.ActivityLogDetailRecord(tableName, recordsRead, recordsWritten,
+                recordsSkipped, startTime, endTime, errorMessage));
+    }
+
+    public static Records.ActivityLogRecord createActivityLogRecord(long uploadId, String jobName,
+                                    LocalDateTime starting,
+                                    LocalDateTime endTime,
+                                    String activityStatus,
+                                    List<Records.ActivityLogDetailRecord> details) {
+        return createRecord(() -> new Records.ActivityLogRecord(uploadId, jobName, starting, endTime, activityStatus,
+                details));
+    }
 }
 

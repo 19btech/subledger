@@ -22,8 +22,8 @@ public class SubledgerMappingUploadService extends UploadService {
     @Autowired
     protected JobLauncher jobLauncher;
 
-    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
-        super.uploadData(jobLauncher, subledgerMappingUploadJob, filePath, FileUploadActivityType.SUBLEDGER_MAPPING);
+    public void uploadData(long uploadId,String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+        super.uploadData(uploadId,jobLauncher, subledgerMappingUploadJob, filePath, FileUploadActivityType.SUBLEDGER_MAPPING);
     }
 }
 

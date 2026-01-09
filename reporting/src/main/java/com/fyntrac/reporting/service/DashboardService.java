@@ -201,7 +201,7 @@ public class DashboardService {
                 matchStage,
 
                 // Step 2: Sort by accountingPeriodId and postingDate in descending order
-                Aggregation.sort(Sort.Direction.DESC, "accountingPeriodId"),
+                Aggregation.sort(Sort.Direction.ASC, "postingDate"),
 
                 // Step 3: Group by accountingPeriodId and take first (i.e., max postingDate)
                 Aggregation.group("accountingPeriodId")
@@ -211,7 +211,7 @@ public class DashboardService {
                         .first("balance").as("balance"),
 
                 // Step 4: Sort grouped results by accountingPeriodId descending
-                Aggregation.sort(Sort.Direction.DESC, "accountingPeriodId"),
+                Aggregation.sort(Sort.Direction.ASC, "postingDate"),
 
                 // Step 5: Limit to last 12
                 Aggregation.limit(numberOfPeriods)

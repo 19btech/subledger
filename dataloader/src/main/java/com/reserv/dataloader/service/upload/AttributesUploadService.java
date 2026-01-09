@@ -21,8 +21,8 @@ public class AttributesUploadService extends UploadService {
     @Autowired
     protected JobLauncher jobLauncher;
 
-    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
-        super.uploadData(jobLauncher, attributeUploadJob, filePath, FileUploadActivityType.ATTRIBUTE);
+    public void uploadData(long uploadId,String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+        super.uploadData(uploadId,jobLauncher, attributeUploadJob, filePath, FileUploadActivityType.ATTRIBUTE);
     }
 }
 

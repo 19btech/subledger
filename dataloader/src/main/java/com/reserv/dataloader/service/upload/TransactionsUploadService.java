@@ -22,8 +22,9 @@ public class TransactionsUploadService  extends UploadService {
     protected JobLauncher jobLauncher;
 
 
-    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
-        super.uploadData(jobLauncher, transactionsUploadJob, filePath, FileUploadActivityType.TRANSACTION);
+    public void uploadData(long uploadId,String filePath) throws JobInstanceAlreadyCompleteException,
+            JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+        super.uploadData(uploadId,jobLauncher, transactionsUploadJob, filePath, FileUploadActivityType.TRANSACTION);
     }
 
 

@@ -20,7 +20,7 @@ public class AggregateUploadService extends UploadService {
     @Autowired
     protected JobLauncher jobLauncher;
 
-    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
-        super.uploadData(jobLauncher, aggregationUploadJob, filePath, FileUploadActivityType.AGGREGATION);
+    public void uploadData(long uploadId,String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+        super.uploadData(uploadId,jobLauncher, aggregationUploadJob, filePath, FileUploadActivityType.AGGREGATION);
     }
 }

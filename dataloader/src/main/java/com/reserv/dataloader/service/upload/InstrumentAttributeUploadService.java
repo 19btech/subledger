@@ -37,7 +37,7 @@ public class InstrumentAttributeUploadService extends UploadService {
         this.accountingPeriodService = accountingPeriodService;
     }
 
-    public void uploadData(String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+    public void uploadData(long uploadId,String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
         LocalDateTime startingTime = DateUtil.getDateTime();
         long runid = System.currentTimeMillis();
         StringBuilder columnNames = new StringBuilder();
@@ -60,7 +60,7 @@ public class InstrumentAttributeUploadService extends UploadService {
                 .addLong("run.id", runid)
                 .addString("tenantId", this.dataService.getTenantId())
                 .toJobParameters();
-        super.uploadData(jobLauncher
+        super.uploadData(uploadId,jobLauncher
                 ,instrumentAttributeUploadJob
                 ,jobParameters
                 ,runid

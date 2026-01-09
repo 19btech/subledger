@@ -43,6 +43,7 @@ public class FileUploadService {
 
         String FOLDER_PATH = System.getProperty("user.home") + File.separator + "tenants" + File.separator + tenantContextHolder.getTenant() + File.separator;
         String OUTPUT_FOLDER_PATH = System.getProperty("user.home") + File.separator + "output" + File.separator + "tenants" + File.separator + tenantContextHolder.getTenant() + File.separator;
+        long uploadId = System.currentTimeMillis();
 
         Set<String> validFileSet = new HashSet<>(0);
         Set<String> inValidFileSet = new HashSet<>(0);
@@ -93,12 +94,12 @@ public class FileUploadService {
                 activityMap.put(rule, file);
             }else{
                 UploadService uploadService = UploadServiceFactory.getFileUploader(rule);
-                uploadService.uploadData(file);
+                uploadService.uploadData(uploadId, file);
             }
         }
 
         if(activityMap != null && !activityMap.isEmpty()) {
-            this.activityUploadService.uploadActivity(activityMap);
+            this.activityUploadService.uploadActivity(uploadId, activityMap);
         }
 
 

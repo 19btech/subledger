@@ -6,6 +6,7 @@ import com.fyntrac.common.enums.AccountingRules;
 import com.fyntrac.common.enums.AggregationRequestType;
 import com.fyntrac.common.enums.BatchType;
 import com.fyntrac.common.enums.FileUploadActivityType;
+import com.reserv.dataloader.entity.ActivityLog;
 import com.reserv.dataloader.service.CacheService;
 import com.fyntrac.common.service.TransactionActivityService;
 import com.fyntrac.common.service.aggregation.AggregationService;
@@ -23,9 +24,7 @@ import com.fyntrac.common.entity.Attributes;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.service.AccountingPeriodDataUploadService;
 import java.time.LocalDateTime;
-import java.util.Collection;
-import java.util.Date;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ExecutionException;
 import com.fyntrac.common.entity.Batch;
 
@@ -73,35 +72,46 @@ public class ActivityUploadService {
         for(Map.Entry<CustomTableDefinition, String> entry :  dataMap.entrySet()) {
             CustomTableDefinition customTableDefinition = entry.getKey();
             String fileName = entry.getValue();
-
+            long uploadId = System.currentTimeMillis();
             JobParameters params = new JobParametersBuilder()
                     .addString("tableDefId", customTableDefinition.getId()) // ID from Mongo
                     .addString("filePath", fileName)
                     .addLong("time", System.currentTimeMillis())
+                    .addLong("run.id", uploadId)
                     .toJobParameters();
+            JobExecution jobExecution = null;
 
-            jobLauncher.run(dynamicLoadJob, params);
+            try {
+                jobExecution = jobLauncher.run(dynamicLoadJob, params);
+            }catch (Exception exp){
+                throw exp;
+            }finally {
+                if(jobExecution != null && jobExecution.getStatus() == BatchStatus.COMPLETED) {
+                    this.logActivity(uploadId, customTableDefinition.getTableName(),jobExecution,
+                            FileUploadActivityType.CUSTOM_TABLE);
+                }
+            }
         }
 
     }
 
-    public void uploadActivity(Map<AccountingRules, String> activityMap) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, ExecutionException, InterruptedException, JobRestartException {
+    public void uploadActivity(long uploadId, Map<AccountingRules, String> activityMap) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, ExecutionException, InterruptedException, JobRestartException {
         FileUploadActivityType activityType = FileUploadActivityType.INSTRUMENT_ATTRIBUTE;
         String instrumentAttributeFilePath = activityMap.get(AccountingRules.INSTRUMENTATTRIBUTE);
         String transactionActivityFilePath = activityMap.get(AccountingRules.TRANSACTIONACTIVITY);
         int instrumentAttributeActivity = (instrumentAttributeFilePath!= null && !instrumentAttributeFilePath.isEmpty()) ? 1 : 0;
         int transactionActivity =  (transactionActivityFilePath!= null && !transactionActivityFilePath.isEmpty()) ? 1 : 0;
 
-
         Long runid = System.currentTimeMillis();
-        Long jobId = runid;
+        long jobId = runid;
         try {
             Batch activityBatch = this.createBatch();
             if(instrumentAttributeFilePath !=null) {
                 JobParameters instrumentAttributeJobParameter = createInstrumentAttributeJob(instrumentAttributeFilePath, activityBatch, (instrumentAttributeActivity + transactionActivity), jobId);
                 JobExecution instrumentAttributeExecution = jobLauncher.run(instrumentAttributeUploadJob, instrumentAttributeJobParameter);
                 runid = instrumentAttributeJobParameter.getLong("run.id");
-                this.logActivity(instrumentAttributeExecution, FileUploadActivityType.INSTRUMENT_ATTRIBUTE);
+                this.logActivity(uploadId, "InstrumentAttributeHistory", instrumentAttributeExecution,
+                        FileUploadActivityType.INSTRUMENT_ATTRIBUTE);
                 if (instrumentAttributeExecution.getStatus() == BatchStatus.COMPLETED) {
                     // Job A was successful, now launch Job B
                     log.info("Job instrumentAttributeUploadJob completed successfully. Starting Job transactionActivityUploadJob.");
@@ -111,7 +121,8 @@ public class ActivityUploadService {
 
                         runid = transactionActivityJobParameter.getLong("run.id");
                         JobExecution transactionActivityExecution = jobLauncher.run(transactionActivityUploadJob, transactionActivityJobParameter);
-                        this.logActivity(transactionActivityExecution, FileUploadActivityType.TRANSACTION_ACTIVITY);
+                        this.logActivity(uploadId, "TransactionActivity", transactionActivityExecution,
+                                FileUploadActivityType.TRANSACTION_ACTIVITY);
                     }
                 } else {
                     // If Job instrumentAttributeUploadJob fails, handle failure and don't run Job transactionActivityExecution
@@ -121,7 +132,8 @@ public class ActivityUploadService {
                 JobParameters transactionActivityJobParameter = createTransactionActivityJob(transactionActivityFilePath, activityBatch, (instrumentAttributeActivity + transactionActivity), jobId);
                 runid = transactionActivityJobParameter.getLong("run.id");
                 JobExecution transactionActivityExecution = jobLauncher.run(transactionActivityUploadJob, transactionActivityJobParameter);
-                this.logActivity(transactionActivityExecution, FileUploadActivityType.TRANSACTION_ACTIVITY);
+                this.logActivity(uploadId, "TransactionActivity", transactionActivityExecution,
+                        FileUploadActivityType.TRANSACTION_ACTIVITY);
             }
         }catch (Exception e ){
             String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
@@ -198,23 +210,52 @@ public class ActivityUploadService {
                 .toJobParameters();
     }
 
-    private void logActivity(JobExecution execution, com.fyntrac.common.enums.FileUploadActivityType activityType) {
-        com.fyntrac.common.entity.ActivityLog activityLog = com.fyntrac.common.entity.ActivityLog.builder().
-                activityType(activityType)
-                .jobName(execution.getJobInstance().getJobName())
-                .startingTime(execution.getStartTime())
-                .endingTime(execution.getEndTime())
-                .jobId(execution.getJobParameters().getLong("run.id"))
-                .uploadFilePath(execution.getJobParameters().getString("filePath"))
-                .activityStatus(execution.getExitStatus().getExitCode())
-                .build();
-        dataService.save(activityLog);
+    private void logActivity(long uploadId, String tableName, JobExecution execution,
+                             FileUploadActivityType activityType) {
+
+        // Loop through steps to get detailed stats
+        List<ActivityLog> logs = new ArrayList<>(0);
+
+        for (StepExecution stepExecution : execution.getStepExecutions()) {
+
+            ActivityLog activityLog = ActivityLog.builder()
+                    .activityType(activityType)
+                    .jobName(execution.getJobInstance().getJobName())
+                    .tableName(tableName)
+                    // 2. Use Step times for precision (or Job times if tracking whole job)
+                    .startingTime(stepExecution.getStartTime())
+                    .endingTime(stepExecution.getEndTime()) // Note: might be null if called in 'beforeStep'
+
+                    // 3. robust parameter retrieval
+                    .uploadId(uploadId)
+                    .jobId(execution.getJobParameters().getLong("run.id"))
+                    .uploadFilePath(execution.getJobParameters().getString("filePath"))
+
+                    // 4. Improved Status Logic (Checks Step status specifically)
+                    .activityStatus(!stepExecution.getFailureExceptions().isEmpty() ? "FAILED" : stepExecution.getExitStatus().getExitCode())
+
+                    // 5. CRITICAL: Don't save the 'stepExecution' object. Save the stats instead.
+                    .recordsRead(stepExecution.getReadCount())
+                    .recordsWritten(stepExecution.getWriteCount())
+                    .recordsSkipped(stepExecution.getSkipCount())
+
+                    // 6. Capture Error Message if exists
+                    .errorMessage(stepExecution.getFailureExceptions().isEmpty() ? null : stepExecution.getFailureExceptions().get(0).getMessage())
+
+                    .build();
+
+            logs.add(activityLog);
+        }
+
+
+        dataService.saveAll(logs, ActivityLog.class);
 
     }
 
+
     private void logActivityException(Long runId, LocalDateTime startingtime, String filePath, FileUploadActivityType activityType) {
         LocalDateTime endingTime = DateUtil.getDateTime();
-        com.fyntrac.common.entity.ActivityLog activityLog = com.fyntrac.common.entity.ActivityLog.builder().
+        ActivityLog activityLog = ActivityLog.builder().
                 activityType(activityType)
                 .jobName(activityType.toString())
                 .startingTime(startingtime)
