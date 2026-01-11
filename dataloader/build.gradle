@@ -190,7 +190,7 @@ tasks.named('dockerBuildImage').configure {
     dependsOn tasks.named('build')
 
     tasks.named('build').get().mustRunAfter(tasks.named('clean').get())
-
+	noCache = true
     // ✅ Correct usage: Map of build args
     buildArgs.set([
             'PLATFORM'   : project.findProperty('platform') ?: 'linux/amd64,linux/arm64',

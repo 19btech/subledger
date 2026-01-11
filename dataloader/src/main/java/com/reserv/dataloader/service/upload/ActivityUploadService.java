@@ -24,6 +24,7 @@ import com.fyntrac.common.entity.Attributes;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.service.AccountingPeriodDataUploadService;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import com.fyntrac.common.entity.Batch;
@@ -72,7 +73,9 @@ public class ActivityUploadService {
         for(Map.Entry<CustomTableDefinition, String> entry :  dataMap.entrySet()) {
             CustomTableDefinition customTableDefinition = entry.getKey();
             String fileName = entry.getValue();
-            long uploadId = System.currentTimeMillis();
+            long uploadId = Long.parseLong(
+                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"))
+            );
             JobParameters params = new JobParametersBuilder()
                     .addString("tableDefId", customTableDefinition.getId()) // ID from Mongo
                     .addString("filePath", fileName)

@@ -45,7 +45,11 @@ public class ActivityLogService {
 
         Collection<ActivityLog> logs = this.getRecentLoad();
         Map<Long, List<ActivityLog>> logsByUploadId = logs.stream()
-                .collect(Collectors.groupingBy(ActivityLog::getUploadId));
+                .collect(Collectors.groupingBy(
+                        ActivityLog::getUploadId,
+                        () -> new TreeMap<>(Comparator.reverseOrder()), // Forces Descending Key Order
+                        Collectors.toList()
+                ));
 
         Collection<Records.ActivityLogRecord> activityLogs = new ArrayList<>();
 

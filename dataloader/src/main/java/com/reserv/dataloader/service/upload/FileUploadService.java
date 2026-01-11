@@ -5,6 +5,7 @@ import com.fyntrac.common.entity.CustomTableDefinition;
 import com.fyntrac.common.enums.AccountingRules;
 import com.fyntrac.common.repository.CustomTableDefinitionRepository;
 import com.fyntrac.common.utils.FileUtil;
+import com.reserv.dataloader.exception.CustomTableNotFoundException;
 import com.reserv.dataloader.utils.ExcelFileUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
@@ -12,6 +13,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.function.Function;
 
 import java.io.File;
@@ -43,7 +47,9 @@ public class FileUploadService {
 
         String FOLDER_PATH = System.getProperty("user.home") + File.separator + "tenants" + File.separator + tenantContextHolder.getTenant() + File.separator;
         String OUTPUT_FOLDER_PATH = System.getProperty("user.home") + File.separator + "output" + File.separator + "tenants" + File.separator + tenantContextHolder.getTenant() + File.separator;
-        long uploadId = System.currentTimeMillis();
+        long uploadId = Long.parseLong(
+                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"))
+        );
 
         Set<String> validFileSet = new HashSet<>(0);
         Set<String> inValidFileSet = new HashSet<>(0);
@@ -152,12 +158,18 @@ public class FileUploadService {
                 if (tableMap.containsKey(fileName.toLowerCase())) {
                     CustomTableDefinition customTableDefinition = tableMap.get(fileName.toLowerCase());
                     customTableMap.put(customTableDefinition, file.toString());
+                }else{
+                    inValidFileSet.add(fileName);
                 }
             }
         }
 
 
-        if(customTableMap != null && !customTableMap.isEmpty()) {
+        if (!inValidFileSet.isEmpty()) {
+            throw new CustomTableNotFoundException(
+                    "Custom table not found for: " + String.join(", ", inValidFileSet)
+            );
+        } else if(!customTableMap.isEmpty()) {
             this.activityUploadService.uploadCustomTableData(customTableMap);
         }
 

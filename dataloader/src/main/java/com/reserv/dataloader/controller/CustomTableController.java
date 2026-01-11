@@ -8,6 +8,7 @@ import com.fyntrac.common.entity.Option;
 import com.fyntrac.common.enums.CustomTableType;
 import com.fyntrac.common.service.CustomTableDefinitionService;
 import com.fyntrac.common.service.DataService;
+import com.reserv.dataloader.exception.CustomTableNotFoundException;
 import com.reserv.dataloader.service.upload.FileUploadService;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -290,10 +291,10 @@ public class CustomTableController {
                 fileUploadService.uploadCustomTableDataFiles(file);
             }
             return ResponseEntity.ok("Files uploaded successfully");
-        } catch (Exception e) {
+        } catch (Exception  e) {
             String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
             log.error(stackTrace);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload files: cause:" + stackTrace);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload files: cause:" + e.getMessage());
         } catch (Throwable e) {
             log.error(e.getLocalizedMessage());
             throw new RuntimeException(e);
