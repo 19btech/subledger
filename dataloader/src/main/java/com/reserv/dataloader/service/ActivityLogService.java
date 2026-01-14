@@ -3,6 +3,7 @@ package com.reserv.dataloader.service;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.enums.ActivityType;
+import com.fyntrac.common.utils.DateUtil;
 import com.reserv.dataloader.entity.ActivityLog;
 import com.fyntrac.common.enums.FileUploadActivityType;
 import com.fyntrac.common.service.DataService;
@@ -14,6 +15,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
+import java.text.ParseException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -41,7 +43,7 @@ public class ActivityLogService {
         return dataService.fetchData(query, ActivityLog.class);
     }
 
-    public Collection<Records.ActivityLogRecord> getRecentActivityLog() {
+    public Collection<Records.ActivityLogRecord> getRecentActivityLog() throws Exception{
 
         Collection<ActivityLog> logs = this.getRecentLoad();
         Map<Long, List<ActivityLog>> logsByUploadId = logs.stream()
@@ -59,7 +61,7 @@ public class ActivityLogService {
             LocalDateTime minStartTime = null;
             LocalDateTime maxEndTime = null;
             String jobStatus = "COMPLETE"; // Default assumption
-
+            LocalDateTime localPostingDate = null;
             List<Records.ActivityLogDetailRecord> details = new ArrayList<>();
             Set<String> jobNameSet = HashSet.newHashSet(0);
             for (ActivityLog log : activityList) {
@@ -89,6 +91,12 @@ public class ActivityLogService {
                 }
 
                 // Create Detail Record
+                try {
+                    if(log.getPostingDate() != null) {
+                        Date postingDate = DateUtil.convertIntDateToUtc(log.getPostingDate());
+                        localPostingDate = DateUtil.convertDateToLocalDate(postingDate).atStartOfDay();
+                    }
+
                 Records.ActivityLogDetailRecord detail = RecordFactory.createActivityLogDetailRecord(
                         tableName,
                         log.getRecordsRead(),
@@ -99,6 +107,9 @@ public class ActivityLogService {
                         log.getErrorMessage()
                 );
                 details.add(detail);
+                } catch (ParseException e) {
+                    throw new RuntimeException(e);
+                }
             }
 
             StringBuffer jobName = new StringBuffer();
@@ -114,6 +125,7 @@ public class ActivityLogService {
             Records.ActivityLogRecord logRecord = RecordFactory.createActivityLogRecord(
                     uploadId,
                     jobName.toString(),
+                    localPostingDate,
                     minStartTime,
                     maxEndTime,
                     jobStatus,

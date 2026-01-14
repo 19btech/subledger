@@ -32,6 +32,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
+
 @Service
 @Slf4j
 public class ModelExecutionService {
@@ -49,19 +50,20 @@ public class ModelExecutionService {
     private final InstrumentAttributeService instrumentAttributeService;
     private final TransactionActivityQueue transactionActivityQueue;
     private final EventRepository eventRepository;
+
     public ModelExecutionService(ModelDataService modelDataService
-    , MemcachedRepository memcachedRepository
-    , AccountingPeriodDataUploadService accountingPeriodService
-    , ExcelModelExecutor excelModelExecutor
-    , TransactionActivityService transactionActivityService
-    , ErrorService errorService
-    , CommonAggregationService commonAggregationService
-    , GeneralLedgerMessageProducer generalLedgerMessageProducer
-    , ExecutionStateService executionStateService
-    , AggregationMessageProducer aggregationMessageProducer
-    , InstrumentAttributeService instrumentAttributeService
-    , TransactionActivityQueue transactionActivityQueue
-    , EventRepository eventRepository) {
+            , MemcachedRepository memcachedRepository
+            , AccountingPeriodDataUploadService accountingPeriodService
+            , ExcelModelExecutor excelModelExecutor
+            , TransactionActivityService transactionActivityService
+            , ErrorService errorService
+            , CommonAggregationService commonAggregationService
+            , GeneralLedgerMessageProducer generalLedgerMessageProducer
+            , ExecutionStateService executionStateService
+            , AggregationMessageProducer aggregationMessageProducer
+            , InstrumentAttributeService instrumentAttributeService
+            , TransactionActivityQueue transactionActivityQueue
+            , EventRepository eventRepository) {
         this.modelDataService = modelDataService;
         this.memcachedRepository = memcachedRepository;
         this.accountingPeriodService = accountingPeriodService;
@@ -77,19 +79,20 @@ public class ModelExecutionService {
         this.eventRepository = eventRepository;
 
     }
+
     public void executeExcelModels(Date executionDate, Records.ModelExecutionMessageRecord msg) throws Throwable {
         try {
             List<Model> models = this.modelDataService.getActiveModels(msg.tenantId());
             // this.eventRepository.findAllByPostingDate(Date)
             List<Records.ModelRecord> activeModels = new ArrayList<>(0);
-            for(Model model : models) {
+            for (Model model : models) {
                 ModelFile modelFile = this.modelDataService.getModelFile(model.getModelFileId(), msg.tenantId());
                 // Workbook workbook = ExcelUtil.convertBinaryToWorkbook(modelFile.getFileData());
                 activeModels.add(RecordFactory.createModelRecord(model, modelFile));
             }
 
             ExecutionState executionState = this.executionStateService.getExecutionState();
-            if(executionState == null) {
+            if (executionState == null) {
                 executionState = ExecutionState.builder()
                         .executionDate(0)
                         .build();
@@ -126,7 +129,7 @@ public class ModelExecutionService {
             // this.commonAggregationService.aggregate(transactionActivities, previousPostingDate);
             LocalDateTime dateTime = LocalDateTime.now();
             int timestamp = (int) (dateTime.toEpochSecond(ZoneOffset.UTC));
-            String tenantId=msg.tenantId();
+            String tenantId = msg.tenantId();
             int postingDate = DateUtil.dateInNumber(executionDate);
             String jobKey = String.format("%s-%s-%d", tenantId, "TA", postingDate);
             long jobId = System.currentTimeMillis();
@@ -151,22 +154,22 @@ public class ModelExecutionService {
                             // Set the tenant context for this virtual thread
                             TenantContextHolder.runWithTenant(tenantId, () -> {
                                 try {
-                                  Collection<TransactionActivity> activities = this.processInstrument(tenantId,
+                                    Collection<TransactionActivity> activities = this.processInstrument(tenantId,
                                             postingDate,
-                                           accountingPeriod
-            , instrumentId
-            , activeModels
-            , events);
+                                            accountingPeriod
+                                            , instrumentId
+                                            , activeModels
+                                            , events);
 
                                     if (activities != null) {
                                         activities.forEach(transactionActivity -> {
-                                            log.info(String.format("Adding TransactionActivityQueue[%s]",
-                                                    transactionActivity.toString()));
+                                                    log.info(String.format("Adding TransactionActivityQueue[%s]",
+                                                            transactionActivity.toString()));
                                                     this.transactionActivityQueue.add(tenantId, jobId, transactionActivity);
-                                            String activityKey = String.format("%s-%d", key, transactionActivity.hashCode());
+                                                    String activityKey = String.format("%s-%d", key, transactionActivity.hashCode());
 
-                                            activityList.add(activityKey);
-                                            this.memcachedRepository.putInCache(activityKey, transactionActivity);
+                                                    activityList.add(activityKey);
+                                                    this.memcachedRepository.putInCache(activityKey, transactionActivity);
                                                 }
                                         );
                                     }
@@ -202,7 +205,7 @@ public class ModelExecutionService {
             } catch (Throwable e) {
                 log.error("Error in executeModels", e);
                 throw e; // Rethrow the exception for further handling
-            }finally {
+            } finally {
                 Records.ExecuteAggregationMessageRecord aggregationMessageRecord =
                         RecordFactory.createExecutionAggregationRecord(tenantId, jobId, (long) postingDate);
                 aggregationMessageProducer.executeAggregation(aggregationMessageRecord);
@@ -210,15 +213,15 @@ public class ModelExecutionService {
                 Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(this.transactionActivityService.getDataService().getTenantId(), jobId);
                 generalLedgerMessageProducer.bookTempGL(glRec);
 
-                if(msg.isLast()) {
-                    if(postingDate > executionState.getExecutionDate()) {
+                if (msg.isLast()) {
+                    if (postingDate > executionState.getExecutionDate()) {
                         executionState.setLastExecutionDate(executionState.getExecutionDate());
                         executionState.setExecutionDate(postingDate);
                         executionStateService.update(executionState);
                     }
                 }
             }
-        }catch (Exception exp){
+        } catch (Exception exp) {
             log.error(StringUtil.getStackTrace(exp));
             throw exp;
         }
@@ -228,31 +231,31 @@ public class ModelExecutionService {
         try {
             List<Model> models = this.modelDataService.getActiveModels(msg.tenantId());
             List<Records.ModelRecord> activeModels = new ArrayList<>(0);
-            for(Model model : models) {
+            for (Model model : models) {
                 ModelFile modelFile = this.modelDataService.getModelFile(model.getModelFileId(), msg.tenantId());
                 // Workbook workbook = ExcelUtil.convertBinaryToWorkbook(modelFile.getFileData());
                 activeModels.add(RecordFactory.createModelRecord(model, modelFile));
             }
 
             ExecutionState executionState = this.executionStateService.getExecutionState();
-            if(executionState == null) {
+            if (executionState == null) {
                 executionState = ExecutionState.builder()
                         .executionDate(0)
                         .build();
 
             }
             this.executeModels(executionDate, msg, activeModels, executionState.getExecutionDate());
-            if(executionState.getExecutionDate() < DateUtil.dateInNumber(executionDate)) {
+            if (executionState.getExecutionDate() < DateUtil.dateInNumber(executionDate)) {
                 executionState.setLastExecutionDate(executionState.getExecutionDate());
             }
 
             executionState.setExecutionDate(DateUtil.dateInNumber(executionDate));
             executionStateService.update(executionState);
 
-        }catch (Exception exp){
+        } catch (Exception exp) {
             log.error(StringUtil.getStackTrace(exp));
             throw exp;
-        }finally{
+        } finally {
 //            ExecutionState executionState = this.executionStateService.getExecutionState();
 //            executionState.setLastExecutionDate(executionState.getExecutionDate());
 //            executionState.setExecutionDate(DateUtil.dateInNumber(executionDate));
@@ -265,7 +268,7 @@ public class ModelExecutionService {
     public void executeModels(Date executionDate
             , Records.ModelExecutionMessageRecord msg
             , List<Records.ModelRecord> activeModels
-    , int previousPostingDate) throws Throwable {
+            , int previousPostingDate) throws Throwable {
         // Step 1: Validate inputs
         String key = msg.key();
         if (executionDate == null || key == null || activeModels == null || activeModels.isEmpty()) {
@@ -308,7 +311,7 @@ public class ModelExecutionService {
 
         // Step 3: Virtual Thread Pool
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            String tenantId=msg.tenantId();
+            String tenantId = msg.tenantId();
             Integer lastActivityPostingDate = this.transactionActivityService.getLatestActivityPostingDate(tenantId);
             List<Future<?>> futures = new ArrayList<>();
 
@@ -320,12 +323,12 @@ public class ModelExecutionService {
                         // Set the tenant context for this virtual thread
                         TenantContextHolder.runWithTenant(tenantId, () -> {
                             try {
-                                if(executionState == null ||  executionState.getExecutionDate() == null){
+                                if (executionState == null || executionState.getExecutionDate() == null) {
                                     this.processInstrument(tenantId, executionDate, accountingPeriod, instrumentId, activeModels, 0, lastActivityPostingDate);
-                                }else {
+                                } else {
                                     this.processInstrument(tenantId, executionDate, accountingPeriod, instrumentId, activeModels, executionState.getExecutionDate(), lastActivityPostingDate);
                                 }
-                                } catch (Throwable e) {
+                            } catch (Throwable e) {
                                 throw new RuntimeException(e);
                             }
                         });
@@ -361,7 +364,7 @@ public class ModelExecutionService {
     }
 
     private Collection<TransactionActivity> processInstrument(String tenantId, int executionDate,
-                                   AccountingPeriod accountingPeriod
+                                                              AccountingPeriod accountingPeriod
             , String instrumentId
             , List<Records.ModelRecord> activeModels
             , List<Event> events) throws Exception {
@@ -370,67 +373,66 @@ public class ModelExecutionService {
         List<InstrumentAttribute> currentOpenInstrumentAttributes = this.instrumentAttributeService.getOpenInstrumentAttributesByInstrumentId(instrumentId, tenantId);
         Collection<TransactionActivity> allActivities = new ArrayList<>(0);
         for (Records.ModelRecord model : activeModels) {
-                Collection<TransactionActivity> transactionActivities = null;
-                try {
-                    // Save transaction activities
-                    Records.ModelOutputData modelOutputData = this.excelModelExecutor.execute(instrumentId, executionDate,  model,
-                            events);
-                    this.insertInstrumentAttribute(modelOutputData, DateUtil.convertIntDateToUtc(executionDate),
-                            tenantId);
-                    List<TransactionActivity> filledTransactions = new ArrayList<>(0);
-                    Set<TransactionActivity> transactions = new HashSet<>(0);
+            Collection<TransactionActivity> transactionActivities = null;
+            try {
+                // Save transaction activities
+                Records.ModelOutputData modelOutputData = this.excelModelExecutor.execute(instrumentId, executionDate, model,
+                        events);
+                this.insertInstrumentAttribute(modelOutputData, DateUtil.convertIntDateToUtc(executionDate),
+                        tenantId);
+                List<TransactionActivity> filledTransactions = new ArrayList<>(0);
+                Set<TransactionActivity> transactions = new HashSet<>(0);
 
-                    for (Map<String, Object> activity : modelOutputData.transactionActivityList()) {
-                        Object instrumentIdObj = activity.get("instrumentId");
-                        if (instrumentIdObj == null || instrumentIdObj.toString().trim().isEmpty()) {
-                            log.warn("Skipping activity due to missing or empty instrumentId: {}", activity);
-                            continue;
-                        }
-
-                        TransactionActivity transactionActivity = this.transactionActivityService.fillTrascationActivity(activity, accountingPeriod);
-                        filledTransactions.add(transactionActivity);
+                for (Map<String, Object> activity : modelOutputData.transactionActivityList()) {
+                    Object instrumentIdObj = activity.get("instrumentId");
+                    if (instrumentIdObj == null || instrumentIdObj.toString().trim().isEmpty()) {
+                        log.warn("Skipping activity due to missing or empty instrumentId: {}", activity);
+                        continue;
                     }
 
-
-
-                    for (InstrumentAttribute attr : currentOpenInstrumentAttributes) {
-                        List<TransactionActivity> matchingActivities = filledTransactions.stream()
-                                .filter(act -> attr.getInstrumentId().equals(act.getInstrumentId())
-                                        && attr.getAttributeId().equals(act.getAttributeId()))
-                                .toList();
-                        List<TransactionActivity> activityList = populateMissingFields(attr, matchingActivities,
-                                accountingPeriod, DateUtil.convertIntDateToUtc(executionDate), model.model().getId());
-                        transactions.addAll(activityList);
-                        // Do something with matchingActivities
-                    }
-
-                    // Filter out TransactionActivity where amount is zero
-                    Set<TransactionActivity> filteredTransactions = transactions.stream()
-                            .filter(transaction -> transaction.getAmount().compareTo(BigDecimal.ZERO) != 0)
-                            .collect(Collectors.toSet());
-                    // transactionActivities = this.transactionActivityService.save(filteredTransactions);
-                    transactionActivities =
-                            this.transactionActivityService.getDataService().saveAll(filteredTransactions, tenantId,
-                            TransactionActivity.class);
-                    allActivities.addAll(transactionActivities);
-
-                } catch (Exception e) {
-                    // Log the exception and continue processing the next model
-                    log.error("An error occurred while processing model " + model.model().getId() + " for instrument " + instrumentId, e);
-                    // Optionally, you can add additional handling here (e.g., notify, retry, etc.)
-                    Errors error = Errors.builder().modelId(model.model().getId())
-                            .instrumentId(instrumentId)
-                            .executionDate(DateUtil.convertIntDateToUtc(executionDate))
-                            .code(ErrorCode.Model_Execution_Error)
-                            .isWarning(Boolean.FALSE)
-                            .stacktrace(StringUtil.getStackTrace(e))
-                            .build();
-                    this.errorService.save(error);
-                    throw e;
+                    TransactionActivity transactionActivity = this.transactionActivityService.fillTrascationActivity(activity, accountingPeriod);
+                    filledTransactions.add(transactionActivity);
                 }
 
+
+                for (InstrumentAttribute attr : currentOpenInstrumentAttributes) {
+                    List<TransactionActivity> matchingActivities = filledTransactions.stream()
+                            .filter(act -> attr.getInstrumentId().equals(act.getInstrumentId())
+                                    && attr.getAttributeId().equals(act.getAttributeId()))
+                            .toList();
+                    List<TransactionActivity> activityList = populateMissingFields(attr, matchingActivities,
+                            accountingPeriod, DateUtil.convertIntDateToUtc(executionDate), model.model().getId());
+                    transactions.addAll(activityList);
+                    // Do something with matchingActivities
+                }
+
+                // Filter out TransactionActivity where amount is zero
+                Set<TransactionActivity> filteredTransactions = transactions.stream()
+                        .filter(transaction -> transaction.getAmount().compareTo(BigDecimal.ZERO) != 0)
+                        .collect(Collectors.toSet());
+                // transactionActivities = this.transactionActivityService.save(filteredTransactions);
+                transactionActivities =
+                        this.transactionActivityService.getDataService().saveAll(filteredTransactions, tenantId,
+                                TransactionActivity.class);
+                allActivities.addAll(transactionActivities);
+
+            } catch (Exception e) {
+                // Log the exception and continue processing the next model
+                log.error("An error occurred while processing model " + model.model().getId() + " for instrument " + instrumentId, e);
+                // Optionally, you can add additional handling here (e.g., notify, retry, etc.)
+                Errors error = Errors.builder().modelId(model.model().getId())
+                        .instrumentId(instrumentId)
+                        .executionDate(DateUtil.convertIntDateToUtc(executionDate))
+                        .code(ErrorCode.Model_Execution_Error)
+                        .isWarning(Boolean.FALSE)
+                        .stacktrace(StringUtil.getStackTrace(e))
+                        .build();
+                this.errorService.save(error);
+                throw e;
+            }
+
         }
-return allActivities;
+        return allActivities;
     }
 
     private void processInstrument(String tenantId, Date executionDate,
@@ -438,17 +440,17 @@ return allActivities;
             , String instrumentId
             , List<Records.ModelRecord> activeModels
             , int previousPostingDate
-    , int lastActivityPostingDate) throws Throwable {
+            , int lastActivityPostingDate) throws Throwable {
         log.info("Processing " + instrumentId + " on Thread: " + Thread.currentThread().getName());
 
 
-         List<InstrumentAttribute> currentOpenInstrumentAttributes = this.instrumentAttributeService.getOpenInstrumentAttributesByInstrumentId(instrumentId, tenantId);
-         List<Records.InstrumentAttributeModelRecord> currentOpentInstruments = new ArrayList<>(0);
-          for(InstrumentAttribute instrumentAttribute :  currentOpenInstrumentAttributes) {
-              Records.InstrumentAttributeModelRecord instrumentAttributeModelRecord = RecordFactory.createInstrumentAttributeModelRecord(InstrumentAttributeVersionType.CURRENT_OPEN_VERSION,instrumentAttribute);
-              currentOpentInstruments.add(instrumentAttributeModelRecord);
-          }
-          // List<InstrumentAttribute> firstVersionOfInstrumentAttributes = this.instrumentAttributeService.getFirstVersionOfInstrumentAttributes(instrumentId, tenantId);
+        List<InstrumentAttribute> currentOpenInstrumentAttributes = this.instrumentAttributeService.getOpenInstrumentAttributesByInstrumentId(instrumentId, tenantId);
+        List<Records.InstrumentAttributeModelRecord> currentOpentInstruments = new ArrayList<>(0);
+        for (InstrumentAttribute instrumentAttribute : currentOpenInstrumentAttributes) {
+            Records.InstrumentAttributeModelRecord instrumentAttributeModelRecord = RecordFactory.createInstrumentAttributeModelRecord(InstrumentAttributeVersionType.CURRENT_OPEN_VERSION, instrumentAttribute);
+            currentOpentInstruments.add(instrumentAttributeModelRecord);
+        }
+        // List<InstrumentAttribute> firstVersionOfInstrumentAttributes = this.instrumentAttributeService.getFirstVersionOfInstrumentAttributes(instrumentId, tenantId);
 
         // Iterate through each model
         for (Records.ModelRecord model : activeModels) {
@@ -467,7 +469,7 @@ return allActivities;
 
                 // Execute the model
                 Records.ModelOutputData modelOutputData = this.excelModelExecutor.execute(context);
-                    // Save transaction activities
+                // Save transaction activities
 
                 this.insertInstrumentAttribute(modelOutputData, context.getExecutionDate(), context.getTenantId());
                 List<TransactionActivity> filledTransactions = new ArrayList<>(0);
@@ -485,7 +487,6 @@ return allActivities;
                 }
 
 
-
                 for (InstrumentAttribute attr : currentOpenInstrumentAttributes) {
                     List<TransactionActivity> matchingActivities = filledTransactions.stream()
                             .filter(act -> attr.getInstrumentId().equals(act.getInstrumentId())
@@ -496,30 +497,30 @@ return allActivities;
                     // Do something with matchingActivities
                 }
 
-                    // Filter out TransactionActivity where amount is zero
-                    Set<TransactionActivity> filteredTransactions = transactions.stream()
-                            .filter(transaction -> transaction.getAmount().compareTo(BigDecimal.ZERO) != 0)
-                            .collect(Collectors.toSet());
-                   // transactionActivities = this.transactionActivityService.save(filteredTransactions);
-                transactionActivities =  this.transactionActivityService.getDataService().saveAll(filteredTransactions, tenantId, TransactionActivity.class);
+                // Filter out TransactionActivity where amount is zero
+                Set<TransactionActivity> filteredTransactions = transactions.stream()
+                        .filter(transaction -> transaction.getAmount().compareTo(BigDecimal.ZERO) != 0)
+                        .collect(Collectors.toSet());
+                // transactionActivities = this.transactionActivityService.save(filteredTransactions);
+                transactionActivities = this.transactionActivityService.getDataService().saveAll(filteredTransactions, tenantId, TransactionActivity.class);
 
-                    // Now send message to generate GL
-                    // Now send message to Aggregate transactions
-                    // this.commonAggregationService.aggregate(transactionActivities, previousPostingDate);
-                    LocalDateTime dateTime = LocalDateTime.now();
-                    int timestamp = (int) (dateTime.toEpochSecond(ZoneOffset.UTC));
-                    String key = String.format("%s-%s-%d", tenantId, "TA", DateUtil.dateInNumber(executionDate));
+                // Now send message to generate GL
+                // Now send message to Aggregate transactions
+                // this.commonAggregationService.aggregate(transactionActivities, previousPostingDate);
+                LocalDateTime dateTime = LocalDateTime.now();
+                int timestamp = (int) (dateTime.toEpochSecond(ZoneOffset.UTC));
+                String key = String.format("%s-%s-%d", tenantId, "TA", DateUtil.dateInNumber(executionDate));
 
-                 long jobId = System.currentTimeMillis();
-                    if (transactionActivities != null) {
-                        transactionActivities.forEach(transactionActivity -> {
-                                    this.transactionActivityQueue.add(tenantId, jobId, transactionActivity);
-                                }
-                        );
-                    }
+                long jobId = System.currentTimeMillis();
+                if (transactionActivities != null) {
+                    transactionActivities.forEach(transactionActivity -> {
+                                this.transactionActivityQueue.add(tenantId, jobId, transactionActivity);
+                            }
+                    );
+                }
 
-                    Records.ExecuteAggregationMessageRecord aggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenantId, jobId, (long) DateUtil.dateInNumber(executionDate));
-                    aggregationMessageProducer.executeAggregation(aggregationMessageRecord);
+                Records.ExecuteAggregationMessageRecord aggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenantId, jobId, (long) DateUtil.dateInNumber(executionDate));
+                aggregationMessageProducer.executeAggregation(aggregationMessageRecord);
 
                 String transactionActivityKey = String.format("%s-%d", key, timestamp);
 
@@ -558,7 +559,7 @@ return allActivities;
     }
 
     private void insertInstrumentAttribute(Records.ModelOutputData modelOutputData, Date executionDate, String tenantId) throws Exception {
-            List<InstrumentAttribute> newInstrumentAttributes = new ArrayList(0);
+        List<InstrumentAttribute> newInstrumentAttributes = new ArrayList(0);
         for (InstrumentAttribute inputAttr : this.instrumentAttributes(modelOutputData.instrumentAttributeList())) {
 
             // Fetch currently open instrument attributes
@@ -588,7 +589,7 @@ return allActivities;
             }
         }
 
-        for(InstrumentAttribute instrumentAttribute :  newInstrumentAttributes) {
+        for (InstrumentAttribute instrumentAttribute : newInstrumentAttributes) {
             this.instrumentAttributeService.save(instrumentAttribute);
         }
     }
@@ -632,19 +633,19 @@ return allActivities;
     }
 
     private List<InstrumentAttribute> instrumentAttributes(List<Map<String, Object>> attributes) throws Exception {
-            List<InstrumentAttribute> processInstrumentAttribute = new ArrayList<>(0);
+        List<InstrumentAttribute> processInstrumentAttribute = new ArrayList<>(0);
 
-            for(Map<String, Object> attributeMap : attributes) {
-                String instrumentId = String.valueOf(attributeMap.get("instrumentId"));
-                String attributeId = String.valueOf(attributeMap.get("attributeId"));
+        for (Map<String, Object> attributeMap : attributes) {
+            String instrumentId = String.valueOf(attributeMap.get("instrumentId"));
+            String attributeId = String.valueOf(attributeMap.get("attributeId"));
 
-                if(instrumentId.isEmpty() || attributeId.isEmpty()) {
-                    break;
-                }
-                    InstrumentAttribute instrumentAttribute = this.processInstrumentAttribute(attributeMap);
-                    processInstrumentAttribute.add(instrumentAttribute);
+            if (instrumentId.isEmpty() || attributeId.isEmpty()) {
+                break;
             }
-            return processInstrumentAttribute;
+            InstrumentAttribute instrumentAttribute = this.processInstrumentAttribute(attributeMap);
+            processInstrumentAttribute.add(instrumentAttribute);
+        }
+        return processInstrumentAttribute;
     }
 
     public InstrumentAttribute processInstrumentAttribute(Map<String, Object> item) throws Exception {
@@ -653,16 +654,16 @@ return allActivities;
         Date effectiveDate = null;
         String instrumentId = "";
         String attributeId = "";
-        int postingDate=0;
+        int postingDate = 0;
 
 
         for (Map.Entry<String, Object> entry : item.entrySet()) {
             String key = entry.getKey();
-            if(key.isBlank()){
+            if (key.isBlank()) {
                 continue;
             }
             Object value = entry.getValue();
-            if(key.equalsIgnoreCase("ACTIVITYUPLOADID")){
+            if (key.equalsIgnoreCase("ACTIVITYUPLOADID")) {
                 continue;
             } else if (key.equalsIgnoreCase("EFFECTIVEDATE")) {
                 continue;
@@ -672,21 +673,21 @@ return allActivities;
                 attributeId = String.valueOf(value);
             } else if (key.equalsIgnoreCase("POSTINGDATE")) {
                 continue;
-            }else {
-                if(key.isBlank()){
+            } else {
+                if (key.isBlank()) {
                     continue;
                 }
                 attributes.put(key, value);
             }
         }
 
-            return InstrumentAttribute.builder()
-                    .postingDate(postingDate)
-                    .effectiveDate(effectiveDate)
-                    .instrumentId(instrumentId)
-                    .attributeId(attributeId)
-                    .attributes(attributes)
-                    .build();
+        return InstrumentAttribute.builder()
+                .postingDate(postingDate)
+                .effectiveDate(effectiveDate)
+                .instrumentId(instrumentId)
+                .attributeId(attributeId)
+                .attributes(attributes)
+                .build();
 
     }
 

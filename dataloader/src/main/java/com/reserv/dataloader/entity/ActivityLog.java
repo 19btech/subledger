@@ -36,6 +36,7 @@ public class ActivityLog {
     private Long recordsRead;
     private Long recordsWritten;
     private Long recordsSkipped;
+    private Integer postingDate;
 
     @Column(length = 4000) // Ensure enough space for error logs
     private String errorMessage;
@@ -52,6 +53,11 @@ public class ActivityLog {
         json.append("\"endingTime\":\"").append(endingTime).append("\",");
         json.append("\"activityStatus\":\"").append(activityStatus).append("\",");
         json.append("\"activityDetails\":\"").append(activityDetails).append("\",");
+        json.append("\"recordsRead\":\"").append(recordsRead).append("\",");
+        json.append("\"recordsWritten\":\"").append(recordsWritten).append("\",");
+        json.append("\"recordsSkipped\":\"").append(recordsSkipped).append("\",");
+        json.append("\"postingDate\":\"").append(postingDate).append("\",");
+
         json.append("}");
         return json.toString();
     }

@@ -332,7 +332,7 @@ public class RecordFactory {
     public static Records.InstrumentReplayRecord createInstrumentReplayRecord(String instrumentId,
                                                                               String attributeId, int postingDate,
                                                                               int effectiveDate) {
-        return createRecord(() -> new Records.InstrumentReplayRecord(instrumentId,attributeId, postingDate,
+        return createRecord(() -> new Records.InstrumentReplayRecord(instrumentId, attributeId, postingDate,
                 effectiveDate));
     }
 
@@ -562,9 +562,9 @@ public class RecordFactory {
     }
 
     public static Records.ApiResponseRecord createApiResponseRecord(boolean success,
-    String message,
-    T data,
-    String error) {
+                                                                    String message,
+                                                                    T data,
+                                                                    String error) {
         return createRecord(() -> new Records.ApiResponseRecord(success, message, data, error));
     }
 
@@ -574,21 +574,22 @@ public class RecordFactory {
     }
 
     public static Records.ActivityLogDetailRecord createActivityLogDetailRecord(String tableName, Long recordsRead,
-                                          Long recordsWritten,
-                                          Long recordsSkipped,
-                                          LocalDateTime startTime,
-                                          LocalDateTime endTime,
-                                          String errorMessage) {
+                                                                                Long recordsWritten,
+                                                                                Long recordsSkipped,
+                                                                                LocalDateTime startTime,
+                                                                                LocalDateTime endTime,
+                                                                                String errorMessage) {
         return createRecord(() -> new Records.ActivityLogDetailRecord(tableName, recordsRead, recordsWritten,
                 recordsSkipped, startTime, endTime, errorMessage));
     }
 
     public static Records.ActivityLogRecord createActivityLogRecord(long uploadId, String jobName,
-                                    LocalDateTime starting,
-                                    LocalDateTime endTime,
-                                    String activityStatus,
-                                    List<Records.ActivityLogDetailRecord> details) {
-        return createRecord(() -> new Records.ActivityLogRecord(uploadId, jobName, starting, endTime, activityStatus,
+                                                                    LocalDateTime postingDate,
+                                                                    LocalDateTime starting,
+                                                                    LocalDateTime endTime,
+                                                                    String activityStatus,
+                                                                    List<Records.ActivityLogDetailRecord> details) {
+        return createRecord(() -> new Records.ActivityLogRecord(uploadId, jobName, postingDate, starting, endTime, activityStatus,
                 details));
     }
 }

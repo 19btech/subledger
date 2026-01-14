@@ -11,6 +11,7 @@ import  com.fyntrac.common.component.TenantDataSourceProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.*;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -479,5 +480,21 @@ public class DataService<T> {
                 .filter(name -> !name.startsWith("system."))
                 .filter(name -> !name.equals("table_definitions")) // Exclude metadata collection if needed
                 .toList();
+    }
+
+
+    public Integer getMaxPostingDate(String collectionName, Integer targetDate) {
+        // 1. Filter: postingDate <= targetDate
+        // 2. Sort: DESC
+        // 3. Limit: 1
+        var query = new Query(Criteria.where("postingDate").gte(targetDate))
+                .with(Sort.by(Sort.Direction.DESC, "postingDate"))
+                .limit(1);
+
+        // 4. Use Document.class to handle the dynamic schema
+        Document result = this.getMongoTemplate().findOne(query, Document.class, collectionName);
+
+        // 5. Extract the Integer value safely
+        return result != null ? result.getInteger("postingDate") : null;
     }
 }

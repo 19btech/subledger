@@ -2,8 +2,11 @@ package com.reserv.dataloader.batch.listener;
 
 import com.fyntrac.common.entity.ExecutionState;
 import com.fyntrac.common.enums.ActivityType;
+import com.fyntrac.common.enums.FileUploadActivityType;
+import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.InstrumentAttributeService;
+import com.reserv.dataloader.entity.ActivityLog;
 import com.reserv.dataloader.pulsar.producer.ReclassMessagProducer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.*;
@@ -17,6 +20,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import com.fyntrac.common.dto.record.RecordFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.NoSuchElementException;
 
 @Component
@@ -37,11 +42,14 @@ public class InstrumentAttributeJobCompletionListener implements JobExecutionLis
 
     private final ExecutionStateService executionStateService;
     private final InstrumentAttributeService instrumentAttributeService;
+    private final DataService<ActivityLog> dataService;
     @Autowired
     public InstrumentAttributeJobCompletionListener(ExecutionStateService executionStateService
-    , InstrumentAttributeService instrumentAttributeService) {
+    , InstrumentAttributeService instrumentAttributeService,
+                                                    DataService<ActivityLog> dataService) {
         this.executionStateService = executionStateService;
         this.instrumentAttributeService = instrumentAttributeService;
+        this.dataService = dataService;
     }
     @Override
     public void beforeJob(JobExecution jobExecution) {
@@ -56,6 +64,9 @@ public class InstrumentAttributeJobCompletionListener implements JobExecutionLis
         Long runId = jobExecution.getJobParameters().getLong("run.id");
         Long activityCount = jobExecution.getJobParameters().getLong("activityCount");
         Long jobId = jobExecution.getJobParameters().getLong("jobId");
+        Long uploadId = jobExecution.getJobParameters().getLong("uploadId");
+        String tableName = "Standard Activity";
+        FileUploadActivityType activityType = FileUploadActivityType.TRANSACTION_ACTIVITY;
 
         if (jobExecution.getStatus() == BatchStatus.COMPLETED) {
             jobExecutionMessage.append("Job Status : ")
@@ -83,9 +94,13 @@ public class InstrumentAttributeJobCompletionListener implements JobExecutionLis
                                 .addLong("jobId", jobId)
                                 .addLong("key", runId)
                                 .toJobParameters();
-                        updateExecutionState(tenantId);
+                        ExecutionState executionState = updateExecutionState(tenantId);
                         jobLauncher.run(reversalJob, jobParameters);
                         jobLauncher.run(instrumentReplayStateJob, jobParameters);
+
+                        assert executionState != null;
+                        this.logActivity(uploadId, executionState.getExecutionDate(), tableName,jobExecution,
+                                activityType);
                     }
                 }catch (Exception e){
                     throw new RuntimeException(e);
@@ -157,4 +172,48 @@ public class InstrumentAttributeJobCompletionListener implements JobExecutionLis
 
         return null;
     }
+
+
+    private void logActivity(long uploadId, Integer postingDate, String tableName, JobExecution execution,
+                             FileUploadActivityType activityType) {
+
+        // Loop through steps to get detailed stats
+        List<ActivityLog> logs = new ArrayList<>(0);
+        ExecutionState executionState = this.executionStateService.getExecutionState();
+        for (StepExecution stepExecution : execution.getStepExecutions()) {
+
+            ActivityLog activityLog = ActivityLog.builder()
+                    .activityType(activityType)
+                    .jobName(execution.getJobInstance().getJobName())
+                    .tableName(tableName)
+                    // 2. Use Step times for precision (or Job times if tracking whole job)
+                    .startingTime(stepExecution.getStartTime())
+                    .endingTime(stepExecution.getEndTime()) // Note: might be null if called in 'beforeStep'
+
+                    // 3. robust parameter retrieval
+                    .uploadId(uploadId)
+                    .jobId(execution.getJobParameters().getLong("run.id"))
+                    .uploadFilePath(execution.getJobParameters().getString("filePath"))
+
+                    // 4. Improved Status Logic (Checks Step status specifically)
+                    .activityStatus(!stepExecution.getFailureExceptions().isEmpty() ? "FAILED" : stepExecution.getExitStatus().getExitCode())
+
+                    // 5. CRITICAL: Don't save the 'stepExecution' object. Save the stats instead.
+                    .recordsRead(stepExecution.getReadCount())
+                    .recordsWritten(stepExecution.getWriteCount())
+                    .recordsSkipped(stepExecution.getSkipCount())
+                    .postingDate(executionState.getExecutionDate())
+                    // 6. Capture Error Message if exists
+                    .errorMessage(stepExecution.getFailureExceptions().isEmpty() ? null : stepExecution.getFailureExceptions().get(0).getMessage())
+
+                    .build();
+
+            logs.add(activityLog);
+        }
+
+
+        dataService.saveAll(logs, ActivityLog.class);
+
+    }
+
 }

@@ -1,6 +1,8 @@
 package com.reserv.dataloader.service.upload;
 
+import com.fyntrac.common.entity.ExecutionState;
 import  com.fyntrac.common.enums.FileUploadActivityType;
+import com.fyntrac.common.service.ExecutionStateService;
 import com.reserv.dataloader.entity.ActivityLog;
 import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.utils.DateUtil;
@@ -12,8 +14,11 @@ import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteExcep
 import org.springframework.batch.core.repository.JobRestartException;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -23,6 +28,9 @@ public abstract class UploadService {
     @Autowired
     protected DataService<ActivityLog> dataService;
     protected Long runId;
+
+    @Autowired
+    private ExecutionStateService executionStateService;
 
     public abstract void uploadData(long uploadId, String filePath) throws JobInstanceAlreadyCompleteException,
             JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException;
@@ -53,22 +61,27 @@ public abstract class UploadService {
             , String filePath
             , FileUploadActivityType activityType) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException{
         JobExecution execution = null;
+        int postingDate = LocalDate.now()
+                .format(DateTimeFormatter.BASIC_ISO_DATE)
+                .chars()
+                .reduce(0, (a, c) -> a * 10 + (c - '0'));
         try {
             execution = jobLauncher.run(job, jobParameters);
-            this.logActivity(uploadId, activityType.name(),execution, activityType);
+            this.logActivity(uploadId, postingDate, activityType.name(),execution, activityType);
             log.info("Exit Status : " + execution.getStatus());
         }catch (Exception e ){
             log.error(e.getMessage());
             log.error(e.getCause().getMessage());
-            logActivity(uploadId, activityType.name(),execution, activityType);
+            logActivity(uploadId, postingDate, activityType.name(),execution, activityType);
         }
     }
 
-    private void logActivity(long uploadId, String tableName, JobExecution execution,
+    private void logActivity(long uploadId,Integer postingDate, String tableName, JobExecution execution,
                              FileUploadActivityType activityType) {
 
         // Loop through steps to get detailed stats
         List<ActivityLog> logs = new ArrayList<>(0);
+
 
         for (StepExecution stepExecution : execution.getStepExecutions()) {
 
@@ -92,7 +105,7 @@ public abstract class UploadService {
                     .recordsRead(stepExecution.getReadCount())
                     .recordsWritten(stepExecution.getWriteCount())
                     .recordsSkipped(stepExecution.getSkipCount())
-
+                    .postingDate(postingDate)
                     // 6. Capture Error Message if exists
                     .errorMessage(stepExecution.getFailureExceptions().isEmpty() ? null : stepExecution.getFailureExceptions().get(0).getMessage())
 

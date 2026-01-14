@@ -1,30 +1,26 @@
 package com.reserv.dataloader.batch.tasklet;
 
 import com.fyntrac.common.component.TransactionActivityQueue;
+import com.fyntrac.common.entity.AggregationRequest;
 import com.fyntrac.common.entity.TransactionActivity;
+import com.fyntrac.common.enums.AggregationRequestType;
+import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodService;
+import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.service.ExecutionStateService;
+import com.fyntrac.common.service.SettingsService;
 import com.fyntrac.common.service.aggregation.AggregationService;
 import com.fyntrac.common.service.aggregation.AttributeLevelAggregationService;
 import com.reserv.dataloader.aggregate.AttributeLevelAggregator;
-import  com.fyntrac.common.enums.AggregationRequestType;
-import com.fyntrac.common.entity.AggregationRequest;
-import com.fyntrac.common.entity.TransactionActivityList;
-import com.fyntrac.common.repository.MemcachedRepository;
-import com.fyntrac.common.service.DataService;
-import com.reserv.dataloader.aggregate.InstrumentLevelAggregator;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
-import com.fyntrac.common.service.SettingsService;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 public class AttributeLevelAggregatorTasklet extends BaseAggregatorTasklet implements Tasklet {
 

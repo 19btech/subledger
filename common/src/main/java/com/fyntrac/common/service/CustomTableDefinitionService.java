@@ -177,4 +177,5 @@ public class CustomTableDefinitionService {
     public Optional<List<CustomTableDefinition>> getCustomTables(CustomTableType customTableType) {
         return this.tableDefinitionRepository.findByTableType(customTableType);
     }
+
 }

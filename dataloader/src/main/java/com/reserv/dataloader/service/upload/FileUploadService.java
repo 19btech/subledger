@@ -119,22 +119,22 @@ public class FileUploadService {
 
         FileUtil.createDirectoryIfNotExists(FOLDER_PATH);
         FileUtil.createDirectoryIfNotExists(OUTPUT_FOLDER_PATH);
+        Set<String> fileSet = new HashSet<>(0);
         Set<String> validFileSet = new HashSet<>(0);
-        Set<String> inValidFileSet = new HashSet<>(0);
         boolean isValidFile = Boolean.FALSE;
 
         for(MultipartFile file : files) {
             if(ExcelFileUtil.isZipFile(file)) {
                 Set<File> dataFiles =  ExcelFileUtil.unzip(file, FOLDER_PATH);
                 for (File f : dataFiles) {
-                    validFileSet.add(f.getAbsolutePath());
+                    fileSet.add(f.getAbsolutePath());
                 }
             }else {
-                validFileSet.add(ExcelFileUtil.convertMultipartFileToFile(file,FOLDER_PATH));
+                fileSet.add(ExcelFileUtil.convertMultipartFileToFile(file,FOLDER_PATH));
             }
         }
 
-        this.convertIntoCSVFiles(validFileSet, Boolean.FALSE);
+        this.convertIntoCSVFiles(fileSet, Boolean.FALSE);
         List<Path> fileList = ExcelFileUtil.listCsvFiles(OUTPUT_FOLDER_PATH, ".csv");
         // Create a Map<AccountingRules, filePath>
 
@@ -158,16 +158,15 @@ public class FileUploadService {
                 if (tableMap.containsKey(fileName.toLowerCase())) {
                     CustomTableDefinition customTableDefinition = tableMap.get(fileName.toLowerCase());
                     customTableMap.put(customTableDefinition, file.toString());
-                }else{
-                    inValidFileSet.add(fileName);
+                    validFileSet.add(fileName);
                 }
             }
         }
 
 
-        if (!inValidFileSet.isEmpty()) {
+        if (validFileSet.isEmpty()) {
             throw new CustomTableNotFoundException(
-                    "Custom table not found for: " + String.join(", ", inValidFileSet)
+                    "No Custom table found "
             );
         } else if(!customTableMap.isEmpty()) {
             this.activityUploadService.uploadCustomTableData(customTableMap);

@@ -1,28 +1,25 @@
 package com.reserv.dataloader.service.upload;
 
 import com.fyntrac.common.entity.CustomTableDefinition;
-import com.fyntrac.common.enums.SequenceNames;
-import com.fyntrac.common.enums.AccountingRules;
-import com.fyntrac.common.enums.AggregationRequestType;
-import com.fyntrac.common.enums.BatchType;
-import com.fyntrac.common.enums.FileUploadActivityType;
+import com.fyntrac.common.entity.ExecutionState;
+import com.fyntrac.common.enums.*;
+import com.fyntrac.common.service.*;
 import com.reserv.dataloader.entity.ActivityLog;
 import com.reserv.dataloader.service.CacheService;
-import com.fyntrac.common.service.TransactionActivityService;
 import com.fyntrac.common.service.aggregation.AggregationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.*;
+import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.repository.JobExecutionAlreadyRunningException;
 import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException;
 import org.springframework.batch.core.repository.JobRestartException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import com.fyntrac.common.service.AttributeService;
-import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.entity.Attributes;
 import com.fyntrac.common.utils.DateUtil;
-import com.fyntrac.common.service.AccountingPeriodDataUploadService;
+
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -55,17 +52,19 @@ public class ActivityUploadService {
     private final AggregationService aggregationService;
     private final TransactionActivityService transactionActivityService;
     private final CacheService cacheService;
-
+    private final ExecutionStateService executionStateService;
 
     @Autowired
     public ActivityUploadService(AccountingPeriodDataUploadService accountingPeriodService
             ,TransactionActivityService transactionActivityService
             , AggregationService aggregationService
-            , CacheService cacheService) {
+            , CacheService cacheService,
+                                 ExecutionStateService executionStateService) {
         this.accountingPeriodService = accountingPeriodService;
         this.aggregationService = aggregationService;
         this.transactionActivityService = transactionActivityService;
         this.cacheService = cacheService;
+        this.executionStateService = executionStateService;
     }
 
     public void uploadCustomTableData(Map<CustomTableDefinition, String> dataMap) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException {
@@ -90,7 +89,22 @@ public class ActivityUploadService {
                 throw exp;
             }finally {
                 if(jobExecution != null && jobExecution.getStatus() == BatchStatus.COMPLETED) {
-                    this.logActivity(uploadId, customTableDefinition.getTableName(),jobExecution,
+
+                    ExecutionState executionState = this.executionStateService.getExecutionState();
+
+                    int postingDate = LocalDate.now()
+                            .format(DateTimeFormatter.BASIC_ISO_DATE)
+                            .chars()
+                            .reduce(0, (a, c) -> a * 10 + (c - '0'));
+
+                    if(customTableDefinition.getTableType() == CustomTableType.OPERATIONAL) {
+                        Integer executionDate = executionState.getExecutionDate();
+                        Integer maxPostingDate =
+                                this.dataService.getMaxPostingDate(customTableDefinition.getTableName(), executionDate);
+                        postingDate = maxPostingDate > executionDate ? maxPostingDate : executionDate;
+
+                    }
+                    this.logActivity(uploadId, postingDate, customTableDefinition.getTableName(),jobExecution,
                             FileUploadActivityType.CUSTOM_TABLE);
                 }
             }
@@ -110,33 +124,36 @@ public class ActivityUploadService {
         try {
             Batch activityBatch = this.createBatch();
             if(instrumentAttributeFilePath !=null) {
-                JobParameters instrumentAttributeJobParameter = createInstrumentAttributeJob(instrumentAttributeFilePath, activityBatch, (instrumentAttributeActivity + transactionActivity), jobId);
+                JobParameters instrumentAttributeJobParameter =
+                        createInstrumentAttributeJob(uploadId, instrumentAttributeFilePath, activityBatch,
+                                (instrumentAttributeActivity + transactionActivity), jobId);
                 JobExecution instrumentAttributeExecution = jobLauncher.run(instrumentAttributeUploadJob, instrumentAttributeJobParameter);
                 runid = instrumentAttributeJobParameter.getLong("run.id");
-                this.logActivity(uploadId, "InstrumentAttributeHistory", instrumentAttributeExecution,
-                        FileUploadActivityType.INSTRUMENT_ATTRIBUTE);
+
                 if (instrumentAttributeExecution.getStatus() == BatchStatus.COMPLETED) {
                     // Job A was successful, now launch Job B
                     log.info("Job instrumentAttributeUploadJob completed successfully. Starting Job transactionActivityUploadJob.");
                     if(transactionActivityFilePath != null) {
-                        JobParameters transactionActivityJobParameter = createTransactionActivityJob(transactionActivityFilePath, activityBatch, (instrumentAttributeActivity + transactionActivity), jobId);
+                        JobParameters transactionActivityJobParameter =
+                                createTransactionActivityJob(uploadId, transactionActivityFilePath, activityBatch,
+                                        (instrumentAttributeActivity + transactionActivity), jobId);
 
 
                         runid = transactionActivityJobParameter.getLong("run.id");
                         JobExecution transactionActivityExecution = jobLauncher.run(transactionActivityUploadJob, transactionActivityJobParameter);
-                        this.logActivity(uploadId, "TransactionActivity", transactionActivityExecution,
-                                FileUploadActivityType.TRANSACTION_ACTIVITY);
+
                     }
                 } else {
                     // If Job instrumentAttributeUploadJob fails, handle failure and don't run Job transactionActivityExecution
                     log.info("Job instrumentAttributeUploadJob failed. Job transactionActivityExecution will not be executed.");
                 }
             }else{
-                JobParameters transactionActivityJobParameter = createTransactionActivityJob(transactionActivityFilePath, activityBatch, (instrumentAttributeActivity + transactionActivity), jobId);
+                JobParameters transactionActivityJobParameter =
+                        createTransactionActivityJob(uploadId, transactionActivityFilePath, activityBatch,
+                                (instrumentAttributeActivity + transactionActivity), jobId);
                 runid = transactionActivityJobParameter.getLong("run.id");
                 JobExecution transactionActivityExecution = jobLauncher.run(transactionActivityUploadJob, transactionActivityJobParameter);
-                this.logActivity(uploadId, "TransactionActivity", transactionActivityExecution,
-                        FileUploadActivityType.TRANSACTION_ACTIVITY);
+
             }
         }catch (Exception e ){
             String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
@@ -146,7 +163,7 @@ public class ActivityUploadService {
         }
     }
 
-    public JobParameters createInstrumentAttributeJob(String filePath, Batch activityBatch, long activityCount, long jobId) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+    public JobParameters createInstrumentAttributeJob(long uploadId, String filePath, Batch activityBatch, long activityCount, long jobId) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
         LocalDateTime startingTime = DateUtil.getDateTime();
         long runid = System.currentTimeMillis();
         StringBuilder columnNames = new StringBuilder();
@@ -171,10 +188,11 @@ public class ActivityUploadService {
                 .addLong("batchId", activityBatch.getId())
                 .addLong("activityCount", activityCount)
                 .addLong("jobId", jobId)
+                .addLong("uploadId", uploadId)
                 .toJobParameters();
     }
 
-    public JobParameters createTransactionActivityJob(String filePath, Batch activityBatch, long activityCount, long jobId) throws ExecutionException, InterruptedException {
+    public JobParameters createTransactionActivityJob(long uploadId, String filePath, Batch activityBatch, long activityCount, long jobId) throws ExecutionException, InterruptedException {
         this.accountingPeriodService.loadIntoCache();
         this.aggregationService.loadIntoCache();
         this.cacheService.loadIntoCache();
@@ -191,16 +209,6 @@ public class ActivityUploadService {
         columnNames.append(",ATTRIBUTEID:STRING");
         columnNames.append(",INSTRUMENTID:STRING");
 
-
-        com.fyntrac.common.entity.AggregationRequest aggregationRequest = com.fyntrac.common.entity.AggregationRequest.builder()
-                .isAggregationComplete(Boolean.FALSE)
-                .isInprogress(Boolean.FALSE)
-                .tenantId(this.dataService.getTenantId())
-                .key(key).build();
-//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.ATTRIBUTE_LEVEL_AGG);
-//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.INSTRUMENT_LEVEL_AGG);
-//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.METRIC_LEVEL_AGG);
-//        this.metricAggregationRequestService.save(aggregationRequest, AggregationRequestType.COMPLETE_AGG);
         return new JobParametersBuilder()
                 .addString("filePath", filePath)
                 .addString("activityColumnName", columnNames.toString())
@@ -210,10 +218,11 @@ public class ActivityUploadService {
                 .addString("tenantId", this.dataService.getTenantId())
                 .addLong("activityCount", activityCount)
                 .addLong("jobId", jobId)
+                .addLong("uploadId", uploadId)
                 .toJobParameters();
     }
 
-    private void logActivity(long uploadId, String tableName, JobExecution execution,
+    private void logActivity(long uploadId,Integer postingDate, String tableName, JobExecution execution,
                              FileUploadActivityType activityType) {
 
         // Loop through steps to get detailed stats
@@ -241,7 +250,7 @@ public class ActivityUploadService {
                     .recordsRead(stepExecution.getReadCount())
                     .recordsWritten(stepExecution.getWriteCount())
                     .recordsSkipped(stepExecution.getSkipCount())
-
+                    .postingDate(postingDate)
                     // 6. Capture Error Message if exists
                     .errorMessage(stepExecution.getFailureExceptions().isEmpty() ? null : stepExecution.getFailureExceptions().get(0).getMessage())
 

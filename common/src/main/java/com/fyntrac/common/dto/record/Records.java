@@ -552,6 +552,7 @@ public class Records {
     }
 
     public record ActivityLogRecord(long uploadId, String jobName,
+                                    LocalDateTime postingDate,
                                     LocalDateTime starting,
                                     LocalDateTime endTime,
                                     String activityStatus,
