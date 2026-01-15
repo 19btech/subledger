@@ -87,7 +87,7 @@ public class TransactionActivityJobCompletionListener implements JobExecutionLis
         Long key = jobExecution.getJobParameters().getLong("run.id");
         Long jobId = jobExecution.getJobParameters().getLong("jobId");
         Long uploadId = jobExecution.getJobParameters().getLong("uploadId");
-        String tableName = "Standard Activity";
+        String tableName = "TransactionActivity";
         FileUploadActivityType activityType = FileUploadActivityType.TRANSACTION_ACTIVITY;
 
         if (jobExecution.getStatus() == BatchStatus.COMPLETED) {

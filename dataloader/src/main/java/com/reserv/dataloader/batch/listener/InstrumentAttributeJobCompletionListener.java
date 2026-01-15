@@ -65,7 +65,7 @@ public class InstrumentAttributeJobCompletionListener implements JobExecutionLis
         Long activityCount = jobExecution.getJobParameters().getLong("activityCount");
         Long jobId = jobExecution.getJobParameters().getLong("jobId");
         Long uploadId = jobExecution.getJobParameters().getLong("uploadId");
-        String tableName = "Standard Activity";
+        String tableName = "InstrumentAttributeHistory";
         FileUploadActivityType activityType = FileUploadActivityType.TRANSACTION_ACTIVITY;
 
         if (jobExecution.getStatus() == BatchStatus.COMPLETED) {
