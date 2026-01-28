@@ -1,28 +1,30 @@
 package com.fyntrac.common.service;
 
+import com.fyntrac.common.component.TenantDataSourceProvider;
+import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.Sequence;
 import com.fyntrac.common.enums.SequenceNames;
-import com.fyntrac.common.utils.StringUtil;
 import com.mongodb.client.result.UpdateResult;
-import  com.fyntrac.common.config.TenantContextHolder;
-import  com.fyntrac.common.component.TenantDataSourceProvider;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.*;
+import org.springframework.data.mongodb.core.BulkOperations;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.MergeOperation;
+import org.springframework.data.mongodb.core.aggregation.ProjectionOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
-import com.mongodb.client.model.ReplaceOptions;
-// MongoDB Document
-import org.bson.Document;
-import java.lang.reflect.Field;
 
+
+import java.lang.reflect.Field;
 import java.util.*;
 
 @Service
@@ -347,28 +349,42 @@ public class DataService<T> {
         this.copyData(tenant, criteria, targetCollection, sourceCollection, klass, attributes);
     }
 
-    public void copyData(String tenant
-            , Criteria criteria
-            , String targetCollection
-            , String sourceCollection
-            , Class<T> klass
-            , String ... attributes) {
-        // Define the conditions for filtering
-        // Criteria criteria = Criteria.where("someField").is("someValue"); // Adjust your filter criteria
+    public void copyData(
+            String tenant,
+            Criteria criteria,
+            String targetCollection,
+            String sourceCollection,
+            Class<?> klass, // Kept for signature compatibility, but ignored in execution
+            String... attributes
+    ) {
+        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
 
-        // Define the aggregation pipeline
+        // 1. Build Projection
+        ProjectionOperation projection = Aggregation.project();
+        for (String attribute : attributes) {
+            projection = projection.and(attribute).as(attribute);
+        }
+
+        // 2. Build Merge Stage (Using your CORRECTED syntax)
+        MergeOperation mergeStage = Aggregation.merge()
+                .intoCollection(targetCollection)
+                .whenMatched(MergeOperation.WhenDocumentsMatch.replaceDocument())      // Update if ID exists
+                .whenNotMatched(MergeOperation.WhenDocumentsDontMatch.insertNewDocument()) // Insert if ID is new
+                .build();
+
+        // 3. Build the Pipeline
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(criteria), // Apply your filter criteria here
-                // Aggregation.project("attributeId", "instrumentId", "transactionName", "transactionDate", "periodId", "glAccountNumber", "glAccountName", "glAccountType", "glAccountSubType", "debitAmount", "creditAmount", "isReclass", "batchId", "attributes"),
-                Aggregation.project(attributes),
-                Aggregation.out(targetCollection) // This will create or replace the target collection
+                Aggregation.match(criteria),
+                projection,
+                mergeStage
         );
 
-        // Execute the aggregation
-        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
-        mongoTemplate.aggregate(aggregation, sourceCollection, klass);
+        // 4. EXECUTE (The Critical Fix)
+        // We pass 'Document.class' to treat data as raw JSON.
+        // This bypasses the "No property b found" constructor error completely.
+        mongoTemplate.aggregate(aggregation, sourceCollection, Document.class);
 
-        log.info("Data copied successfully!");
+        log.info("Data successfully merged from {} to {}", sourceCollection, targetCollection);
     }
 
     public List<Records.DocumentAttribute> getAttributesWithTypes(String collectionName) {
@@ -433,7 +449,7 @@ public class DataService<T> {
 
             Object value = document.get(key);
             String dataType = value.getClass().getSimpleName();
-            String attributeAlias = convertToHungarianNotation(key);
+            String attributeAlias = convertToTitleCase(key);
 
             if (value instanceof Document) {
                 // If the value is a nested document, recurse into it
@@ -470,6 +486,36 @@ public class DataService<T> {
         }
 
         return alias.toString();
+    }
+
+    private String convertToTitleCase(String attributeName) {
+        if (attributeName == null || attributeName.isEmpty()) {
+            return attributeName;
+        }
+
+        // 1. Replace underscores with spaces
+        String withSpaces = attributeName.replace('_', ' ');
+
+        // 2. Split into words
+        String[] words = withSpaces.split("\\s+");
+        StringBuilder result = new StringBuilder();
+
+        for (String word : words) {
+            if (word.isEmpty()) continue;
+
+            // Append a space if this isn't the first word
+            if (result.length() > 0) {
+                result.append(" ");
+            }
+
+            // 3. Capitalize first letter, make the rest lowercase
+            result.append(Character.toUpperCase(word.charAt(0)));
+            if (word.length() > 1) {
+                result.append(word.substring(1).toLowerCase());
+            }
+        }
+
+        return result.toString();
     }
 
     /**

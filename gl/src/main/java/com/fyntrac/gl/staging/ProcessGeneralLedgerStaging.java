@@ -13,6 +13,7 @@ import com.fyntrac.gl.service.DatasourceService;
 import com.fyntrac.gl.service.GeneralLedgerCommonService;
 import com.mongodb.MongoBulkWriteException;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -282,6 +283,7 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
         Collection<com.fyntrac.common.entity.Batch> batches = accountingPeriodCloseMessageRecord.batches();
         this.dataService.setTenantId(accountingPeriodCloseMessageRecord.tenantId());
         this.datasourceService.addDatasource(accountingPeriodCloseMessageRecord.tenantId());
+
         for (com.fyntrac.common.entity.Batch batch : batches) {
             try {
                 this.copyGeneralLedgerStageData(accountingPeriodCloseMessageRecord.tenantId(), batch);
@@ -308,7 +310,7 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
         Criteria criteria = Criteria.where("batchId").is(batch.getId());
         try {
             this.dataService.copyData(tenantId, criteria, targetCollection, sourceCollection, GeneralLedgerEnteryStage.class,
-                    "attributeId", "transactionName", "transactionDate", "periodId", "glAccountNumber", "instrumentId", "glAccountName", "glAccountType", "glAccountSubType", "debitAmount", "creditAmount", "isReclass");
+                    "attributeId", "transactionName", "transactionDate", "periodId", "glAccountNumber", "instrumentId", "glAccountName", "glAccountType", "glAccountSubType", "debitAmount", "creditAmount", "isReclass", "attributes");
         } catch (Exception e) {
             log.error("Error copying general ledger stage data for batch: {}", batch.getId(), e);
             throw e; // Rethrow to ensure the error is propagated
@@ -326,7 +328,7 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
         String sourceCollection = "GeneralLedgerAccountBalanceStage";
         Criteria criteria = Criteria.where("batchId").is(batch.getId());
         try {
-            this.dataService.copyData(tenantId, criteria, targetCollection, sourceCollection, GeneralLedgerAccountBalance.class,
+            this.dataService.copyData(tenantId, criteria, targetCollection, sourceCollection, Document.class,
                     "code", "subCode", "accountNumber", "accountName" , "accountSubtype", "instrumentId", "attributeId", "accountType", "transactionName", "periodId", "amount");
         } catch (Exception e) {
             log.error("Error copying general ledger account balance data for batch: {}", batch.getId(), e);

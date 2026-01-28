@@ -128,7 +128,7 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
         Set<ReclassValues> reclassList = new HashSet<>();
         try {
             for (Records.InstrumentAttributeReclassMessageRecord messageRecord : chunk) {
-                ReclassValues reclassValues = compareAttributeValues(messageRecord.previousInstrumentAttribute(), messageRecord.currentInstrumentAttribute());
+                ReclassValues reclassValues = compareAttributeValues(messageRecord.batchId(), messageRecord.previousInstrumentAttribute(), messageRecord.currentInstrumentAttribute());
                 if (reclassValues != null) {
                     reclassList.add(reclassValues);
                 }
@@ -149,7 +149,7 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
      * @param current  The current instrument attribute record.
      * @return A ReclassValues object if reclassification is needed, otherwise null.
      */
-    private ReclassValues compareAttributeValues(Records.InstrumentAttributeRecord previous, Records.InstrumentAttributeRecord current) {
+    private ReclassValues compareAttributeValues(long batchId, Records.InstrumentAttributeRecord previous, Records.InstrumentAttributeRecord current) {
         try {
             Map<String, Object> previousAttributes = previous.attributes();
             Map<String, Object> currentAttributes = current.attributes();
@@ -166,7 +166,7 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
                     Object value2 = currentAttributes.get(attributeName);
 
                     if (checkReclass(value1, value2)) {
-                        reclassValues = this.buildReclassValuesObject(attributeName, value1, value2, previous, current);
+                        reclassValues = this.buildReclassValuesObject(attributeName, batchId, value1, value2, previous, current);
                         break;
                     }
                 }
@@ -197,12 +197,13 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
      * @param current       The current instrument record.
      * @return A new ReclassValues object.
      */
-    private ReclassValues buildReclassValuesObject(String attributeName, Object oldValue, Object newValue,
+    private ReclassValues buildReclassValuesObject(String attributeName, long batchId, Object oldValue, Object newValue,
                                                    Records.InstrumentAttributeRecord previous, Records.InstrumentAttributeRecord current) {
         Map<String, Object> reclassAttributes = getReclassableAttributes(current);
         return ReclassValues.builder()
                 .attributeId(previous.attributeId())
                 .attributeName(attributeName)
+                .batchId(batchId)
                 .instrumentId(previous.instrumentId())
                 .previousPeriodId(previous.periodId())
                 .previousVersionId(previous.versionId())

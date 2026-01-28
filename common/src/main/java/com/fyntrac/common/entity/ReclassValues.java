@@ -25,6 +25,7 @@ public class ReclassValues implements Serializable {
     private String id;
     private String instrumentId;
     private String attributeId;
+    private long batchId;
     private long previousVersionId;
     private long currentVersionId;
     private String attributeName;
@@ -44,6 +45,7 @@ public class ReclassValues implements Serializable {
         json.append("id='" + id + '\'');
         json.append(", instrumentId='" + instrumentId + '\'');
         json.append(", attributeId='" + attributeId + '\'' );
+        json.append(", batchId='" + batchId + '\'' );
         json.append(", previousVersionId=" + previousVersionId);
         json.append(", currentVersionId=" + currentVersionId);
         json.append(", attributeName='" + attributeName + '\'');

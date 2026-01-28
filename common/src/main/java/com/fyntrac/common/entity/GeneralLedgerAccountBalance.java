@@ -1,8 +1,7 @@
 package com.fyntrac.common.entity;
 
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.experimental.SuperBuilder;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -13,27 +12,28 @@ import java.util.Objects;
 import java.util.Set;
 
 @SuperBuilder
+@Getter
+@Setter
 @Document(collection = "GeneralLedgerAccountBalance")
-public class GeneralLedgerAccountBalance extends AccountBalance implements Serializable {
+public class GeneralLedgerAccountBalance
+        extends AccountBalance
+        implements Serializable {
+
     @Serial
     private static final long serialVersionUID = -696117065416878924L;
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true; // Check for reference equality
-        if (!(o instanceof GeneralLedgerAccountBalance)) return false; // Check for the correct type
-        GeneralLedgerAccountBalance that = (GeneralLedgerAccountBalance) o; // Cast to the correct type
-        return instrumentId == that.instrumentId && // Check field equality
-                Objects.equals(code, that.code) &&
-                Objects.equals(accountType, that.accountType) &&
-                Objects.equals(attributeId, that.attributeId);
+
+    /** REQUIRED by Spring Data Mongo */
+    public GeneralLedgerAccountBalance() {
+        super();
     }
+
     @Override
     public int hashCode() {
         Set<String> hashcode = new HashSet<String>(0);
         hashcode.add(accountType.name());
         hashcode.add(instrumentId);
         hashcode.add(attributeId);
-        // hashcode.add(String.valueOf(periodId));
+        hashcode.add(String.valueOf(periodId));
         return hashcode.hashCode();
     }
 
@@ -43,6 +43,17 @@ public class GeneralLedgerAccountBalance extends AccountBalance implements Seria
         hashcode.add(instrumentId);
         hashcode.add(attributeId);
         return hashcode.hashCode();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true; // Check for reference equality
+        if (!(o instanceof GeneralLedgerAccountBalanceStage)) return false; // Check for the correct type
+        GeneralLedgerAccountBalanceStage that = (GeneralLedgerAccountBalanceStage) o; // Cast to the correct type
+        return instrumentId == that.instrumentId && // Check field equality
+                Objects.equals(code, that.code) &&
+                Objects.equals(accountType, that.accountType) &&
+                Objects.equals(attributeId, that.attributeId);
     }
 
     @Override
@@ -58,6 +69,5 @@ public class GeneralLedgerAccountBalance extends AccountBalance implements Seria
                 .append("}");
         return sb.toString();
     }
-
+    // equals / hashCode unchanged
 }
-

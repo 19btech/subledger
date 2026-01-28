@@ -1,8 +1,6 @@
 package com.reserv.dataloader.batch.writer;
 
 import com.fyntrac.common.cache.collection.CacheList;
-import com.fyntrac.common.component.InstrumentReplayQueue;
-import com.fyntrac.common.component.InstrumentReplaySet;
 import com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.dto.record.RecordFactory;
@@ -47,6 +45,9 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     private ExecutionState executionState;
     private Long jobId;
 
+    // OPTIMIZATION: Store ReferenceData as a field
+    private ReferenceData referenceData;
+
     private static final int LOCK_TIMEOUT_SECONDS = 10;
     private static final int MAX_RETRIES = 10;
     private static final long RETRY_DELAY_MS = 100;
@@ -55,10 +56,8 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                                      TenantDataSourceProvider dataSourceProvider,
                                      MemcachedRepository memcachedRepository,
                                      InstrumentAttributeService instrumentAttributeService,
-                                     AccountingPeriodService accountingPeriodService
-            , ExecutionStateService executionStateService
-
-    ) {
+                                     AccountingPeriodService accountingPeriodService,
+                                     ExecutionStateService executionStateService) {
         this.delegate = delegate;
         this.dataSourceProvider = dataSourceProvider;
         this.memcachedRepository = memcachedRepository;
@@ -66,7 +65,6 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.runId = 0;
         this.accountingPeriodService = accountingPeriodService;
         this.executionStateService = executionStateService;
-
     }
 
     @BeforeStep
@@ -77,13 +75,29 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.instrumentAttributeService.setTenant(tenantId);
         this.batchId = jobParameters.getLong("batchId");
         this.jobId = jobParameters.getLong("jobId");
-        executionState = this.executionStateService.getExecutionState();
+        this.executionState = this.executionStateService.getExecutionState();
+
+        // FIX: Fetch ReferenceData ONCE here, not in every write call
+        try {
+            this.referenceData = this.memcachedRepository.getFromCache(
+                    this.tenantId,
+                    com.fyntrac.common.config.ReferenceData.class
+            );
+
+            if (this.referenceData == null) {
+                log.warn("ReferenceData is null for tenant: {}", this.tenantId);
+                // Handle null case appropriately if needed, or throw exception to fail fast
+            }
+        } catch (Exception e) {
+            log.error("Failed to fetch ReferenceData during BeforeStep", e);
+            throw new RuntimeException("Could not initialize writer due to Cache Error", e);
+        }
     }
 
     @Override
     public void write(Chunk<? extends InstrumentAttribute> instrumentAttributes) throws Exception {
+        // REMOVED: The expensive cache call that was causing the timeout
 
-        ReferenceData referenceData = this.memcachedRepository.getFromCache(this.tenantId, com.fyntrac.common.config.ReferenceData.class);
         List<InstrumentAttribute> combinedAttributes = new ArrayList<>(instrumentAttributes.getItems());
 
         if (this.tenantId != null && !this.tenantId.isEmpty()) {
@@ -94,35 +108,33 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
 
             for (InstrumentAttribute instrumentAttribute : combinedAttributes) {
 
-                // --- FIX 1: FORCE ID GENERATION ---
-                // We generate the ID *before* adding to cache. This ensures the cache
-                // has a valid ID, so when we retrieve it during Retry, linking works.
                 if (instrumentAttribute.getId() == null) {
                     instrumentAttribute.setId(new ObjectId().toString());
                 }
 
-                int effectivePeriodId =
-                        com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(instrumentAttribute.getEffectiveDate());
+                int effectivePeriodId = com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(instrumentAttribute.getEffectiveDate());
                 AccountingPeriod effectiveAccountingPeriod = this.accountingPeriodService.getAccountingPeriod(effectivePeriodId, this.tenantId);
+
                 instrumentAttribute.setEndDate(null);
                 instrumentAttribute.setCloseDate(null);
                 instrumentAttribute.setPreviousVersionId(0L);
 
+                // Use the cached referenceData field
                 if (effectiveAccountingPeriod != null) {
                     if (effectiveAccountingPeriod.getStatus() != 0) {
-                        instrumentAttribute.setPeriodId(referenceData.getCurrentAccountingPeriodId());
+                        instrumentAttribute.setPeriodId(this.referenceData.getCurrentAccountingPeriodId());
                     } else {
                         instrumentAttribute.setPeriodId(effectiveAccountingPeriod.getPeriodId());
                     }
                 } else {
-                    instrumentAttribute.setPeriodId(referenceData.getCurrentAccountingPeriodId());
+                    instrumentAttribute.setPeriodId(this.referenceData.getCurrentAccountingPeriodId());
                 }
 
                 instrumentAttribute.setBatchId(batchId);
 
-                // Now added to cache WITH an ID
+                // Warning: Calling cache put in a loop is still risky for high volume.
+                // If possible, verify if instrumentAttributeService supports bulk additions.
                 this.instrumentAttributeService.addIntoCache(this.tenantId, instrumentAttribute);
-
             }
             delegate.setTemplate(mongoTemplate);
         }
@@ -139,6 +151,8 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
 
         delegate.write(updatedChunk);
     }
+
+    // ... (Rest of your methods remain unchanged) ...
 
     private <T> void updateCacheWithLock(String lockKey, String dataKey, CacheList<T> newItems) {
         if (newItems == null || newItems.getList() == null || newItems.getList().isEmpty()) return;
@@ -206,7 +220,6 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                     .sorted(Comparator.comparingInt(InstrumentAttribute::getPeriodId))
                     .collect(Collectors.toList());
 
-            // DEBUG LOG: See if we are in Retry Mode
             if (sortedSubChunk.size() == 1) {
                 log.info("Processing SINGLE item (Retry Mode) for Instrument: {}", sortedSubChunk.get(0).getInstrumentId());
             }
@@ -214,42 +227,30 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
             for (int i = 0; i < sortedSubChunk.size(); i++) {
                 InstrumentAttribute currentAttribute = sortedSubChunk.get(i);
 
-                // --- SCENARIO 1: FORWARD LINKING (Normal Chunking) ---
                 if (sortedSubChunk.size() > i + 1) {
                     InstrumentAttribute nextAttribute = sortedSubChunk.get(i + 1);
                     currentAttribute.setEndDate(nextAttribute.getEffectiveDate());
                     currentAttribute.setCloseDate(DateUtil.convertIntDateToUtc(nextAttribute.getPostingDate()));
-
-                    // ID is guaranteed by Fix 1
                     nextAttribute.setPreviousVersionId(currentAttribute.getVersionId());
-
                     this.addReclassMessage(batchId, currentAttribute, nextAttribute, localMessages);
                 }
 
-                // --- SCENARIO 2: BACKWARD LINKING (Retry Mode / First Item) ---
                 if (i == 0) {
                     List<InstrumentAttribute> openInstrumentAttributes =
                             this.instrumentAttributeService.getOpenInstrumentAttributes(currentAttribute.getAttributeId(), currentAttribute.getInstrumentId(), this.tenantId);
 
-                    // LOG: Check what we found
                     if (sortedSubChunk.size() == 1) {
                         log.info("Retry Mode: Found {} open attributes for linking", openInstrumentAttributes.size());
                     }
 
                     for (InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
-
-                        // Safety: Don't link to yourself (if service returns current uncommitted record)
                         if (Objects.equals(openInstrumentAttribute.getVersionId(), currentAttribute.getVersionId())) {
                             continue;
                         }
-
                         openInstrumentAttribute.setEndDate(currentAttribute.getEffectiveDate());
                         openInstrumentAttribute.setCloseDate(DateUtil.convertIntDateToUtc(currentAttribute.getPostingDate()));
-
                         currentAttribute.setPreviousVersionId(openInstrumentAttribute.getVersionId());
                         openVersion.add(openInstrumentAttribute);
-
-                        // THIS CATCHES THE REPLAY LOGIC IN RETRY
                         this.addReclassMessage(batchId, openInstrumentAttribute, currentAttribute, localMessages);
                     }
                 }

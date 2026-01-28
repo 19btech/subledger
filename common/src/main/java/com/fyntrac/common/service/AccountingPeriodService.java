@@ -182,17 +182,27 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
 
     public void closeAccountingPeriod(int accountingPeriodId) {
         try {
-            //fetch pending batches and create pulsar message to generate GLE
-            Collection<Batch> batches = this.batchService.getBatchesByTypeAndStatus(BatchType.ACTIVITY, BatchStatus.PENDING);
+            // 1. Clean Code: Use Constants/Enums if possible (Assuming 0=OPEN, 1=CLOSED)
+            int STATUS_OPEN = 0;
+            int STATUS_CLOSED = 1;
 
-            Update update = new Update().set("status", 1);
-            Criteria criteria = Criteria.where("status").is(0);
-            criteria.and("periodId").lte(accountingPeriodId);
-            dataService.update(new Query(criteria), update, AccountingPeriod.class);
+            Update update = new Update().set("status", STATUS_CLOSED);
 
-        }catch (Exception exp){
-            log.error(exp.getLocalizedMessage());
-            throw new RuntimeException(exp.getLocalizedMessage());
+            // 2. Logic Check: Ensure criteria is correct
+            Criteria criteria = Criteria.where("status").is(STATUS_OPEN)
+                    .and("periodId").lte(accountingPeriodId);
+
+            // 3. CRITICAL FIX: Use 'updateMulti' logic
+            // If dataService.update() calls mongoTemplate.updateFirst(), this is a BUG.
+            // You must ensure this executes an updateMulti command.
+            dataService.getMongoTemplate().updateMulti(new Query(criteria), update, AccountingPeriod.class);
+
+        } catch (Exception exp) {
+            // 4. FIX: Log the full exception (pass 'exp' as the second argument)
+            log.error("Failed to close accounting period {}: {}", accountingPeriodId, exp.getMessage(), exp);
+
+            // 5. FIX: Pass 'exp' to the new RuntimeException to keep the stack trace
+            throw new RuntimeException("Error closing accounting period: " + exp.getMessage(), exp);
         }
     }
 

@@ -92,10 +92,7 @@ public class ActivityUploadService {
 
                     ExecutionState executionState = this.executionStateService.getExecutionState();
 
-                    int postingDate = LocalDate.now()
-                            .format(DateTimeFormatter.BASIC_ISO_DATE)
-                            .chars()
-                            .reduce(0, (a, c) -> a * 10 + (c - '0'));
+                    Integer postingDate = null;
 
                     if(customTableDefinition.getTableType() == CustomTableType.OPERATIONAL) {
                         Integer executionDate = executionState.getExecutionDate();

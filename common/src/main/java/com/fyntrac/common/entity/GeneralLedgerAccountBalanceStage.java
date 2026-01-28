@@ -1,6 +1,7 @@
 package com.fyntrac.common.entity;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.experimental.SuperBuilder;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -10,13 +11,23 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
-@Data
 @SuperBuilder
+@Getter
+@Setter
 @Document(collection = "GeneralLedgerAccountBalanceStage")
-public class GeneralLedgerAccountBalanceStage extends AccountBalance implements Serializable {
+public class GeneralLedgerAccountBalanceStage
+        extends AccountBalance
+        implements Serializable {
+
     @Serial
     private static final long serialVersionUID = -7576822289278598528L;
+
     private long batchId;
+
+    /** REQUIRED by Spring Data Mongo */
+    public GeneralLedgerAccountBalanceStage() {
+        super();
+    }
 
     @Override
     public int hashCode() {
@@ -62,4 +73,3 @@ public class GeneralLedgerAccountBalanceStage extends AccountBalance implements 
         return sb.toString();
     }
 }
-

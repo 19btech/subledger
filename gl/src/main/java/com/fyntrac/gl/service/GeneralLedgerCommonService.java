@@ -264,7 +264,7 @@ public class GeneralLedgerCommonService {
                                 .glAccountName(balance.getAccountName())
                                 .glAccountSubType(balance.getAccountSubtype())
                                 .glAccountType(accountType.getAccountType().name())
-                                .isReclass(0)
+                                .isReclass(1)
                                 .debitAmount(BigDecimal.valueOf(0L))
                                 .creditAmount(balance.getAmount().negate())
                                 .attributes(attributes)

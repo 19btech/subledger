@@ -98,6 +98,8 @@ public class AccountingPeriodController {
         }catch (Exception exp){
             log.error(exp.getLocalizedMessage());
             throw new RuntimeException(exp.getLocalizedMessage());
+        }finally {
+            accountingPeriodService.closeAccountingPeriod(accountingPeriod.periodId());
         }
         return new ResponseEntity<>(accountingPeriod, HttpStatus.OK);
     }
