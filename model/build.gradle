@@ -7,11 +7,12 @@ plugins {
 }
 
 group = 'com.fyntrac'
-version = '0.0.2-SNAPSHOT'
+version = '0.0.3-SNAPSHOT'
 
 ext {
 	projectname = 'model'
 	pulsarVersion = '3.3.4'
+	commonsVersion = '0.0.2-SNAPSHOT'
 	gituser = System.getenv('GIT_USER')
 	gittoken = System.getenv('GIT_KEY')
 }
@@ -91,7 +92,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
-	implementation "com.fyntrac:commons:${project.version}"
+	implementation "com.fyntrac:commons:${commonsVersion}"
 	implementation 'org.apache.poi:poi:5.4.1'
 	// implementation 'org.apache.poi:poi-ooxml:5.3.0'
 	implementation 'org.apache.poi:poi-ooxml:5.4.1'

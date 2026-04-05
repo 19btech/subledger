@@ -7,11 +7,12 @@ plugins {
 }
 
 group = 'com.fyntrac'
-version = '0.0.2-SNAPSHOT'
+version = '0.0.3-SNAPSHOT'
 
 ext {
 	projectname = 'gl'
 	pulsarVersion = '3.3.4'
+	commonsVersion = '0.0.2-SNAPSHOT'
 	gituser = System.getenv('GIT_USER')
 	gittoken = System.getenv('GIT_KEY')
 }
@@ -79,7 +80,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'net.spy:spymemcached:2.12.3'
-    implementation "com.fyntrac:commons:${project.version}"
+    implementation "com.fyntrac:commons:${commonsVersion}"
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
