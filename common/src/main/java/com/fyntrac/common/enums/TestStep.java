@@ -8,7 +8,10 @@ public enum TestStep {
     MODEL_EXECUTION,
     EVENT_CONFIGURATION,
     CUSTOM_TABLE_DEFINITION,
-    UPLOAD_CUSTOM_DATA;
+    UPLOAD_CUSTOM_DATA,
+    DSL_MODEL_UPLOAD,
+    DSL_MODEL_CONFIGURATION,
+    DSL_MODEL_EXECUTION;
 
     public static TestStep step(String value) {
         if (value == null || value.isBlank()) {

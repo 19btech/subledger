@@ -1,11 +1,13 @@
 package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.dto.record.Records;
+import com.fyntrac.common.entity.Model;
 import com.fyntrac.common.entity.ModelConfig;
-import com.fyntrac.common.enums.AggregationLevel;
+import com.fyntrac.common.enums.ModelStatus;
 import com.fyntrac.common.enums.ModelType;
 import com.fyntrac.common.repository.EventRepository;
 import com.fyntrac.common.service.ExcelModelService;
+import com.fyntrac.common.service.ModelService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.StringUtil;
 import com.reserv.dataloader.service.DataloaderExcelFileService;
@@ -21,9 +23,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import com.fyntrac.common.service.ModelService;
-import com.fyntrac.common.enums.ModelStatus;
-import com.fyntrac.common.entity.Model;
 
 import java.time.format.DateTimeFormatter;
 import java.util.Collection;
@@ -121,6 +120,59 @@ public class ModelController {
         }
     }
 
+
+    @PostMapping("/upload-py-model")
+    @Transactional
+    public ResponseEntity<?> uploadPythonModel(
+            @RequestParam("dslModel") MultipartFile dslModel,
+            @RequestParam("modelName") String modelName,
+            @RequestParam("modelOrderId") String modelOrderId) {
+        try {
+
+            // Basic null/empty file safety check
+            if (dslModel == null || dslModel.isEmpty()) {
+                return ResponseEntity.badRequest().body("Uploaded file is empty.");
+            }
+
+            // Check if model already exists
+            if (modelService.ifModelExists(modelName)) {
+                return ResponseEntity.badRequest()
+                        .body("Model name already exists: " + modelName);
+            }
+
+            // Upload file and save model
+            // NOTE: Depending on your fileService implementation, you may need to pass
+            // dslModel.getBytes() or dslModel.getInputStream() instead of the MultipartFile object
+            String fileId = fileService.uploadPythonModelFile(dslModel);
+
+            ModelConfig modelConfig = new ModelConfig();
+
+            Model model = modelService.save(
+                    modelName,
+                    ModelType.PYTHON,
+                    modelOrderId,
+                    fileId,
+                    Boolean.FALSE,
+                    ModelStatus.INACTIVE,
+                    new Date(),
+                    "Fyntrac",
+                    modelConfig
+            );
+
+            return ResponseEntity.ok(model);
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+
+        } catch (Exception e) {
+            String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
+            log.error(stackTrace);
+            return ResponseEntity.internalServerError()
+                    .body("An unexpected error occurred: " + e.getMessage());
+        }
+    }
+
+
     //Old Code
 //    public ResponseEntity<?> uploadFile(@RequestParam("files") MultipartFile file,
 //                                        @RequestParam("modelName") String modelName,
@@ -204,6 +256,33 @@ public class ModelController {
             return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
         } catch (Throwable e) {
             // log.error(StringUtil.getStackTrace(e));
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/execute/dsl")
+    public ResponseEntity<String> executeDslModel(@RequestBody Records.DateRequestRecord dateRequestRecord) {
+        try {
+            log.info("dsl model execution requested for date: {}", dateRequestRecord.date());
+
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy"); // Define the format
+
+            Date executionDate = DateUtil.parseDate(dateRequestRecord.date(), formatter);
+            int postingDate = DateUtil.dateInNumber(executionDate);
+            this.eventRepository.deleteByPostingDate(postingDate);
+            excelModelService.generateEvent(postingDate);
+
+
+            this.modelExecutionService.sendPythonModelExecutionMessage(dateRequestRecord.date());
+            return ResponseEntity.ok("dsl model execution initiated for: " + dateRequestRecord.date());
+        } catch (IllegalArgumentException e) {
+            log.error(StringUtil.getStackTrace(e));
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            log.error(StringUtil.getStackTrace(e));
+            return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
+        } catch (Throwable e) {
+            log.error("dsl model execution error: {}", e.getMessage());
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         }
     }

@@ -13,6 +13,7 @@ import com.fyntrac.common.service.InstrumentAttributeService;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.StringUtil;
 import com.reserv.dataloader.pulsar.producer.ModelExecutionProducer;
+import com.reserv.dataloader.pulsar.producer.PythonModelExecutionProducer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,6 +45,7 @@ public class ModelExecutionService {
     private final InstrumentAttributeService instrumentAttributeService;
     private final MemcachedRepository memcachedRepository;
     private final ModelExecutionProducer modelExecutionProducer;
+    private final PythonModelExecutionProducer pythonModelExecutionProducer;
     private final ExcelModelService excelModelService;
     private final EventRepository eventRepository;
 
@@ -54,11 +56,13 @@ public class ModelExecutionService {
     public ModelExecutionService(InstrumentAttributeService instrumentAttributeService
     , MemcachedRepository memcachedRepository
     , ModelExecutionProducer modelExecutionProducer
+    , PythonModelExecutionProducer pythonModelExecutionProducer
     , ExcelModelService excelModelService
     , EventRepository eventRepository) {
         this.instrumentAttributeService = instrumentAttributeService;
         this.memcachedRepository = memcachedRepository;
-        this.modelExecutionProducer =modelExecutionProducer;
+        this.modelExecutionProducer = modelExecutionProducer;
+        this.pythonModelExecutionProducer = pythonModelExecutionProducer;
         this.excelModelService = excelModelService;
         this.eventRepository = eventRepository;
     }
@@ -188,6 +192,100 @@ public class ModelExecutionService {
                 DateUtil.dateInNumber(executionDate), key, isLast));
         // Collect into CacheList
 
+    }
+
+    /**
+     * Send Python model execution messages for all instruments on a given date.
+     * Follows the same paginated chunking pattern as sendExcelModelExecutionMessage
+     * but routes through PythonModelExecutionProducer.
+     */
+    public void sendPythonModelExecutionMessage(String date) throws Throwable {
+        final int pageSize = this.pageSize;
+        final String tenant = TenantContextHolder.getTenant();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
+        Date executionDate = DateUtil.parseDate(date, formatter);
+        int postingDateNumber = DateUtil.dateInNumber(executionDate);
+
+        // Determine total pages first
+        Page<Event> firstPage = TenantContextHolder.runWithTenant(tenant,
+                () -> this.eventRepository.findInstrumentIdsByPostingDateAndStatusNotStarted(
+                        postingDateNumber, PageRequest.of(0, 1))
+        );
+
+        if (firstPage.getTotalElements() == 0) {
+            log.info("No events found for Python model execution. PostingDate={}, Tenant={}", postingDateNumber, tenant);
+            return;
+        }
+
+        int totalPages = (int) Math.ceil((double) firstPage.getTotalElements() / pageSize);
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Semaphore semaphore = new Semaphore(10);
+
+            List<CompletableFuture<Boolean>> futures = new ArrayList<>();
+
+            for (int pageNumber = 0; pageNumber < totalPages; pageNumber++) {
+                final int currentPage = pageNumber;
+
+                CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
+                    try {
+                        semaphore.acquire();
+                        return TenantContextHolder.runWithTenant(tenant, () -> {
+                            try {
+                                Page<Event> page = this.eventRepository.findInstrumentIdsByPostingDateAndStatusNotStarted(
+                                        postingDateNumber, PageRequest.of(currentPage, pageSize)
+                                );
+
+                                List<Event> events = page.getContent();
+                                if (!events.isEmpty()) {
+                                    Set<String> instrumentIdChunk = events.stream()
+                                            .map(Event::getInstrumentId)
+                                            .filter(Objects::nonNull)
+                                            .collect(Collectors.toSet());
+                                    this.postPythonModelExecutionMessage(executionDate, new ArrayList<>(instrumentIdChunk),
+                                            currentPage, (currentPage == totalPages - 1));
+                                    log.debug("Python model: processed page {}/{}", currentPage + 1, totalPages);
+                                    return true;
+                                }
+                                return false;
+                            } catch (Exception e) {
+                                log.error("Python model: failed to process page {}: {}", currentPage, e.getMessage());
+                                return false;
+                            } finally {
+                                semaphore.release();
+                            }
+                        });
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        log.error("Python model: thread interrupted for page {}", currentPage);
+                        return false;
+                    }
+                }, executor);
+
+                futures.add(future);
+            }
+
+            List<Boolean> results = futures.stream()
+                    .map(CompletableFuture::join)
+                    .collect(Collectors.toList());
+
+            long successCount = results.stream().filter(Boolean::booleanValue).count();
+            log.info("Python model execution: {}/{} pages successful for tenant {}",
+                    successCount, totalPages, tenant);
+
+        } catch (Exception ex) {
+            log.error("Python model execution failed for tenant {}", tenant, ex);
+            throw new RuntimeException("Python model execution failed for tenant " + tenant, ex);
+        }
+    }
+
+    private void postPythonModelExecutionMessage(Date executionDate, List<String> instruments, int page, boolean isLast) {
+        String tenantId = TenantContextHolder.getTenant();
+        this.pythonModelExecutionProducer.sendPythonModelExecutionMessage(
+                RecordFactory.createPythonModelExecutionMessage(tenantId,
+                        DateUtil.dateInNumber(executionDate), instruments, isLast));
+        log.debug("Python model: published {} instruments for tenant={} date={} isLast={}",
+                instruments.size(), tenantId, DateUtil.dateInNumber(executionDate), isLast);
     }
 
     public void executeMode(int executionDate) throws Throwable{

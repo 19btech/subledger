@@ -20,6 +20,7 @@ import com.fyntrac.common.service.DataService;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
@@ -43,6 +44,19 @@ public class DataloaderExcelFileService extends ExcelFileService {
         Workbook workbook = ExcelFileUtil.convertMultipartFileToWorkbook(file);
         byte[] bytes = ExcelFileUtil.convertWorkbookToByteArray(workbook);
         fileDocument.setFileData(new Binary(bytes));
+
+        ModelFile savedDocument = this.dataService.save(fileDocument);
+        return savedDocument.getId();
+    }
+
+    // Upload file to MongoDB
+    public String uploadPythonModelFile(MultipartFile dslTemplate) throws IOException {
+
+        ModelFile fileDocument = new ModelFile();
+        fileDocument.setContentType(dslTemplate.getContentType());
+        Binary binary = ExcelFileUtil.convertToMongoBinary(dslTemplate);
+
+        fileDocument.setFileData(binary);
 
         ModelFile savedDocument = this.dataService.save(fileDocument);
         return savedDocument.getId();

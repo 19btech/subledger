@@ -1,24 +1,19 @@
 package com.reserv.dataloader.utils;
 
-import  com.fyntrac.common.enums.AccountingRules;
-import com.fyntrac.common.exception.ExcelFormulaCellException;
+import com.fyntrac.common.utils.ExcelUtil;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.bson.types.Binary;
 import org.springframework.web.multipart.MultipartFile;
-import org.apache.poi.ss.usermodel.*;
+
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import com.fyntrac.common.utils.ExcelUtil;
 
 public class ExcelFileUtil extends ExcelUtil{
 
@@ -179,5 +174,13 @@ public class ExcelFileUtil extends ExcelUtil{
                         (originalFilename.endsWith(".xls") || originalFilename.endsWith(".xlsx")));
     }
 
+    public static Binary convertToMongoBinary(MultipartFile file) {
+        try {
+            // Wraps the raw bytes in the BSON Binary wrapper
+            return new Binary(file.getBytes());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to convert file to MongoDB Binary", e);
+        }
+    }
 }
 

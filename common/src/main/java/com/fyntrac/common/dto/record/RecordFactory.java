@@ -112,6 +112,13 @@ public class RecordFactory {
         return createRecord(() -> new Records.ModelExecutionMessageRecord(tenant, executionDate, key, isLast));
     }
 
+    public static Records.PythonModelExecutionMessageRecord createPythonModelExecutionMessage(String tenant,
+                                                                                              Integer executionDate,
+                                                                                              List<String> instrumentIds,
+                                                                                              boolean isLast) {
+        return createRecord(() -> new Records.PythonModelExecutionMessageRecord(tenant, executionDate, instrumentIds, isLast));
+    }
+
     public static Records.ModelRecord createModelRecord(Model model, ModelFile modelFile) {
         return createRecord(() -> new Records.ModelRecord(model, modelFile));
     }
