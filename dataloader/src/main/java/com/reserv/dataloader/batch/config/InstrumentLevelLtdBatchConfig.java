@@ -75,7 +75,7 @@ public class InstrumentLevelLtdBatchConfig {
     public Step instrumentLevelLtdStep() throws Exception {
         return new StepBuilder("instrument-level-ltd-step", jobRepository)
                 .<TransactionActivity, List<Records.InstrumentLevelLtdRecord>>chunk(chunkSize, new ResourcelessTransactionManager())
-                .reader(instrumentLevelLtdItemReader("", 0L, this.transactionActivityQueue))
+                .reader(instrumentLevelLtdItemReader(0L, 0L, this.aggregationService.getDataService().getMongoTemplate()))
                 .processor(instrummentLevelLtdProcessor("", 0L))
                 .writer(instrumentLevelLtdItemWriter("", 0L, this.aggregationService.getDataService().getMongoTemplate()))
                 .build();
@@ -96,11 +96,25 @@ public class InstrumentLevelLtdBatchConfig {
     // === Reader ===
     @Bean
     @StepScope
-    public TransactionActivityItemReader instrumentLevelLtdItemReader(@Value("#{jobParameters['tenantId']}") String tenantId,
-                                                                       @Value("#{jobParameters['jobId']}") Long jobId
-            , TransactionActivityQueue activityQueue
+    public org.springframework.batch.item.data.MongoCursorItemReader<TransactionActivity> instrumentLevelLtdItemReader(
+            @Value("#{jobParameters['execution-date']}") Long executionDate,
+            @Value("#{jobParameters['jobId']}") Long jobId,
+            MongoTemplate mongoTemplate
     ) {
-        return new TransactionActivityItemReader(activityQueue.getIterator(tenantId, jobId));
+        org.springframework.batch.item.data.builder.MongoCursorItemReaderBuilder<TransactionActivity> builder = new org.springframework.batch.item.data.builder.MongoCursorItemReaderBuilder<>();
+        builder.name("instrumentLevelLtdItemReader");
+        builder.template(mongoTemplate);
+        builder.collection("TransactionActivity");
+        builder.targetType(TransactionActivity.class);
+        
+        builder.query(new org.springframework.data.mongodb.core.query.Query(
+            org.springframework.data.mongodb.core.query.Criteria.where("postingDate").is(executionDate.intValue())
+            .and("batchId").is(jobId)
+        ));
+        
+        builder.sorts(java.util.Map.of("_id", org.springframework.data.domain.Sort.Direction.ASC)); 
+        
+        return builder.build();
     }
 
     // === Processor ===

@@ -47,9 +47,14 @@ public class DynamicDataProcessor implements ItemProcessor<FieldSet, Document> {
                 if (convertedValue instanceof String strDate) {
                     Date date = DateUtil.parseDate(strDate);
                     convertedValue =  DateUtil.convertToIntYYYYMMDDFromJavaDate(date);
-                }else if(convertedValue instanceof LocalDate lDate) {
-                    Date date  = Date.from(lDate.atStartOfDay(ZoneOffset.UTC).toInstant());
-                    convertedValue =  DateUtil.convertToIntYYYYMMDDFromJavaDate(date);
+                }else if (convertedValue instanceof LocalDate localDate) {
+                    // Handle LocalDate: Convert it to java.util.Date first
+                    Date date = Date.from(localDate.atStartOfDay(ZoneOffset.UTC).toInstant());
+                    convertedValue = DateUtil.convertToIntYYYYMMDDFromJavaDate(date);
+                }
+                else if (convertedValue instanceof Date date) {
+                    // Handle java.util.Date: It is already the correct type, pass it directly
+                    convertedValue = DateUtil.convertToIntYYYYMMDDFromJavaDate(date);
                 }
 
             }
@@ -81,7 +86,9 @@ public class DynamicDataProcessor implements ItemProcessor<FieldSet, Document> {
             case "DATE":
                 // FIX: Handle "MM/dd/yyyy" format (e.g., 01/31/2025)
                 try {
-                    return LocalDate.parse(value, DateTimeFormatter.ofPattern("MM/dd/yyyy"));
+                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
+                    LocalDate localDate = LocalDate.parse(value, formatter);
+                    return Date.from(localDate.atStartOfDay(ZoneOffset.UTC).toInstant());
                 } catch (Exception e) {
                     // Fallback to ISO format (YYYY-MM-DD) if parsing fails
                     return LocalDate.parse(value, DateTimeFormatter.ISO_DATE);

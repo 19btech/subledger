@@ -149,7 +149,7 @@ public class ModelController {
 
             Model model = modelService.save(
                     modelName,
-                    ModelType.PYTHON,
+                    ModelType.DSL,
                     modelOrderId,
                     fileId,
                     Boolean.FALSE,
@@ -271,8 +271,6 @@ public class ModelController {
             int postingDate = DateUtil.dateInNumber(executionDate);
             this.eventRepository.deleteByPostingDate(postingDate);
             excelModelService.generateEvent(postingDate);
-
-
             this.modelExecutionService.sendPythonModelExecutionMessage(dateRequestRecord.date());
             return ResponseEntity.ok("dsl model execution initiated for: " + dateRequestRecord.date());
         } catch (IllegalArgumentException e) {

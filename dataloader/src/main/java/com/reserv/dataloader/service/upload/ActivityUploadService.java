@@ -119,7 +119,7 @@ public class ActivityUploadService {
         Long runid = System.currentTimeMillis();
         long jobId = runid;
         try {
-            Batch activityBatch = this.createBatch();
+            Batch activityBatch = this.createBatch(jobId);
             if(instrumentAttributeFilePath !=null) {
                 JobParameters instrumentAttributeJobParameter =
                         createInstrumentAttributeJob(uploadId, instrumentAttributeFilePath, activityBatch,
@@ -277,8 +277,8 @@ public class ActivityUploadService {
 
     }
 
-    private Batch createBatch() {
-        long batchId = this.dataService.generateSequence(SequenceNames.BATCHID.name());
+    private Batch createBatch(Long batchId) {
+        // long batchId = this.dataService.generateSequence(SequenceNames.BATCHID.name());
         Batch activityBatch = Batch.builder().id(batchId).batchStatus(com.fyntrac.common.enums.BatchStatus.PENDING)
                 .batchType(BatchType.ACTIVITY).uploadDate(new Date()).build();
         this.dataService.save(activityBatch);
