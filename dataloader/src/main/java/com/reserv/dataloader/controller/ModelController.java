@@ -121,7 +121,7 @@ public class ModelController {
     }
 
 
-    @PostMapping("/upload-py-model")
+    @PostMapping("/upload-dsl-model")
     @Transactional
     public ResponseEntity<?> uploadPythonModel(
             @RequestParam("dslModel") MultipartFile dslModel,
