@@ -54,4 +54,7 @@ public interface AttributeLevelBalanceRepository extends MongoRepository<Attribu
     })
     Optional<AttributeLevelLtd> findLatestByPostingDate(String instrumentId, String attributeId,
                                                         Integer postingDate, String metricName);
+
+    // Delete all AttributeLevelLtd records for a given posting date
+    void deleteByPostingDate(Integer postingDate);
 }

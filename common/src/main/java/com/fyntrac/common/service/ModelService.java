@@ -61,10 +61,15 @@ public class ModelService {
     }
 
     public boolean ifModelExists(String modelName) {
+        Model model = this.getModelByName(modelName);
+        return model != null ? Boolean.FALSE : Boolean.TRUE;
+    }
+
+    public Model getModelByName(String modelName) {
         Query query = new Query();
-        Criteria criteria = Criteria.where("modelName").is(modelName);
+        Criteria criteria = Criteria.where("modelName").is(modelName).and("isDeleted").is(0);
         query.addCriteria(criteria);
-        return this.dataService.fetchData(query, Model.class).isEmpty() ? Boolean.FALSE : Boolean.TRUE;
+        return this.dataService.findOne(query, Model.class);
     }
 
     public Model getModel(String id) {

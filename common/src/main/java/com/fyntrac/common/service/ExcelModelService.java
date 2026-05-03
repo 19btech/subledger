@@ -237,46 +237,60 @@ public class ExcelModelService {
         return result;
     }
 
-    public void generateEvent(int postingDate) throws Exception{
+    public void generateEvent(int postingDate) throws Exception {
+        // Delegate to the streaming method with a no-op consumer (events generated, IDs discarded)
+        generateEventAndDispatch(postingDate, batch -> {});
+    }
+
+    /**
+     * Generates events for the given posting date and streams instrument ID batches
+     * to the provided callback as each page completes.
+     *
+     * Memory model: only ONE page of instrument IDs is live in heap at a time.
+     * The callback is invoked synchronously after each page's events are saved,
+     * then the Set is eligible for GC before the next page begins.
+     *
+     * This scales correctly to millions of instruments — no full accumulation in RAM.
+     *
+     * @param postingDate   the posting date as an integer (YYYYMMDD)
+     * @param batchConsumer called once per page with the distinct instrument IDs for that page
+     */
+    public void generateEventAndDispatch(int postingDate,
+                                         java.util.function.Consumer<Set<String>> batchConsumer) throws Exception {
         final String tenant = TenantContextHolder.getTenant();
 
         int pageNumber = 0;
         final int pageSize = this.pageSize;
         Page<InstrumentAttribute> page;
 
-        // Use virtual thread executor
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
             do {
                 final int currentPage = pageNumber;
 
-                // Fetch current page under tenant
                 page = TenantContextHolder.runWithTenant(tenant,
                         () -> instrumentRepo.findAllByEndDateIsNull(PageRequest.of(currentPage, pageSize))
                 );
 
                 List<InstrumentAttribute> attributes = page.getContent();
+                if (attributes.isEmpty()) break;
 
-                if (attributes.isEmpty()) {
-                    break;
-                }
-
-                // Group by instrumentId
+                // Group by instrumentId — keys are the distinct IDs for this page
                 Map<String, List<InstrumentAttribute>> groups = attributes.stream()
                         .collect(Collectors.groupingBy(InstrumentAttribute::getInstrumentId));
 
-                // Process each group in virtual threads with tenant context
+                Set<String> pageInstrumentIds = new LinkedHashSet<>(groups.keySet());
+
+                // Generate events for this page concurrently
                 List<CompletableFuture<List<Event>>> futures = groups.entrySet().stream()
                         .map(entry -> CompletableFuture.supplyAsync(() ->
-                                        TenantContextHolder.runWithTenant(tenant, () ->
-                                                {
-                                                    try {
-                                                        return processInstrumentGroup(entry.getKey(), entry.getValue(), postingDate);
-                                                    } catch (ParseException e) {
-                                                        throw new RuntimeException(e);
-                                                    }
-                                                }
-                                        ), executor)
+                                TenantContextHolder.runWithTenant(tenant, () -> {
+                                    try {
+                                        return processInstrumentGroup(entry.getKey(), entry.getValue(), postingDate);
+                                    } catch (ParseException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                }), executor)
                                 .exceptionally(ex -> {
                                     log.error("Failed to process instrument group {} for tenant {}",
                                             entry.getKey(), tenant, ex);
@@ -284,13 +298,7 @@ public class ExcelModelService {
                                 }))
                         .toList();
 
-                // Wait for all completions
-                CompletableFuture<Void> allFutures = CompletableFuture.allOf(
-                        futures.toArray(new CompletableFuture[0])
-                );
-
-                // Combine results with timeout
-                List<Event> pageEvents = allFutures
+                List<Event> pageEvents = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                         .orTimeout(30, TimeUnit.MINUTES)
                         .thenApply(v -> futures.stream()
                                 .map(CompletableFuture::join)
@@ -301,15 +309,17 @@ public class ExcelModelService {
 
                 // Save events
                 if (!pageEvents.isEmpty()) {
-                    TenantContextHolder.runWithTenant(tenant,
-                            () -> {
-                                eventRepository.saveAll(pageEvents);
-                                return null;
-                            }
-                    );
-                    log.info("Saved {} events for tenant {} page {}",
-                            pageEvents.size(), tenant, currentPage);
+                    TenantContextHolder.runWithTenant(tenant, () -> {
+                        eventRepository.saveAll(pageEvents);
+                        return null;
+                    });
+                    log.info("Saved {} events for tenant {} page {}", pageEvents.size(), tenant, currentPage);
                 }
+
+                // ── Stream this page's IDs to caller immediately ──────────────────
+                // After callback returns, pageInstrumentIds goes out of scope → GC-eligible.
+                // Only this page's IDs are live in heap at any point.
+                batchConsumer.accept(pageInstrumentIds);
 
                 pageNumber++;
 

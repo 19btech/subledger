@@ -26,18 +26,26 @@ public class EventHistoryResultConsumer {
     private Consumer<Records.EventHistoryResultRecord> consumer;
 
     @PostConstruct
-    public void init() throws PulsarClientException {
-        client = PulsarClient.builder()
-                .serviceUrl(pulsarURL)
-                .build();
+    public void init() {
+        try {
+            client = PulsarClient.builder()
+                    .serviceUrl(pulsarURL)
+                    .build();
 
-        consumer = client.newConsumer(Schema.JSON(Records.EventHistoryResultRecord.class))
-                .topic(topic)
-                .subscriptionName(subscription)
-                .subscriptionType(SubscriptionType.Shared)
-                .subscribe();
+            consumer = client.newConsumer(Schema.JSON(Records.EventHistoryResultRecord.class))
+                    .topic(topic)
+                    .subscriptionName(subscription)
+                    .subscriptionType(SubscriptionType.Shared)
+                    .subscribe();
 
-        new Thread(this::consumeMessages).start();
+            new Thread(this::consumeMessages).start();
+        } catch (PulsarClientException e) {
+            log.error("EventHistoryResultConsumer: Failed to initialize — consumer disabled. " +
+                    "If this is a schema incompatibility, delete the topic/schema via Pulsar admin and restart. " +
+                    "Error: {}", e.getMessage());
+            // Do NOT rethrow — prevents a stale Pulsar schema from crashing the entire application context.
+            // The rest of the application (HTTP endpoints, other consumers) will still function normally.
+        }
     }
 
     private void consumeMessages() {

@@ -63,4 +63,7 @@ public interface TransactionActivityRepository extends MongoRepository<Transacti
     })
     List<Records.TransactionActivityAmountRecord> aggregateAmountByTransactionAndEffectiveDate(
             String instrumentId, String attributeId, Integer postingDate, List<String> transactions);
+
+    // Delete all TransactionActivity records for a given posting date
+    void deleteByPostingDate(Integer postingDate);
 }

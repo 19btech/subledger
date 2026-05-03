@@ -40,4 +40,7 @@ public interface InstrumentAttributeRepository extends MongoRepository<Instrumen
     // --- NEW: Pagination Support ---
     Page<InstrumentAttribute> findAllByEndDateIsNull(Pageable pageable);
 
+    // Delete all InstrumentAttribute records for a given posting date
+    void deleteByPostingDate(Integer postingDate);
+
 }
