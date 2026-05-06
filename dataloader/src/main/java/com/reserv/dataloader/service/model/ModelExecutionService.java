@@ -286,6 +286,7 @@ public class ModelExecutionService {
     /** Dispatches one page of instrument IDs synchronously. Called from the callback. */
     public void dispatchExcelBatch(Date executionDate, Set<String> instrumentIds) {
         if (instrumentIds == null || instrumentIds.isEmpty()) return;
+        long batchStart = System.currentTimeMillis();
         int page = streamPageCounter.getAndIncrement();
         List<String> idList = new ArrayList<>(instrumentIds);
         boolean success = false;
@@ -295,13 +296,10 @@ public class ModelExecutionService {
                 return null;
             });
             success = true;
-            // Update running instrument count cache
-            String key = streamTenant + ":" + streamPostingDate;
-            instrumentCountCache.merge(key, (long) idList.size(), Long::sum);
         } catch (Exception e) {
             log.error("Excel streaming batch dispatch failed for page {}: {}", page, e.getMessage());
         } finally {
-            long durationMs = System.currentTimeMillis() - streamOverallStart;
+            long durationMs = System.currentTimeMillis() - batchStart;
             String status = success ? "SUCCESS" : "FAILED";
             try {
                 ModelExecutionBatchLog batchLog = ModelExecutionBatchLog.builder()
@@ -373,8 +371,6 @@ public class ModelExecutionService {
                 return null;
             });
             success = true;
-            String key = streamTenant + ":" + streamPostingDate;
-            instrumentCountCache.merge(key, (long) idList.size(), Long::sum);
         } catch (Exception e) {
             errorMsg = e.getMessage();
             log.error("Python streaming batch dispatch failed for page {}: {}", page, e.getMessage());
@@ -780,6 +776,16 @@ public class ModelExecutionService {
             }
         });
 
+        CompletableFuture<Boolean> summaryFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return TenantContextHolder.runWithTenant(tenant,
+                        () -> batchLogRepository.countByTenantIdAndPostingDateAndLogType(
+                                tenant, postingDate, "EXECUTION_SUMMARY") > 0);
+            } catch (Exception e) {
+                return false;
+            }
+        });
+
         // ── Batch timeline fetch (only when UI explicitly requests it) ───────────
         CompletableFuture<List<ModelExecutionBatchLog>> batchListFuture = includeBatches
                 ? CompletableFuture.supplyAsync(() -> {
@@ -797,20 +803,25 @@ public class ModelExecutionService {
         long completedBatches  = completedFuture.join();
         long successBatches    = successFuture.join();
         long failedBatches     = completedBatches - successBatches;
+        boolean hasSummary     = summaryFuture.join();
         List<ModelExecutionBatchLog> batchList = batchListFuture.join();
 
         long totalInstrumentsProcessed = batchList.stream()
                 .mapToInt(l -> l.getInstrumentCount() != null ? l.getInstrumentCount() : 0).sum();
 
-        int totalExpectedBatches = pageSize > 0 && totalInstruments > 0
-                ? (int) Math.ceil((double) totalInstruments / pageSize)
-                : 0;
+        // Since batch size from the callback is independent of pageSize, we cannot accurately
+        // predict totalExpectedBatches. Set it to 0 so the UI displays '?'
+        int totalExpectedBatches = 0;
 
-        double pct = totalExpectedBatches > 0
-                ? Math.min(100.0, (completedBatches * 100.0) / totalExpectedBatches)
+        boolean isComplete = hasSummary;
+
+        double pct = totalInstruments > 0
+                ? Math.min(100.0, ((double) totalInstrumentsProcessed * 100.0) / totalInstruments)
                 : (completedBatches > 0 ? 100.0 : 0.0);
 
-        boolean isComplete = totalExpectedBatches > 0 && completedBatches >= totalExpectedBatches;
+        if (isComplete) {
+            pct = 100.0;
+        }
 
         // ── Build response ───────────────────────────────────────────────────────
         Map<String, Object> result = new LinkedHashMap<>();

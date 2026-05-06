@@ -300,6 +300,16 @@ public class ModelController {
                     batch -> this.modelExecutionService.dispatchPythonBatch(executionDate, batch));
             this.modelExecutionService.finalizePythonExecution(); // releases lock internally
 
+            // Update ExecutionState if executionDate < postingDate
+            com.fyntrac.common.entity.ExecutionState executionState = executionStateService.getExecutionState();
+            if (executionState != null
+                    && executionState.getExecutionDate() != null
+                    && executionState.getExecutionDate() < postingDate) {
+                executionState.setLastExecutionDate(executionState.getExecutionDate());
+                executionState.setExecutionDate(postingDate);
+                executionStateService.update(executionState);
+            }
+
             return ResponseEntity.ok("dsl model execution initiated for: " + dateRequestRecord.date());
         } catch (IllegalArgumentException e) {
             modelExecutionService.releaseExecutionLock(tenant);
@@ -377,21 +387,34 @@ public class ModelController {
                     modelExecutionBatchLogRepository.findByTenantIdAndPostingDateAndLogType(
                             tenantId, postingDate, "EXECUTION_BATCH");
 
+            List<ModelExecutionBatchLog> summaryLogs =
+                    modelExecutionBatchLogRepository.findByTenantIdAndPostingDateAndLogType(
+                            tenantId, postingDate, "EXECUTION_SUMMARY");
+
             // Optional model-type filter
             if (modelType != null && !modelType.isBlank()) {
                 final String modelTypeFilter = modelType.toUpperCase();
                 logs = logs.stream()
                         .filter(l -> modelTypeFilter.equals(l.getModelType()))
                         .collect(Collectors.toList());
+                summaryLogs = summaryLogs.stream()
+                        .filter(l -> modelTypeFilter.equals(l.getModelType()))
+                        .collect(Collectors.toList());
             }
+
+            ModelExecutionBatchLog finalSummary = summaryLogs.stream()
+                    .max(Comparator.comparing(l -> l.getCreatedAt() != null ? l.getCreatedAt() : new Date(0)))
+                    .orElse(null);
 
             // ── 4. Aggregate totals ─────────────────────────────────────────────────
             int totalBatches     = logs.size();
-            int totalInstruments = logs.stream().mapToInt(l -> l.getInstrumentCount() != null ? l.getInstrumentCount() : 0).sum();
-            int totalSuccess     = logs.stream().mapToInt(l -> l.getSuccessCount()     != null ? l.getSuccessCount()     : 0).sum();
-            int totalFailed      = logs.stream().mapToInt(l -> l.getFailedCount()      != null ? l.getFailedCount()      : 0).sum();
-            long totalDurationMs = logs.stream().mapToLong(l -> l.getDurationMs()      != null ? l.getDurationMs()      : 0L).sum();
-            long avgBatchMs      = totalBatches > 0 ? totalDurationMs / totalBatches : 0L;
+            long sumBatchDuration = logs.stream().mapToLong(l -> l.getDurationMs() != null ? l.getDurationMs() : 0L).sum();
+            
+            int totalInstruments = finalSummary != null && finalSummary.getInstrumentCount() != null ? finalSummary.getInstrumentCount() : logs.stream().mapToInt(l -> l.getInstrumentCount() != null ? l.getInstrumentCount() : 0).sum();
+            int totalSuccess     = finalSummary != null && finalSummary.getSuccessCount() != null ? finalSummary.getSuccessCount() : logs.stream().mapToInt(l -> l.getSuccessCount() != null ? l.getSuccessCount() : 0).sum();
+            int totalFailed      = finalSummary != null && finalSummary.getFailedCount() != null ? finalSummary.getFailedCount() : logs.stream().mapToInt(l -> l.getFailedCount() != null ? l.getFailedCount() : 0).sum();
+            long totalDurationMs = finalSummary != null && finalSummary.getDurationMs() != null ? finalSummary.getDurationMs() : sumBatchDuration;
+            long avgBatchMs      = totalBatches > 0 ? sumBatchDuration / totalBatches : 0L;
 
             Map<String, Long> statusCounts = logs.stream()
                     .filter(l -> l.getStatus() != null)
