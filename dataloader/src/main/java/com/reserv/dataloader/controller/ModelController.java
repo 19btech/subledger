@@ -60,7 +60,7 @@ public class ModelController {
     }
 
     // Upload endpoint
-    @PostMapping("/upload")
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Transactional
     public ResponseEntity<?> uploadFile(@RequestParam("files") MultipartFile file,
                                         @RequestParam("modelName") String modelName,

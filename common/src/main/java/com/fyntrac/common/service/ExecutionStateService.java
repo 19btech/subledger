@@ -30,17 +30,16 @@ public class ExecutionStateService extends CacheBasedService<ExecutionState>{
     }
 
     public ExecutionState getExecutionState() {
-        // Fetch all ExecutionStates
         Collection<ExecutionState> states = this.fetchAll();
         if (!states.isEmpty()) {
-            ExecutionState executionState = states.iterator().next(); // Get the first ExecutionState
-            if(executionState == null) {
-                ExecutionState.builder().executionDate(0).lastExecutionDate(0).build();
-            }
-            this.memcachedRepository.putInCache(this.key, executionState); // Cache the retrieved ExecutionState
-            return executionState; // Return the retrieved ExecutionState
+            ExecutionState executionState = states.iterator().next();
+            this.memcachedRepository.putInCache(this.key, executionState);
+            return executionState;
         }
-        return null;
+
+        ExecutionState defaultState = ExecutionState.builder().executionDate(0).lastExecutionDate(0).build();
+        this.memcachedRepository.putInCache(this.key, defaultState);
+        return defaultState;
     }
 
 
