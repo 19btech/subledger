@@ -376,6 +376,21 @@ public class ModelExecutionService {
             log.error("Python streaming batch dispatch failed for page {}: {}", page, e.getMessage());
         } finally {
             long duration = System.currentTimeMillis() - batchStart;
+            String status = success ? "SUCCESS" : "FAILED";
+            final String capturedErrorMsg = errorMsg;
+            try {
+                ModelExecutionBatchLog batchLog = ModelExecutionBatchLog.builder()
+                        .jobId(streamJobId).batchNumber(page).tenantId(streamTenant)
+                        .postingDate(streamPostingDate).modelType("PYTHON").logType("EXECUTION_BATCH")
+                        .instrumentIds(idList).instrumentCount(idList.size())
+                        .successCount(success ? idList.size() : 0)
+                        .failedCount(success ? 0 : idList.size())
+                        .status(status).errorMessage(capturedErrorMsg)
+                        .durationMs(duration).createdAt(new Date()).build();
+                TenantContextHolder.runWithTenant(streamTenant, () -> { batchLogRepository.save(batchLog); return null; });
+            } catch (Exception logEx) {
+                log.warn("Failed to save Python EXECUTION_BATCH for page {}: {}", page, logEx.getMessage());
+            }
             pythonBatchResults.add(new BatchResult(page, success, duration, idList.size(), errorMsg));
         }
     }
@@ -627,9 +642,11 @@ public class ModelExecutionService {
 
                 CompletableFuture<BatchResult> future = CompletableFuture.supplyAsync(() -> {
                     long batchStartTime = System.currentTimeMillis();
+                    BatchResult batchResult = null;
+                    List<String> instrumentIdList = new ArrayList<>();
                     try {
                         semaphore.acquire();
-                        return TenantContextHolder.runWithTenant(tenant, () -> {
+                        batchResult = TenantContextHolder.runWithTenant(tenant, () -> {
                             try {
                                 Set<String> instrumentIdChunk;
                                 if (instrumentBatches != null) {
@@ -643,6 +660,7 @@ public class ModelExecutionService {
                                             .collect(Collectors.toSet());
                                 }
                                 if (!instrumentIdChunk.isEmpty()) {
+                                    instrumentIdList.addAll(instrumentIdChunk);
                                     this.postPythonModelExecutionMessage(executionDate, new ArrayList<>(instrumentIdChunk),
                                             currentPage, (currentPage == finalTotalPages - 1));
                                     long duration = System.currentTimeMillis() - batchStartTime;
@@ -661,8 +679,29 @@ public class ModelExecutionService {
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         long duration = System.currentTimeMillis() - batchStartTime;
-                        return new BatchResult(currentPage, false, duration, 0, "Interrupted");
+                        batchResult = new BatchResult(currentPage, false, duration, 0, "Interrupted");
+                    } finally {
+                        if (batchResult == null) {
+                            long duration = System.currentTimeMillis() - batchStartTime;
+                            batchResult = new BatchResult(currentPage, false, duration, 0, "Unknown error");
+                        }
+                        String status = batchResult.success() ? "SUCCESS" : "FAILED";
+                        final BatchResult finalBatchResult = batchResult;
+                        try {
+                            ModelExecutionBatchLog batchLog = ModelExecutionBatchLog.builder()
+                                    .jobId(jobId).batchNumber(currentPage).tenantId(tenant)
+                                    .postingDate(postingDateNumber).modelType("PYTHON").logType("EXECUTION_BATCH")
+                                    .instrumentIds(instrumentIdList).instrumentCount(instrumentIdList.size())
+                                    .successCount(finalBatchResult.success() ? instrumentIdList.size() : 0)
+                                    .failedCount(finalBatchResult.success() ? 0 : instrumentIdList.size())
+                                    .status(status).errorMessage(finalBatchResult.errorMessage())
+                                    .durationMs(finalBatchResult.durationMs()).createdAt(new Date()).build();
+                            TenantContextHolder.runWithTenant(tenant, () -> { batchLogRepository.save(batchLog); return null; });
+                        } catch (Exception logEx) {
+                            log.warn("Failed to save Python EXECUTION_BATCH for page {}: {}", currentPage, logEx.getMessage());
+                        }
                     }
+                    return batchResult;
                 }, executor);
                 futures.add(future);
             }
