@@ -75,6 +75,7 @@ docker {
 
 
 repositories {
+	mavenLocal()
 	mavenCentral()  // Central Maven repository
 	maven {
 		url = uri("https://maven.pkg.github.com/${gituser}/subledger")  // Use an environment variable for username
