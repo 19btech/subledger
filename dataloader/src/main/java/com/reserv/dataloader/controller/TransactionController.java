@@ -18,15 +18,28 @@ import java.util.Collection;
 public class TransactionController {
 
     private final TransactionService transactionService;
+    private final com.reserv.dataloader.validation.TransactionValidator transactionValidator;
 
     @Autowired
-    public TransactionController(TransactionService transactionService) {
+    public TransactionController(TransactionService transactionService, com.reserv.dataloader.validation.TransactionValidator transactionValidator) {
         this.transactionService = transactionService;
+        this.transactionValidator = transactionValidator;
     }
 
     @PostMapping("/add")
-    public void saveData(@RequestBody Transactions t) {
+    public ResponseEntity<?> saveData(@RequestBody Transactions t) {
+        java.util.List<com.reserv.dataloader.batch.exception.ItemValidationException.ValidationError> errors = transactionValidator.validate(t);
+        
+        // Optional: duplicate check against DB if required. Assuming there's a way or ignoring for now.
+        // Assuming we rely on the DB's unique constraint or just return the formatting errors.
+        boolean hasError = errors.stream().anyMatch(log -> "ERROR".equals(log.getSeverity()));
+
+        if (hasError) {
+            return ResponseEntity.badRequest().body(errors);
+        }
+
         transactionService.save(t);
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping("/get/all")
