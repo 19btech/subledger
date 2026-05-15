@@ -68,9 +68,10 @@ public class TransactionsDataLoadConfig {
     @Bean
     public Step transactionImportStep(
             @org.springframework.beans.factory.annotation.Autowired(required = false) com.fyntrac.common.repository.RefDataValidationLogRepository validationLogRepository,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) com.fyntrac.common.repository.MemcachedRepository memcachedRepository,
             com.reserv.dataloader.batch.listener.ValidationLoggingListener validationLoggingListener,
             com.reserv.dataloader.validation.TransactionValidator validator) {
-        ItemProcessor<Transactions, Transactions> processor = transactionsItemProcessor(validator);
+        ItemProcessor<Transactions, Transactions> processor = transactionsItemProcessor(validator, validationLogRepository, memcachedRepository);
         return new StepBuilder("transactionImportStep", jobRepository)
                 .<Transactions, Transactions>chunk(10, new ResourcelessTransactionManager())
                 .reader(transactionFileReader(""))
@@ -87,8 +88,11 @@ public class TransactionsDataLoadConfig {
 
     @Bean
     @StepScope
-    public ItemProcessor<Transactions, Transactions> transactionsItemProcessor(com.reserv.dataloader.validation.TransactionValidator validator) {
-        return new TransactionsItemProcessor(validator);
+    public ItemProcessor<Transactions, Transactions> transactionsItemProcessor(
+            com.reserv.dataloader.validation.TransactionValidator validator,
+            com.fyntrac.common.repository.RefDataValidationLogRepository validationLogRepository,
+            com.fyntrac.common.repository.MemcachedRepository memcachedRepository) {
+        return new TransactionsItemProcessor(validator, validationLogRepository, memcachedRepository);
     }
 
     @Bean()

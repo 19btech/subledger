@@ -91,21 +91,35 @@ public class FileUploadService {
                         LinkedHashMap::new // Maintain insertion order
                 ));
 
+        // Pre-populate the activity map to retain combined processing
         Map<AccountingRules, String> activityMap = new HashMap<>(0);
-        for(Map.Entry<AccountingRules,String> entry : sortedMap.entrySet()) {
+        for (Map.Entry<AccountingRules, String> entry : sortedMap.entrySet()) {
             AccountingRules rule = entry.getKey();
-            boolean isActivity = (rule == AccountingRules.TRANSACTIONACTIVITY || rule == AccountingRules.INSTRUMENTATTRIBUTE);
-            String file = entry.getValue();
-            if(isActivity) {
-                activityMap.put(rule, file);
-            }else{
-                UploadService uploadService = UploadServiceFactory.getFileUploader(rule);
-                uploadService.uploadData(uploadId, file);
+            if (rule == AccountingRules.TRANSACTIONACTIVITY || rule == AccountingRules.INSTRUMENTATTRIBUTE) {
+                activityMap.put(rule, entry.getValue());
             }
         }
 
-        if(activityMap != null && !activityMap.isEmpty()) {
-            this.activityUploadService.uploadActivity(uploadId, activityMap);
+        // Execute jobs in sequential manner based on their sorted priority (highest first)
+        boolean activityProcessed = false;
+        for (Map.Entry<AccountingRules, String> entry : sortedMap.entrySet()) {
+            AccountingRules rule = entry.getKey();
+            boolean isActivity = (rule == AccountingRules.TRANSACTIONACTIVITY || rule == AccountingRules.INSTRUMENTATTRIBUTE);
+            String file = entry.getValue();
+
+            if (isActivity) {
+                if (!activityProcessed) {
+                    if (!activityMap.isEmpty()) {
+                        log.info("Executing sequential activity upload at priority position.");
+                        this.activityUploadService.uploadActivity(uploadId, activityMap);
+                    }
+                    activityProcessed = true;
+                }
+            } else {
+                log.info("Executing sequential file upload for rule: {} (Priority: {})", rule, rule.getPriority());
+                UploadService uploadService = UploadServiceFactory.getFileUploader(rule);
+                uploadService.uploadData(uploadId, file);
+            }
         }
 
 

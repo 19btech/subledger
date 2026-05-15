@@ -7,6 +7,10 @@ import  com.fyntrac.common.config.TenantContextHolder;
 import  com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.Aggregation;
 import com.reserv.dataloader.repository.AggregationMemcachedRepository;
+import com.reserv.dataloader.batch.listener.AggregationValidationLoggingListener;
+import com.reserv.dataloader.validation.AggregationValidator;
+import com.fyntrac.common.service.TransactionService;
+import com.reserv.dataloader.batch.exception.ItemValidationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
@@ -34,6 +38,8 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.validation.BindException;
+
+import java.util.List;
 
 @Configuration
 @EnableBatchProcessing(modular = true)
@@ -67,37 +73,82 @@ public class AggregationDataLoadConfig {
     }
 
     @Bean
-    public Step aggregationImportStep() {
+    public Step aggregationImportStep(
+            @org.springframework.beans.factory.annotation.Autowired(required = false) com.fyntrac.common.repository.RefDataValidationLogRepository validationLogRepository,
+            AggregationValidationLoggingListener validationLoggingListener,
+            AggregationValidator validator,
+            TransactionService transactionService,
+            com.fyntrac.common.service.aggregation.AggregationService aggregationService) {
+        ItemProcessor<Aggregation, Aggregation> processor = aggregateItemProcessor(
+                validator, 
+                transactionService, 
+                aggregationService,
+                validationLogRepository);
         return new StepBuilder("aggregationImportStep", jobRepository)
                 .<Aggregation, Aggregation>chunk(10, new ResourcelessTransactionManager())
                 .reader(aggregateFileReader(""))
-                .processor(aggregateItemProcessor())
+                .processor(processor)
+                .faultTolerant()
+                .skip(ItemValidationException.class)
+                .skipLimit(Integer.MAX_VALUE)
+                .listener(validationLoggingListener)
+                .listener(processor)
                 .writer(aggregationItemWriter(dataSourceProvider,
                         tenantContextHolder, this.memcachedRepository))
                 .build();
     }
 
     @Bean
-    public ItemProcessor<Aggregation, Aggregation> aggregateItemProcessor() {
-        return new AggregateItemProcessor();
+    @StepScope
+    public AggregateItemProcessor aggregateItemProcessor(
+            AggregationValidator validator,
+            TransactionService transactionService,
+            com.fyntrac.common.service.aggregation.AggregationService aggregationService,
+            com.fyntrac.common.repository.RefDataValidationLogRepository validationLogRepository) {
+        return new AggregateItemProcessor(validator, transactionService, aggregationService, validationLogRepository);
     }
 
     @Bean()
     @StepScope
     public FlatFileItemReader<Aggregation> aggregateFileReader(@Value("#{jobParameters[filePath]}") String fileName) {
 
+        List<String> headerNames;
+        try {
+            headerNames = getHeaderNames(fileName);
+        } catch (Exception e) {
+            log.error("Failed to read header names from file: " + fileName, e);
+            headerNames = java.util.Arrays.asList("ACTIVITYUPLOADID", "TRANSACTIONNAME", "METRICNAME");
+        }
+
         DefaultLineMapper<Aggregation> defaultLineMapper = new DefaultLineMapper<>();
         DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
-        lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID", "TRANSACTIONNAME",	"METRICNAME"});
+        lineTokenizer.setQuoteCharacter('"');
+        lineTokenizer.setStrict(false);
+        lineTokenizer.setNames(headerNames.toArray(new String[0]));
         defaultLineMapper.setLineTokenizer(lineTokenizer);
         defaultLineMapper.setFieldSetMapper(new FieldSetMapper<Aggregation>() {
             @Override
             public Aggregation mapFieldSet(FieldSet fieldSet) throws BindException {
                 Aggregation aggregation = new Aggregation();
-                aggregation.setTransactionName(fieldSet.readString("TRANSACTIONNAME").toUpperCase());
-                aggregation.setMetricName(fieldSet.readString("METRICNAME").toUpperCase());
+                // Read raw values safely so Validator can verify exactly what was inputted (case, spaces, emptiness)
+                aggregation.setTransactionName(readStringSafe(fieldSet, "TRANSACTIONNAME", "TRANSACTION NAME", "TRANSACTION_NAME"));
+                aggregation.setMetricName(readStringSafe(fieldSet, "METRICNAME", "METRIC NAME", "METRIC_NAME"));
 
                 return aggregation;
+            }
+
+            private String readStringSafe(FieldSet fieldSet, String... names) {
+                for (String name : names) {
+                    try {
+                        String val = fieldSet.readString(name);
+                        if (val != null) {
+                            return val;
+                        }
+                    } catch (IllegalArgumentException e) {
+                        // ignore and try next
+                    }
+                }
+                return "";
             }
         });
 
@@ -105,12 +156,22 @@ public class AggregationDataLoadConfig {
                 .name("aggregateDataItemReader")
                 .resource(new FileSystemResource(fileName))
                 .delimited()
-                .names(new String[]{
-                        "ACTIVITYUPLOADID", "TRANSACTIONNAME",	"METRICNAME"
-                })
+                .names(headerNames.toArray(new String[0]))
                 .linesToSkip(1)
                 .lineMapper(defaultLineMapper)
                 .build();
+    }
+
+    private java.util.List<String> getHeaderNames(String filePath) throws java.io.IOException {
+        try (java.io.Reader reader = java.nio.file.Files.newBufferedReader(java.nio.file.Paths.get(filePath));
+             org.apache.commons.csv.CSVParser parser = new org.apache.commons.csv.CSVParser(reader, org.apache.commons.csv.CSVFormat.DEFAULT.withQuote('"'))) {
+            org.apache.commons.csv.CSVRecord headerRecord = parser.iterator().next();
+            java.util.List<String> headers = new java.util.ArrayList<>();
+            for (String header : headerRecord) {
+                headers.add(header.trim().toUpperCase());
+            }
+            return headers;
+        }
     }
 
     private void validateFile(String filename) {

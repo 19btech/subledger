@@ -52,6 +52,11 @@ public class AggregationService  extends CacheBasedService<Aggregation> {
         return dataService.fetchAllData(Aggregation.class);
     }
 
+    public boolean existsByMetricName(String metricName) {
+        Query query = new Query(Criteria.where("metricName").is(metricName));
+        return this.dataService.getMongoTemplate().exists(query, Aggregation.class);
+    }
+
     public Collection<Records.MetricNameRecord> fetchMetricNames() {
       Collection<String> metrics = this.dataService.getMongoTemplate().query(Aggregation.class)  // Replace Metric.class with your actual class
                 .distinct("metricName")          // Specify the field name

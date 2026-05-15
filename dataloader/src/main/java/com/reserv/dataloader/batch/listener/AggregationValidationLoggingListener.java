@@ -1,7 +1,7 @@
 package com.reserv.dataloader.batch.listener;
 
+import com.fyntrac.common.entity.Aggregation;
 import com.fyntrac.common.entity.RefDataValidationLog;
-import com.fyntrac.common.entity.Transactions;
 import com.fyntrac.common.repository.RefDataValidationLogRepository;
 import com.reserv.dataloader.batch.exception.ItemValidationException;
 import org.slf4j.Logger;
@@ -15,15 +15,15 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
-public class ValidationLoggingListener implements ItemProcessListener<Transactions, Transactions> {
+public class AggregationValidationLoggingListener implements ItemProcessListener<Aggregation, Aggregation> {
 
-    private static final Logger log = LoggerFactory.getLogger(ValidationLoggingListener.class);
+    private static final Logger log = LoggerFactory.getLogger(AggregationValidationLoggingListener.class);
     private final RefDataValidationLogRepository validationLogRepository;
     private Long jobId;
 
     private String tenantId;
 
-    public ValidationLoggingListener(RefDataValidationLogRepository validationLogRepository) {
+    public AggregationValidationLoggingListener(RefDataValidationLogRepository validationLogRepository) {
         this.validationLogRepository = validationLogRepository;
     }
 
@@ -34,22 +34,22 @@ public class ValidationLoggingListener implements ItemProcessListener<Transactio
     }
 
     @Override
-    public void beforeProcess(Transactions item) {
+    public void beforeProcess(Aggregation item) {
     }
 
     @Override
-    public void afterProcess(Transactions item, Transactions result) {
+    public void afterProcess(Aggregation item, Aggregation result) {
     }
 
     @Override
-    public void onProcessError(Transactions item, Exception e) {
+    public void onProcessError(Aggregation item, Exception e) {
         if (e instanceof ItemValidationException) {
             ItemValidationException ex = (ItemValidationException) e;
             List<ItemValidationException.ValidationError> errors = ex.getValidationErrors();
             if (errors != null && !errors.isEmpty()) {
                 List<RefDataValidationLog> logs = errors.stream().map(err -> {
                     RefDataValidationLog dbLog = new RefDataValidationLog();
-                    dbLog.setSourceTable("Transactions");
+                    dbLog.setSourceTable("Aggregation");
                     dbLog.setSourceColumn(err.getColumn());
                     dbLog.setSeverity(err.getSeverity());
                     dbLog.setErrorCode(err.getErrorCode());
@@ -66,10 +66,10 @@ public class ValidationLoggingListener implements ItemProcessListener<Transactio
                 } else {
                     validationLogRepository.saveAll(logs);
                 }
-                log.debug("Saved {} validation logs for item.", logs.size());
+                log.debug("Saved {} aggregation validation logs for item.", logs.size());
             }
         } else {
-            log.error("Item processing failed due to unexpected error", e);
+            log.error("Item processing failed due to unexpected error in aggregation flow", e);
         }
     }
 }

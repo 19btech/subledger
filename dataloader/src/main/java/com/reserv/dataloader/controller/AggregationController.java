@@ -17,16 +17,29 @@ import java.util.Collection;
 @Slf4j
 public class AggregationController {
     private final AggregationService aggregationService;
+    private final com.reserv.dataloader.validation.AggregationValidator aggregationValidator;
 
     @Autowired
-    public AggregationController(AggregationService aggregationService) {
+    public AggregationController(
+            AggregationService aggregationService, 
+            com.reserv.dataloader.validation.AggregationValidator aggregationValidator) {
         this.aggregationService = aggregationService;
+        this.aggregationValidator = aggregationValidator;
     }
 
 
     @PostMapping("/add")
-    public void saveDate(@RequestBody Aggregation t) {
+    public ResponseEntity<?> saveDate(@RequestBody Aggregation t) {
+        java.util.List<com.reserv.dataloader.batch.exception.ItemValidationException.ValidationError> errors = aggregationValidator.validate(t);
+        
+        boolean hasError = errors.stream().anyMatch(log -> "ERROR".equals(log.getSeverity()));
+
+        if (hasError) {
+            return ResponseEntity.badRequest().body(errors);
+        }
+
         this.aggregationService.save(t);
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping("/get/all")

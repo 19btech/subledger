@@ -23,13 +23,19 @@ class TransactionsItemProcessorTest {
     @Mock
     private com.fyntrac.common.service.TransactionService transactionService;
 
+    @Mock
+    private com.fyntrac.common.repository.RefDataValidationLogRepository validationLogRepository;
+
+    @Mock
+    private com.fyntrac.common.repository.MemcachedRepository memcachedRepository;
+
     private com.reserv.dataloader.validation.TransactionValidator validator;
     private TransactionsItemProcessor processor;
 
     @BeforeEach
     void setUp() {
         validator = new com.reserv.dataloader.validation.TransactionValidator(transactionService);
-        processor = new TransactionsItemProcessor(validator);
+        processor = new TransactionsItemProcessor(validator, validationLogRepository, memcachedRepository);
         
         JobExecution jobExecution = new JobExecution(101L);
         StepExecution stepExecution = new StepExecution("transactionImportStep", jobExecution);
@@ -56,52 +62,40 @@ class TransactionsItemProcessorTest {
     }
 
     @Test
-    void testMissingNameReturnsNullAndLogsError() throws Exception {
+    void testMissingNameReturnsNull() throws Exception {
         Transactions item = new Transactions();
         item.setName(""); // Empty
         item.setIsGL(1);
         item.setIsReplayable(1);
 
-        ItemValidationException ex = assertThrows(ItemValidationException.class, () -> processor.process(item));
-
-        assertEquals(1, ex.getValidationErrors().size());
-        ItemValidationException.ValidationError log = ex.getValidationErrors().get(0);
-        assertEquals("ERR_REQ_01", log.getErrorCode());
-        assertEquals("ERROR", log.getSeverity());
+        Transactions result = processor.process(item);
+        assertNull(result);
     }
 
     @Test
-    void testSpacesInNameReturnsNullAndLogsError() throws Exception {
+    void testSpacesInNameReturnsNull() throws Exception {
         Transactions item = new Transactions();
         item.setName("Invalid Name"); 
         item.setIsGL(1);
         item.setIsReplayable(1);
 
-        ItemValidationException ex = assertThrows(ItemValidationException.class, () -> processor.process(item));
-
-        assertEquals(1, ex.getValidationErrors().size());
-        ItemValidationException.ValidationError log = ex.getValidationErrors().get(0);
-        assertEquals("ERR_SPC_01", log.getErrorCode());
-        assertEquals("ERROR", log.getSeverity());
+        Transactions result = processor.process(item);
+        assertNull(result);
     }
 
     @Test
-    void testSpecialCharactersInNameReturnsNullAndLogsError() throws Exception {
+    void testSpecialCharactersInNameReturnsNull() throws Exception {
         Transactions item = new Transactions();
         item.setName("Name@123"); 
         item.setIsGL(1);
         item.setIsReplayable(1);
 
-        ItemValidationException ex = assertThrows(ItemValidationException.class, () -> processor.process(item));
-
-        assertEquals(1, ex.getValidationErrors().size());
-        ItemValidationException.ValidationError log = ex.getValidationErrors().get(0);
-        assertEquals("ERR_FMT_01", log.getErrorCode());
-        assertEquals("ERROR", log.getSeverity());
+        Transactions result = processor.process(item);
+        assertNull(result);
     }
 
     @Test
-    void testDuplicateNameInSameFileReturnsNullAndLogsError() throws Exception {
+    void testDuplicateNameInSameFileReturnsNull() throws Exception {
         Transactions item1 = new Transactions();
         item1.setName("DuplicateName");
         item1.setIsGL(1);
@@ -115,27 +109,19 @@ class TransactionsItemProcessorTest {
         Transactions result1 = processor.process(item1);
         assertNotNull(result1);
 
-        ItemValidationException ex = assertThrows(ItemValidationException.class, () -> processor.process(item2));
-
-        assertEquals(1, ex.getValidationErrors().size());
-        ItemValidationException.ValidationError log = ex.getValidationErrors().get(0);
-        assertEquals("ERR_DUP_01", log.getErrorCode());
-        assertEquals("ERROR", log.getSeverity());
+        Transactions result2 = processor.process(item2);
+        assertNull(result2, "Should return null to filter out file-level duplicates silently");
     }
 
     @Test
-    void testInvalidJournalLogsErrorAndReturnsNull() throws Exception {
+    void testInvalidJournalReturnsNull() throws Exception {
         Transactions item = new Transactions();
         item.setName("ValidName");
         item.setIsGL(-1); // Invalid sentinel
         item.setIsReplayable(1);
 
-        ItemValidationException ex = assertThrows(ItemValidationException.class, () -> processor.process(item));
-
-        assertEquals(1, ex.getValidationErrors().size());
-        ItemValidationException.ValidationError log = ex.getValidationErrors().get(0);
-        assertEquals("ERR_BOOL_01", log.getErrorCode());
-        assertEquals("ERROR", log.getSeverity());
+        Transactions result = processor.process(item);
+        assertNull(result);
     }
 
     @Test
