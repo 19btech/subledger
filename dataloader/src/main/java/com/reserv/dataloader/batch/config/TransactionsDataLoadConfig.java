@@ -16,6 +16,7 @@ import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.batch.item.data.builder.MongoItemWriterBuilder;
@@ -67,22 +68,20 @@ public class TransactionsDataLoadConfig {
 
     @Bean
     public Step transactionImportStep(
-            @org.springframework.beans.factory.annotation.Autowired(required = false) com.fyntrac.common.repository.RefDataValidationLogRepository validationLogRepository,
-            @org.springframework.beans.factory.annotation.Autowired(required = false) com.fyntrac.common.repository.MemcachedRepository memcachedRepository,
-            com.reserv.dataloader.batch.listener.ValidationLoggingListener validationLoggingListener,
-            com.reserv.dataloader.validation.TransactionValidator validator) {
-        ItemProcessor<Transactions, Transactions> processor = transactionsItemProcessor(validator, validationLogRepository, memcachedRepository);
+            ItemProcessor<Transactions, Transactions> transactionsItemProcessor,
+            ItemReader<Transactions> transactionFileReader,
+            ItemWriter<Transactions> transactionWriter,
+            com.reserv.dataloader.batch.listener.ValidationLoggingListener validationLoggingListener) {
         return new StepBuilder("transactionImportStep", jobRepository)
                 .<Transactions, Transactions>chunk(10, new ResourcelessTransactionManager())
-                .reader(transactionFileReader(""))
-                .processor(processor)
+                .reader(transactionFileReader)
+                .processor(transactionsItemProcessor)
                 .faultTolerant()
                 .skip(com.reserv.dataloader.batch.exception.ItemValidationException.class)
                 .skipLimit(Integer.MAX_VALUE)
                 .listener(validationLoggingListener)
-                .listener(processor)
-                .writer(transactionWriter(dataSourceProvider,
-                        tenantContextHolder))
+                .listener(transactionsItemProcessor)
+                .writer(transactionWriter)
                 .build();
     }
 
@@ -190,6 +189,7 @@ public class TransactionsDataLoadConfig {
     }
 
     @Bean
+    @StepScope
     public ItemWriter<Transactions> transactionWriter(TenantDataSourceProvider dataSourceProvider,
             TenantContextHolder tenantContextHolder) {
         MongoItemWriter<Transactions> delegate = new MongoItemWriterBuilder<Transactions>()

@@ -105,7 +105,8 @@ public class AggregationValidator {
                 String transactionName = txName != null ? txName.trim() : "";
                 List<Aggregation> existingMetrics = aggregationService.getMetrics(transactionName);
                 boolean exists = existingMetrics.stream()
-                        .anyMatch(agg -> trimmedMetric.equalsIgnoreCase(agg.getMetricName()));
+                        .anyMatch(agg -> trimmedMetric.equalsIgnoreCase(agg.getMetricName()) 
+                                && (item.getId() == null || !agg.getId().equals(item.getId())));
                 if (exists) {
                     errors.add(new ItemValidationException.ValidationError(
                             "METRICNAME", 

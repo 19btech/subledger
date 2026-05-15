@@ -58,9 +58,13 @@ public class TransactionValidator {
 
             if (!hasError) {
                 try {
-                    if (transactionService.getTransaction(name.trim()) != null) {
-                        itemLogs.add(createError("NAME", ErrorCode.ERR_DUP_01, "Duplicate transaction name in db: " + name.trim(), "ERROR"));
-                        hasError = true;
+                    Transactions existing = transactionService.getTransaction(name.trim());
+                    if (existing != null) {
+                        // Pick object from validation only where ID is NOT equal to request object (Excludes self on update)
+                        if (item.getId() == null || !existing.getId().equals(item.getId())) {
+                            itemLogs.add(createError("NAME", ErrorCode.ERR_DUP_01, "Duplicate transaction name in db: " + name.trim(), "ERROR"));
+                            hasError = true;
+                        }
                     }
                 } catch (Exception e) {
                     // DB duplicate check is best-effort; skip if tenant context is unavailable

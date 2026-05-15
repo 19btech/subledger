@@ -7,7 +7,7 @@ import  com.fyntrac.common.config.TenantContextHolder;
 import  com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.Aggregation;
 import com.reserv.dataloader.repository.AggregationMemcachedRepository;
-import com.reserv.dataloader.batch.listener.AggregationValidationLoggingListener;
+import com.reserv.dataloader.batch.listener.ValidationLoggingListener;
 import com.reserv.dataloader.validation.AggregationValidator;
 import com.fyntrac.common.service.TransactionService;
 import com.reserv.dataloader.batch.exception.ItemValidationException;
@@ -21,6 +21,7 @@ import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.batch.item.data.builder.MongoItemWriterBuilder;
@@ -74,27 +75,20 @@ public class AggregationDataLoadConfig {
 
     @Bean
     public Step aggregationImportStep(
-            @org.springframework.beans.factory.annotation.Autowired(required = false) com.fyntrac.common.repository.RefDataValidationLogRepository validationLogRepository,
-            AggregationValidationLoggingListener validationLoggingListener,
-            AggregationValidator validator,
-            TransactionService transactionService,
-            com.fyntrac.common.service.aggregation.AggregationService aggregationService) {
-        ItemProcessor<Aggregation, Aggregation> processor = aggregateItemProcessor(
-                validator, 
-                transactionService, 
-                aggregationService,
-                validationLogRepository);
+            ItemProcessor<Aggregation, Aggregation> aggregateItemProcessor,
+            ItemReader<Aggregation> aggregateFileReader,
+            ItemWriter<Aggregation> aggregationItemWriter,
+            ValidationLoggingListener validationLoggingListener) {
         return new StepBuilder("aggregationImportStep", jobRepository)
                 .<Aggregation, Aggregation>chunk(10, new ResourcelessTransactionManager())
-                .reader(aggregateFileReader(""))
-                .processor(processor)
+                .reader(aggregateFileReader)
+                .processor(aggregateItemProcessor)
                 .faultTolerant()
                 .skip(ItemValidationException.class)
                 .skipLimit(Integer.MAX_VALUE)
                 .listener(validationLoggingListener)
-                .listener(processor)
-                .writer(aggregationItemWriter(dataSourceProvider,
-                        tenantContextHolder, this.memcachedRepository))
+                .listener(aggregateItemProcessor)
+                .writer(aggregationItemWriter)
                 .build();
     }
 
@@ -184,6 +178,7 @@ public class AggregationDataLoadConfig {
     }
 
     @Bean
+    @StepScope
     public ItemWriter<Aggregation> aggregationItemWriter(TenantDataSourceProvider dataSourceProvider,
                                                        TenantContextHolder tenantContextHolder,
                                                          AggregationMemcachedRepository memcachedRepository) {

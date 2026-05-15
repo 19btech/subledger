@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
-public class ValidationLoggingListener implements ItemProcessListener<Transactions, Transactions> {
+public class ValidationLoggingListener implements ItemProcessListener<Object, Object> {
 
     private static final Logger log = LoggerFactory.getLogger(ValidationLoggingListener.class);
     private final RefDataValidationLogRepository validationLogRepository;
@@ -34,22 +34,23 @@ public class ValidationLoggingListener implements ItemProcessListener<Transactio
     }
 
     @Override
-    public void beforeProcess(Transactions item) {
+    public void beforeProcess(Object item) {
     }
 
     @Override
-    public void afterProcess(Transactions item, Transactions result) {
+    public void afterProcess(Object item, Object result) {
     }
 
     @Override
-    public void onProcessError(Transactions item, Exception e) {
+    public void onProcessError(Object item, Exception e) {
         if (e instanceof ItemValidationException) {
             ItemValidationException ex = (ItemValidationException) e;
             List<ItemValidationException.ValidationError> errors = ex.getValidationErrors();
             if (errors != null && !errors.isEmpty()) {
+                String sourceTable = item != null ? item.getClass().getSimpleName() : "Unknown";
                 List<RefDataValidationLog> logs = errors.stream().map(err -> {
                     RefDataValidationLog dbLog = new RefDataValidationLog();
-                    dbLog.setSourceTable("Transactions");
+                    dbLog.setSourceTable(sourceTable);
                     dbLog.setSourceColumn(err.getColumn());
                     dbLog.setSeverity(err.getSeverity());
                     dbLog.setErrorCode(err.getErrorCode());
@@ -66,7 +67,7 @@ public class ValidationLoggingListener implements ItemProcessListener<Transactio
                 } else {
                     validationLogRepository.saveAll(logs);
                 }
-                log.debug("Saved {} validation logs for item.", logs.size());
+                log.debug("Saved {} validation logs for item in table {}.", logs.size(), sourceTable);
             }
         } else {
             log.error("Item processing failed due to unexpected error", e);

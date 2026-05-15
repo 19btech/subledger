@@ -28,10 +28,27 @@ public class TransactionController {
 
     @PostMapping("/add")
     public ResponseEntity<?> saveData(@RequestBody Transactions t) {
-        java.util.List<com.reserv.dataloader.batch.exception.ItemValidationException.ValidationError> errors = transactionValidator.validate(t);
+        if (t == null) {
+            return ResponseEntity.badRequest().body("Request body is required.");
+        }
+
+        // Leverage efficient single-record existence check for fast REST validation
+        java.util.Set<String> existingNames = new java.util.HashSet<>();
+        if (t.getName() != null && transactionService != null) {
+            String txName = t.getName().trim();
+            Transactions existing = transactionService.getTransaction(txName);
+            if (existing != null) {
+                // Pick object from validation only where ID is NOT equal to request object (Updation logic)
+                if (t.getId() == null || !existing.getId().equals(t.getId())) {
+                    existingNames.add(txName.toUpperCase());
+                }
+            }
+        }
+
+        // Invoke the unified stateless validation matrix
+        java.util.List<com.reserv.dataloader.batch.exception.ItemValidationException.ValidationError> errors = 
+                transactionValidator.validate(t, existingNames);
         
-        // Optional: duplicate check against DB if required. Assuming there's a way or ignoring for now.
-        // Assuming we rely on the DB's unique constraint or just return the formatting errors.
         boolean hasError = errors.stream().anyMatch(log -> "ERROR".equals(log.getSeverity()));
 
         if (hasError) {

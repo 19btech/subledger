@@ -30,6 +30,9 @@ public class Attributes implements Serializable {
     private int isNullable;
     private long sequenceId;
 
+    private transient String rawDataType;
+    private transient String rawNullable;
+
     @Override
     public String toString() {
         StringBuilder json = new StringBuilder();
