@@ -5,7 +5,12 @@ import com.reserv.dataloader.batch.processor.AggregateItemProcessor;
 import com.reserv.dataloader.batch.writer.AggregationItemWriter;
 import  com.fyntrac.common.config.TenantContextHolder;
 import  com.fyntrac.common.component.TenantDataSourceProvider;
+import com.fyntrac.common.entity.AccountTypes;
 import com.fyntrac.common.entity.Aggregation;
+import com.fyntrac.common.repository.RefDataValidationLogRepository;
+import com.reserv.dataloader.batch.processor.AccountTypesItemProcessor;
+import com.reserv.dataloader.validation.AccountTypesValidator;
+import com.fyntrac.common.enums.AccountType;
 import com.reserv.dataloader.repository.AggregationMemcachedRepository;
 import com.reserv.dataloader.batch.listener.ValidationLoggingListener;
 import com.reserv.dataloader.validation.AggregationValidator;
@@ -73,6 +78,16 @@ public class AggregationDataLoadConfig {
                 .build();
     }
 
+    @Bean("accountTypesUploadJob")
+    public Job accountTypesUploadJob(JobCompletionNotificationListener listener, Step accountTypesImportStep) {
+        return new JobBuilder("accountTypesUploadJob", jobRepository)
+                .incrementer(new RunIdIncrementer())
+                .listener(listener)
+                .flow(accountTypesImportStep)
+                .end()
+                .build();
+    }
+
     @Bean
     public Step aggregationImportStep(
             ItemProcessor<Aggregation, Aggregation> aggregateItemProcessor,
@@ -93,6 +108,25 @@ public class AggregationDataLoadConfig {
     }
 
     @Bean
+    public Step accountTypesImportStep(
+            ItemProcessor<AccountTypes, AccountTypes> accountTypesItemProcessor,
+            ItemReader<AccountTypes> accountTypesFileReader,
+            ItemWriter<AccountTypes> accountTypesItemWriter,
+            ValidationLoggingListener validationLoggingListener) {
+        return new StepBuilder("accountTypesImportStep", jobRepository)
+                .<AccountTypes, AccountTypes>chunk(10, new ResourcelessTransactionManager())
+                .reader(accountTypesFileReader)
+                .processor(accountTypesItemProcessor)
+                .faultTolerant()
+                .skip(ItemValidationException.class)
+                .skipLimit(Integer.MAX_VALUE)
+                .listener(validationLoggingListener)
+                .listener(accountTypesItemProcessor)
+                .writer(accountTypesItemWriter)
+                .build();
+    }
+
+    @Bean
     @StepScope
     public AggregateItemProcessor aggregateItemProcessor(
             AggregationValidator validator,
@@ -100,6 +134,14 @@ public class AggregationDataLoadConfig {
             com.fyntrac.common.service.aggregation.AggregationService aggregationService,
             com.fyntrac.common.repository.RefDataValidationLogRepository validationLogRepository) {
         return new AggregateItemProcessor(validator, transactionService, aggregationService, validationLogRepository);
+    }
+
+    @Bean
+    @StepScope
+    public AccountTypesItemProcessor accountTypesItemProcessor(
+            AccountTypesValidator validator,
+            RefDataValidationLogRepository validationLogRepository) {
+        return new AccountTypesItemProcessor(validator, validationLogRepository);
     }
 
     @Bean()
@@ -156,6 +198,40 @@ public class AggregationDataLoadConfig {
                 .build();
     }
 
+    @Bean()
+    @StepScope
+    public FlatFileItemReader<AccountTypes> accountTypesFileReader(@Value("#{jobParameters[filePath]}") String fileName) {
+        DefaultLineMapper<AccountTypes> defaultLineMapper = new DefaultLineMapper<>();
+        DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
+        lineTokenizer.setNames("ACCOUNTSUBTYPE", "ACCOUNTTYPE");
+        defaultLineMapper.setLineTokenizer(lineTokenizer);
+        defaultLineMapper.setFieldSetMapper(fieldSet -> {
+            AccountTypes accountTypes = new AccountTypes();
+            accountTypes.setAccountSubType(fieldSet.readString("ACCOUNTSUBTYPE"));
+            String rawType = fieldSet.readString("ACCOUNTTYPE");
+            if (AccountType.isValid(rawType)) {
+                // Remove spaces before mapping to enum value as per AccountType.isValid() logic
+                String noSpaceType = rawType.replaceAll("\\s+", "");
+                for (AccountType type : AccountType.values()) {
+                    if (type.getValue().equalsIgnoreCase(noSpaceType)) {
+                        accountTypes.setAccountType(type);
+                        break;
+                    }
+                }
+            }
+            return accountTypes;
+        });
+
+        return new FlatFileItemReaderBuilder<AccountTypes>()
+                .name("accountTypesFileReader")
+                .resource(new FileSystemResource(fileName))
+                .delimited()
+                .names("ACCOUNTSUBTYPE", "ACCOUNTTYPE")
+                .linesToSkip(1)
+                .lineMapper(defaultLineMapper)
+                .build();
+    }
+
     private java.util.List<String> getHeaderNames(String filePath) throws java.io.IOException {
         try (java.io.Reader reader = java.nio.file.Files.newBufferedReader(java.nio.file.Paths.get(filePath));
              org.apache.commons.csv.CSVParser parser = new org.apache.commons.csv.CSVParser(reader, org.apache.commons.csv.CSVFormat.DEFAULT.withQuote('"'))) {
@@ -187,6 +263,14 @@ public class AggregationDataLoadConfig {
                 .collection("Aggregation")
                 .build();
         return new AggregationItemWriter(delegate, dataSourceProvider, tenantContextHolder, memcachedRepository);
+    }
+    @Bean
+    @StepScope
+    public ItemWriter<AccountTypes> accountTypesItemWriter() {
+        return new MongoItemWriterBuilder<AccountTypes>()
+                .template(mongoTemplate)
+                .collection("AccountTypes")
+                .build();
     }
 
 }

@@ -45,6 +45,14 @@ public enum ErrorCode {
         return value;
     }
 
+    public String getCode() {
+        return name();
+    }
+
+    public String getName() {
+        return value;
+    }
+
     public static boolean isValid(String text) {
         for (ErrorCode errorCode : ErrorCode.values()) {
             if (errorCode.value.equalsIgnoreCase(text)) {
