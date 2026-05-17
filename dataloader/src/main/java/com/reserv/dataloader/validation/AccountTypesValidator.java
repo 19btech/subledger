@@ -35,24 +35,24 @@ public class AccountTypesValidator {
 
         // 1. Validate accountSubType
         if (subType == null || subType.trim().isEmpty()) {
-            errors.add(createError("accountSubType", ErrorCode.ERR_REQ_01, "Account Sub Type is required and cannot be empty."));
+            errors.add(createError("accountSubType", subType, ErrorCode.ERR_REQ_01, "Account Sub Type is required and cannot be empty."));
         } else {
             // Trim check
             if (!subType.equals(subType.trim())) {
-                errors.add(createError("accountSubType", ErrorCode.ERR_SPC_02, "Account Sub Type has leading or trailing spaces."));
+                errors.add(createError("accountSubType", subType, ErrorCode.ERR_SPC_02, "Account Sub Type has leading or trailing spaces."));
             }
-            
+
             String trimmedSubType = subType.trim().toUpperCase();
-            
+
             // Duplicate in file check
             if (seenSubTypes.contains(trimmedSubType)) {
-                errors.add(createError("accountSubType", ErrorCode.ERR_DUP_01, "Duplicate value: Account Sub Type '" + subType + "' already exists in the same file."));
+                errors.add(createError("accountSubType", subType, ErrorCode.ERR_DUP_01, "Duplicate value: Account Sub Type '" + subType + "' already exists in the same file."));
             }
         }
 
         // 2. Validate accountType
         if (type == null) {
-            errors.add(createError("accountType", ErrorCode.ERR_REQ_01, "Account Type is required and cannot be empty."));
+            errors.add(createError("accountType", rawType, ErrorCode.ERR_REQ_01, "Account Type is required and cannot be empty."));
         } else {
             // Check if it's one of the allowed values: Balance Sheet, Income Statement, Clearing
             // Note: AccountType enum handles its own values, but we enforce the user's specific list if needed.
@@ -64,11 +64,11 @@ public class AccountTypesValidator {
         if (subType != null && !subType.trim().isEmpty() && type != null) {
             String trimmedSubType = subType.trim().toUpperCase();
             String currentType = type.name();
-            
+
             if (subTypeToTypeMap.containsKey(trimmedSubType)) {
                 String existingType = subTypeToTypeMap.get(trimmedSubType);
                 if (!existingType.equals(currentType)) {
-                    errors.add(createError("accountSubType/accountType", ErrorCode.ERR_LOGIC_03, "Account Sub Type must map to only one Account Type."));
+                    errors.add(createError("accountSubType/accountType", subType, ErrorCode.ERR_LOGIC_03, "Account Sub Type must map to only one Account Type."));
                 }
             }
         }
@@ -76,12 +76,13 @@ public class AccountTypesValidator {
         return errors;
     }
 
-    private ItemValidationException.ValidationError createError(String column, ErrorCode errorCode, String message) {
+    private ItemValidationException.ValidationError createError(String column, String value, ErrorCode errorCode, String message) {
         // Requirements: Use ErrorCode.getCode() and ErrorCode.getName()
         return new ItemValidationException.ValidationError(
-                column, 
-                errorCode.getCode(), 
-                message, 
+                column,
+                value,
+                errorCode.getCode(),
+                message,
                 "ERROR"
         );
     }

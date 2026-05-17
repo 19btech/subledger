@@ -81,6 +81,7 @@ public class AttributesItemProcessor implements ItemProcessor<Attributes, Attrib
                 RefDataValidationLog dbLog = new RefDataValidationLog();
                 dbLog.setSourceTable("Attributes");
                 dbLog.setSourceColumn(err.getColumn());
+                dbLog.setSourceColumnValue(err.getValue());
                 dbLog.setSeverity(err.getSeverity());
                 dbLog.setErrorCode(err.getErrorCode());
                 dbLog.setMessage(err.getMessage());
@@ -109,12 +110,13 @@ public class AttributesItemProcessor implements ItemProcessor<Attributes, Attrib
                 RefDataValidationLog dbLog = new RefDataValidationLog();
                 dbLog.setSourceTable("Attributes");
                 dbLog.setSourceColumn("ATTRIBUTENAME");
+                dbLog.setSourceColumnValue(attributeName);
                 dbLog.setSeverity("ERROR");
                 dbLog.setErrorCode(ErrorCode.ERR_DUP_01.name());
                 dbLog.setMessage("Duplicate attribute configuration found in file: " + attributeName);
                 dbLog.setJobId(this.jobId);
                 dbLog.setErrorCategory("DATA");
-                
+
                 if (this.tenantId != null) {
                     TenantContextHolder.runWithTenant(this.tenantId, () -> {
                         validationLogRepository.save(dbLog);
@@ -122,7 +124,7 @@ public class AttributesItemProcessor implements ItemProcessor<Attributes, Attrib
                 } else {
                     validationLogRepository.save(dbLog);
                 }
-                return null; 
+                return null;
             }
         }
 

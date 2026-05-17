@@ -103,6 +103,7 @@ public class AggregateItemProcessor implements ItemProcessor<Aggregation, Aggreg
                 com.fyntrac.common.entity.RefDataValidationLog dbLog = new com.fyntrac.common.entity.RefDataValidationLog();
                 dbLog.setSourceTable("Aggregation");
                 dbLog.setSourceColumn(err.getColumn());
+                dbLog.setSourceColumnValue(err.getValue());
                 dbLog.setSeverity(err.getSeverity());
                 dbLog.setErrorCode(err.getErrorCode());
                 dbLog.setMessage(err.getMessage());

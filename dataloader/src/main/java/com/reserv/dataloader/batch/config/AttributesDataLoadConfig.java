@@ -11,6 +11,8 @@ import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.StepExecutionListener;
+import org.springframework.batch.core.ItemProcessListener;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
@@ -80,7 +82,8 @@ public class AttributesDataLoadConfig {
                 .faultTolerant()
                 .skip(com.reserv.dataloader.batch.exception.ItemValidationException.class)
                 .skipLimit(Integer.MAX_VALUE)
-                .listener(validationLoggingListener)
+                .listener((StepExecutionListener) validationLoggingListener)
+                .listener((ItemProcessListener) validationLoggingListener)
                 .listener(attributeItemProcessor)
                 .writer(attributesItemWriter)
                 .build();

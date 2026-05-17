@@ -60,6 +60,7 @@ public class AccountTypesItemProcessor implements ItemProcessor<AccountTypes, Ac
                 RefDataValidationLog logEntity = new RefDataValidationLog();
                 logEntity.setSourceTable("AccountTypes");
                 logEntity.setSourceColumn(err.getColumn());
+                logEntity.setSourceColumnValue(err.getValue());
                 logEntity.setSeverity(err.getSeverity());
                 logEntity.setErrorCode(err.getErrorCode());
                 logEntity.setMessage(err.getMessage());

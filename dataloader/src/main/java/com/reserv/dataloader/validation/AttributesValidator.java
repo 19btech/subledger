@@ -31,32 +31,32 @@ public class AttributesValidator {
 
         // 1. Validate attributeName
         if (name == null || name.trim().isEmpty()) {
-            itemLogs.add(createError("ATTRIBUTENAME", ErrorCode.ERR_REQ_01, "Attribute name is required and cannot be empty.", "ERROR"));
+            itemLogs.add(createError("ATTRIBUTENAME", name, ErrorCode.ERR_REQ_01, "Attribute name is required and cannot be empty.", "ERROR"));
             hasError = true;
         } else {
             // Leading or trailing spaces
             if (!name.trim().equals(name)) {
-                itemLogs.add(createError("ATTRIBUTENAME", ErrorCode.ERR_SPC_02, "Attribute name has leading or trailing spaces.", "ERROR"));
+                itemLogs.add(createError("ATTRIBUTENAME", name, ErrorCode.ERR_SPC_02, "Attribute name has leading or trailing spaces.", "ERROR"));
                 hasError = true;
             }
-            
+
             // Contains spaces
             if (name.trim().contains(" ")) {
-                itemLogs.add(createError("ATTRIBUTENAME", ErrorCode.ERR_SPC_01, "Attribute name contains spaces.", "ERROR"));
+                itemLogs.add(createError("ATTRIBUTENAME", name, ErrorCode.ERR_SPC_01, "Attribute name contains spaces.", "ERROR"));
                 hasError = true;
             }
 
             // Contains special characters
             String trimmedName = name.trim();
             if (!hasError && !ALPHANUM_UNDERSCORE_PATTERN.matcher(trimmedName).matches()) {
-                itemLogs.add(createError("ATTRIBUTENAME", ErrorCode.ERR_FMT_01, "Attribute name contains special characters.", "ERROR"));
+                itemLogs.add(createError("ATTRIBUTENAME", name, ErrorCode.ERR_FMT_01, "Attribute name contains special characters.", "ERROR"));
                 hasError = true;
             }
 
             // Exists in DB
             if (!hasError) {
                 if (existingAttributeNames.contains(trimmedName.toUpperCase())) {
-                    itemLogs.add(createError("ATTRIBUTENAME", ErrorCode.ERR_DUP_01, "Duplicate value: Attribute name already exists in database.", "ERROR"));
+                    itemLogs.add(createError("ATTRIBUTENAME", name, ErrorCode.ERR_DUP_01, "Duplicate value: Attribute name already exists in database.", "ERROR"));
                     hasError = true;
                 }
             }
@@ -64,19 +64,19 @@ public class AttributesValidator {
 
         // 2. Validate reclassable (boolean)
         if (reclassable == -2) {
-            itemLogs.add(createError("RECLASSABLE", ErrorCode.WRN_DEF_01, "Empty reclassable flag. Defaulting to true (1).", "WARNING"));
+            itemLogs.add(createError("RECLASSABLE", String.valueOf(reclassable), ErrorCode.WRN_DEF_01, "Empty reclassable flag. Defaulting to true (1).", "WARNING"));
             item.setIsReclassable(1);
         } else if (reclassable == -1) {
-            itemLogs.add(createError("RECLASSABLE", ErrorCode.ERR_BOOL_01, "Invalid boolean format for reclassable.", "ERROR"));
+            itemLogs.add(createError("RECLASSABLE", String.valueOf(reclassable), ErrorCode.ERR_BOOL_01, "Invalid boolean format for reclassable.", "ERROR"));
             hasError = true;
         }
 
         // 3. Validate versionable (boolean)
         if (versionable == -2) {
-            itemLogs.add(createError("VERSIONABLE", ErrorCode.WRN_DEF_01, "Empty versionable flag. Defaulting to true (1).", "WARNING"));
+            itemLogs.add(createError("VERSIONABLE", String.valueOf(versionable), ErrorCode.WRN_DEF_01, "Empty versionable flag. Defaulting to true (1).", "WARNING"));
             item.setIsVersionable(1);
         } else if (versionable == -1) {
-            itemLogs.add(createError("VERSIONABLE", ErrorCode.ERR_BOOL_01, "Invalid boolean format for versionable.", "ERROR"));
+            itemLogs.add(createError("VERSIONABLE", String.valueOf(versionable), ErrorCode.ERR_BOOL_01, "Invalid boolean format for versionable.", "ERROR"));
             hasError = true;
         }
 
@@ -84,19 +84,19 @@ public class AttributesValidator {
         // Wait! We need to check updated values (e.g. after defaulting)
         if (!hasError) {
             if (item.getIsReclassable() == 1 && item.getIsVersionable() == 0) {
-                itemLogs.add(createError("RECLASSABLE/VERSIONABLE", ErrorCode.ERR_LOGIC_02, "Cross-field validation error: Attribute cannot be reclassable without being versionable.", "ERROR"));
+                itemLogs.add(createError("RECLASSABLE/VERSIONABLE", "RECLASS=1, VERS=0", ErrorCode.ERR_LOGIC_02, "Cross-field validation error: Attribute cannot be reclassable without being versionable.", "ERROR"));
                 hasError = true;
             }
         }
 
         // 5. Validate dataType
         if (rawDataType == null || rawDataType.trim().isEmpty()) {
-            itemLogs.add(createError("DATATYPE", ErrorCode.ERR_REQ_01, "Data type is required and cannot be empty.", "ERROR"));
+            itemLogs.add(createError("DATATYPE", rawDataType, ErrorCode.ERR_REQ_01, "Data type is required and cannot be empty.", "ERROR"));
             hasError = true;
         } else {
             String cleanType = rawDataType.trim();
             if (!DataType.isValid(cleanType)) {
-                itemLogs.add(createError("DATATYPE", ErrorCode.ERR_LIST_01, "Invalid data type allowed value: " + cleanType, "ERROR"));
+                itemLogs.add(createError("DATATYPE", rawDataType, ErrorCode.ERR_LIST_01, "Invalid data type allowed value: " + cleanType, "ERROR"));
                 hasError = true;
             } else {
                 // If valid, ensure parsed datatype matches
@@ -111,7 +111,7 @@ public class AttributesValidator {
 
         // 6. Validate nullable
         if (rawNullable == null || rawNullable.trim().isEmpty()) {
-            itemLogs.add(createError("NULLABLE", ErrorCode.ERR_REQ_01, "Nullable is required and cannot be empty.", "ERROR"));
+            itemLogs.add(createError("NULLABLE", rawNullable, ErrorCode.ERR_REQ_01, "Nullable is required and cannot be empty.", "ERROR"));
             hasError = true;
         } else {
             String cleanNullable = rawNullable.trim().toLowerCase();
@@ -120,7 +120,7 @@ public class AttributesValidator {
             } else if ("no".equals(cleanNullable) || "n".equals(cleanNullable) || "false".equals(cleanNullable) || "0".equals(cleanNullable)) {
                 item.setIsNullable(0);
             } else {
-                itemLogs.add(createError("NULLABLE", ErrorCode.ERR_LIST_02, "Invalid nullable Yes/No value: " + rawNullable, "ERROR"));
+                itemLogs.add(createError("NULLABLE", rawNullable, ErrorCode.ERR_LIST_02, "Invalid nullable Yes/No value: " + rawNullable, "ERROR"));
                 hasError = true;
             }
         }
@@ -132,7 +132,7 @@ public class AttributesValidator {
         return itemLogs;
     }
 
-    private ItemValidationException.ValidationError createError(String column, ErrorCode errorCode, String message, String severity) {
-        return new ItemValidationException.ValidationError(column, errorCode.name(), message, severity);
+    private ItemValidationException.ValidationError createError(String column, String value, ErrorCode errorCode, String message, String severity) {
+        return new ItemValidationException.ValidationError(column, value, errorCode.name(), message, severity);
     }
 }

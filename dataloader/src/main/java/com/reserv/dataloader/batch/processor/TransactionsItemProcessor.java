@@ -82,6 +82,7 @@ public class TransactionsItemProcessor implements ItemProcessor<Transactions, Tr
                 com.fyntrac.common.entity.RefDataValidationLog dbLog = new com.fyntrac.common.entity.RefDataValidationLog();
                 dbLog.setSourceTable("Transactions");
                 dbLog.setSourceColumn(err.getColumn());
+                dbLog.setSourceColumnValue(err.getValue());
                 dbLog.setSeverity(err.getSeverity());
                 dbLog.setErrorCode(err.getErrorCode());
                 dbLog.setMessage(err.getMessage());

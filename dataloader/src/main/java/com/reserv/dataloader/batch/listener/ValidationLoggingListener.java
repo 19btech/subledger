@@ -8,14 +8,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.ItemProcessListener;
 import org.springframework.batch.core.StepExecution;
-import org.springframework.batch.core.annotation.BeforeStep;
+import org.springframework.batch.core.ExitStatus;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
-public class ValidationLoggingListener implements ItemProcessListener<Object, Object> {
+public class ValidationLoggingListener implements ItemProcessListener<Object, Object>, org.springframework.batch.core.StepExecutionListener {
 
     private static final Logger log = LoggerFactory.getLogger(ValidationLoggingListener.class);
     private final RefDataValidationLogRepository validationLogRepository;
@@ -27,10 +27,17 @@ public class ValidationLoggingListener implements ItemProcessListener<Object, Ob
         this.validationLogRepository = validationLogRepository;
     }
 
-    @BeforeStep
+    @Override
     public void beforeStep(StepExecution stepExecution) {
+        log.info("V-L-L: beforeStep invoked. JobID: {}, Params: {}", stepExecution.getJobExecutionId(), stepExecution.getJobParameters());
         this.jobId = stepExecution.getJobExecutionId();
         this.tenantId = stepExecution.getJobParameters().getString("tenantId");
+        log.info("V-L-L: Initialized jobId={} and tenantId={}", this.jobId, this.tenantId);
+    }
+
+    @Override
+    public ExitStatus afterStep(StepExecution stepExecution) {
+        return stepExecution.getExitStatus();
     }
 
     @Override
@@ -43,6 +50,7 @@ public class ValidationLoggingListener implements ItemProcessListener<Object, Ob
 
     @Override
     public void onProcessError(Object item, Exception e) {
+        log.info("V-L-L: onProcessError caught exception of type: {}", e.getClass().getName());
         if (e instanceof ItemValidationException) {
             ItemValidationException ex = (ItemValidationException) e;
             List<ItemValidationException.ValidationError> errors = ex.getValidationErrors();
@@ -52,6 +60,7 @@ public class ValidationLoggingListener implements ItemProcessListener<Object, Ob
                     RefDataValidationLog dbLog = new RefDataValidationLog();
                     dbLog.setSourceTable(sourceTable);
                     dbLog.setSourceColumn(err.getColumn());
+                    dbLog.setSourceColumnValue(getFieldValue(item, err.getColumn()));
                     dbLog.setSeverity(err.getSeverity());
                     dbLog.setErrorCode(err.getErrorCode());
                     dbLog.setMessage(err.getMessage());
@@ -72,5 +81,47 @@ public class ValidationLoggingListener implements ItemProcessListener<Object, Ob
         } else {
             log.error("Item processing failed due to unexpected error", e);
         }
+    }
+
+    private String getFieldValue(Object item, String columnName) {
+        if (item == null || columnName == null) {
+            return null;
+        }
+
+        // Special case for SubledgerMapping unvalidated enum fields stored in ThreadLocal raw context
+        if (item instanceof com.fyntrac.common.entity.SubledgerMapping) {
+            com.reserv.dataloader.batch.config.SubledgerMappingDataLoadConfig.RawValidationContext ctx =
+                    com.reserv.dataloader.batch.config.SubledgerMappingDataLoadConfig.RAW_CONTEXT.get();
+            if (ctx != null) {
+                if (columnName.equalsIgnoreCase("sign")) {
+                    return ctx.rawSign;
+                }
+                if (columnName.equalsIgnoreCase("entryType")) {
+                    return ctx.rawEntryType;
+                }
+            }
+        }
+
+        try {
+            // Try standard camelCase field name matching the columnName (case insensitive)
+            for (java.lang.reflect.Field field : item.getClass().getDeclaredFields()) {
+                if (field.getName().equalsIgnoreCase(columnName.trim())) {
+                    field.setAccessible(true);
+                    Object val = field.get(item);
+                    return val != null ? val.toString() : null;
+                }
+            }
+            // If not found in fields, try matching getter methods
+            for (java.lang.reflect.Method method : item.getClass().getDeclaredMethods()) {
+                if (method.getName().equalsIgnoreCase("get" + columnName.trim()) && method.getParameterCount() == 0) {
+                    method.setAccessible(true);
+                    Object val = method.invoke(item);
+                    return val != null ? val.toString() : null;
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to dynamically resolve field value for field={} on class={}", columnName, item.getClass().getName(), ex);
+        }
+        return null;
     }
 }

@@ -38,7 +38,8 @@ import java.util.Map;
 @Configuration
 @EnableBatchProcessing(modular = true)
 @Slf4j
-public class ChartOfAccountDataLoadConfig {
+public class
+ChartOfAccountDataLoadConfig {
     private final JobRepository jobRepository;
     private final TenantContextHolder tenantContextHolder;
     private final TenantDataSourceProvider dataSourceProvider;

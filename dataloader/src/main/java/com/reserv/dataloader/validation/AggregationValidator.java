@@ -42,17 +42,19 @@ public class AggregationValidator {
         // 1. Validate transactionName structure and constraints
         if (txName == null || txName.trim().isEmpty()) {
             errors.add(new ItemValidationException.ValidationError(
-                    "TRANSACTIONNAME", 
-                    ErrorCode.ERR_REQ_01.name(), 
-                    "Transaction name is required and cannot be empty.", 
+                    "TRANSACTIONNAME",
+                    txName,
+                    ErrorCode.ERR_REQ_01.name(),
+                    "Transaction name is required and cannot be empty.",
                     "ERROR"
             ));
         } else {
             if (!txName.equals(txName.trim())) {
                 errors.add(new ItemValidationException.ValidationError(
-                        "TRANSACTIONNAME", 
-                        ErrorCode.ERR_SPC_02.name(), 
-                        "Transaction name has leading or trailing spaces.", 
+                        "TRANSACTIONNAME",
+                        txName,
+                        ErrorCode.ERR_SPC_02.name(),
+                        "Transaction name has leading or trailing spaces.",
                         "ERROR"
                 ));
             }
@@ -61,9 +63,10 @@ public class AggregationValidator {
             try {
                 if (transactionService.getTransaction(txName.trim()) == null) {
                     errors.add(new ItemValidationException.ValidationError(
-                            "TRANSACTIONNAME", 
-                            ErrorCode.ERR_REF_01.name(), 
-                            "Transaction name does not exist in transaction reference data.", 
+                            "TRANSACTIONNAME",
+                            txName,
+                            ErrorCode.ERR_REF_01.name(),
+                            "Transaction name does not exist in transaction reference data.",
                             "ERROR"
                     ));
                 }
@@ -75,17 +78,19 @@ public class AggregationValidator {
         // 2. Validate metric structure and constraints
         if (metric == null || metric.trim().isEmpty()) {
             errors.add(new ItemValidationException.ValidationError(
-                    "METRICNAME", 
-                    ErrorCode.ERR_REQ_01.name(), 
-                    "Metric name is required and cannot be empty.", 
+                    "METRICNAME",
+                    metric,
+                    ErrorCode.ERR_REQ_01.name(),
+                    "Metric name is required and cannot be empty.",
                     "ERROR"
             ));
         } else {
             if (metric.contains(" ")) {
                 errors.add(new ItemValidationException.ValidationError(
-                        "METRICNAME", 
-                        ErrorCode.ERR_SPC_01.name(), 
-                        "Metric contains spaces.", 
+                        "METRICNAME",
+                        metric,
+                        ErrorCode.ERR_SPC_01.name(),
+                        "Metric contains spaces.",
                         "ERROR"
                 ));
             }
@@ -93,9 +98,10 @@ public class AggregationValidator {
             String trimmedMetric = metric.trim();
             if (!ALPHANUM_UNDERSCORE_PATTERN.matcher(trimmedMetric).matches()) {
                 errors.add(new ItemValidationException.ValidationError(
-                        "METRICNAME", 
-                        ErrorCode.ERR_FMT_01.name(), 
-                        "Metric contains special characters.", 
+                        "METRICNAME",
+                        metric,
+                        ErrorCode.ERR_FMT_01.name(),
+                        "Metric contains special characters.",
                         "ERROR"
                 ));
             }
@@ -105,13 +111,14 @@ public class AggregationValidator {
                 String transactionName = txName != null ? txName.trim() : "";
                 List<Aggregation> existingMetrics = aggregationService.getMetrics(transactionName);
                 boolean exists = existingMetrics.stream()
-                        .anyMatch(agg -> trimmedMetric.equalsIgnoreCase(agg.getMetricName()) 
+                        .anyMatch(agg -> trimmedMetric.equalsIgnoreCase(agg.getMetricName())
                                 && (item.getId() == null || !agg.getId().equals(item.getId())));
                 if (exists) {
                     errors.add(new ItemValidationException.ValidationError(
-                            "METRICNAME", 
-                            ErrorCode.ERR_DUP_01.name(), 
-                            "Metric name '" + trimmedMetric + "' with transaction name '" + transactionName + "' already exists in database.", 
+                            "METRICNAME",
+                            metric,
+                            ErrorCode.ERR_DUP_01.name(),
+                            "Metric name '" + trimmedMetric + "' with transaction name '" + transactionName + "' already exists in database.",
                             "ERROR"
                     ));
                 }
@@ -138,18 +145,20 @@ public class AggregationValidator {
         // 1. Validate transactionName
         if (txName == null || txName.trim().isEmpty()) {
             errors.add(new ItemValidationException.ValidationError(
-                    "TRANSACTIONNAME", 
+                    "TRANSACTIONNAME",
+                    txName,
                     ErrorCode.ERR_REQ_01.name(), // MANDATORY_FIELD
-                    "Transaction name is required and cannot be empty.", 
+                    "Transaction name is required and cannot be empty.",
                     "ERROR"
             ));
         } else {
             // Check for leading or trailing spaces
             if (!txName.equals(txName.trim())) {
                 errors.add(new ItemValidationException.ValidationError(
-                        "TRANSACTIONNAME", 
+                        "TRANSACTIONNAME",
+                        txName,
                         ErrorCode.ERR_SPC_02.name(), // TRIM_WHITESPACE
-                        "Transaction name has leading or trailing spaces.", 
+                        "Transaction name has leading or trailing spaces.",
                         "ERROR"
                 ));
             }
@@ -158,9 +167,10 @@ public class AggregationValidator {
             String trimmedTxName = txName.trim().toUpperCase();
             if (!validTransactionNames.contains(trimmedTxName)) {
                 errors.add(new ItemValidationException.ValidationError(
-                        "TRANSACTIONNAME", 
+                        "TRANSACTIONNAME",
+                        txName,
                         ErrorCode.ERR_REF_01.name(), // REF_NOT_FOUND
-                        "Transaction name does not exist in transaction reference data.", 
+                        "Transaction name does not exist in transaction reference data.",
                         "ERROR"
                 ));
             }
@@ -169,18 +179,20 @@ public class AggregationValidator {
         // 2. Validate metric
         if (metric == null || metric.trim().isEmpty()) {
             errors.add(new ItemValidationException.ValidationError(
-                    "METRICNAME", 
+                    "METRICNAME",
+                    metric,
                     ErrorCode.ERR_REQ_01.name(), // MANDATORY_FIELD
-                    "Metric name is required and cannot be empty.", 
+                    "Metric name is required and cannot be empty.",
                     "ERROR"
             ));
         } else {
             // Check for spaces
             if (metric.contains(" ")) {
                 errors.add(new ItemValidationException.ValidationError(
-                        "METRICNAME", 
+                        "METRICNAME",
+                        metric,
                         ErrorCode.ERR_SPC_01.name(), // NO_WHITESPACE
-                        "Metric contains spaces.", 
+                        "Metric contains spaces.",
                         "ERROR"
                 ));
             }
@@ -190,9 +202,10 @@ public class AggregationValidator {
             String trimmedMetric = metric.trim();
             if (!ALPHANUM_UNDERSCORE_PATTERN.matcher(trimmedMetric).matches()) {
                 errors.add(new ItemValidationException.ValidationError(
-                        "METRICNAME", 
+                        "METRICNAME",
+                        metric,
                         ErrorCode.ERR_FMT_01.name(), // ALPHANUM_UNDERSCORE
-                        "Metric contains special characters.", 
+                        "Metric contains special characters.",
                         "ERROR"
                 ));
             }
@@ -204,6 +217,7 @@ public class AggregationValidator {
             if (existingMetricTransactionKeys.contains(compositeKey)) {
                 errors.add(new ItemValidationException.ValidationError(
                         "METRICNAME",
+                        metric,
                         ErrorCode.ERR_DUP_01.name(), // Duplicate error
                         "Metric name '" + trimmedMetric + "' with transaction name '" + (txName != null ? txName.trim() : "") + "' already exists in database.",
                         "ERROR"

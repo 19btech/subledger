@@ -1,15 +1,18 @@
 package com.reserv.dataloader.batch.config;
 
-
 import com.reserv.dataloader.batch.listener.JobCompletionNotificationListener;
 import com.reserv.dataloader.batch.processor.SubledgerMappingItemProcessor;
-import com.reserv.dataloader.batch.writer.GenericItemWriterAdapter;
 import com.reserv.dataloader.batch.writer.SubledgerMappingWriter;
-import  com.fyntrac.common.config.TenantContextHolder;
-import  com.fyntrac.common.component.TenantDataSourceProvider;
-import  com.fyntrac.common.enums.EntryType;
-import  com.fyntrac.common.enums.Sign;
+import com.fyntrac.common.config.TenantContextHolder;
+import com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.SubledgerMapping;
+import com.reserv.dataloader.validation.SubledgerMappingValidator;
+import com.fyntrac.common.repository.TransactionsRepository;
+import com.fyntrac.common.repository.AccountTypesRepository;
+import com.fyntrac.common.repository.RefDataValidationLogRepository;
+import com.reserv.dataloader.batch.exception.ItemValidationException;
+import com.reserv.dataloader.batch.listener.ValidationLoggingListener;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
@@ -18,8 +21,11 @@ import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.StepExecutionListener;
+import org.springframework.batch.core.ItemProcessListener;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.batch.item.data.builder.MongoItemWriterBuilder;
@@ -43,10 +49,17 @@ import org.springframework.validation.BindException;
 @Slf4j
 public class SubledgerMappingDataLoadConfig {
 
+    public static final ThreadLocal<RawValidationContext> RAW_CONTEXT = ThreadLocal.withInitial(RawValidationContext::new);
+
+    public static class RawValidationContext {
+        public String rawSign;
+        public String rawEntryType;
+    }
+
     private final JobRepository jobRepository;
     private final TenantContextHolder tenantContextHolder;
     private final TenantDataSourceProvider dataSourceProvider;
-    private MongoTemplate mongoTemplate;
+    private final MongoTemplate mongoTemplate;
 
     public SubledgerMappingDataLoadConfig(JobRepository jobRepository, MongoTemplate mongoTemplate,
                                         TenantDataSourceProvider dataSourceProvider,
@@ -68,19 +81,38 @@ public class SubledgerMappingDataLoadConfig {
     }
 
     @Bean
-    public Step subledgerMappingImportStep() {
-        return new StepBuilder("subledgerMappingImportStep", jobRepository)
+    public Step subledgerMappingImportStep(
+            SubledgerMappingItemProcessor subledgerMappingItemProcessor,
+            ItemReader<SubledgerMapping> subledgerMappingFileReader,
+            ItemWriter<SubledgerMapping> subledgerMappingItemWriter,
+            ValidationLoggingListener validationLoggingListener) {
+        org.springframework.batch.item.ItemWriter<SubledgerMapping> writer = subledgerMappingItemWriter;
+        org.springframework.batch.core.step.builder.SimpleStepBuilder<SubledgerMapping, SubledgerMapping> builder =
+                new StepBuilder("subledgerMappingImportStep", jobRepository)
                 .<SubledgerMapping, SubledgerMapping>chunk(10, new ResourcelessTransactionManager())
-                .reader(subledgerMappingFileReader(""))
-                .processor(subledgerMappingItemProcessor())
-                .writer(subledgerMappingItemWriter(dataSourceProvider,
-                        tenantContextHolder))
-                .build();
+                .reader(subledgerMappingFileReader)
+                .processor(subledgerMappingItemProcessor)
+                .writer(writer);
+
+        builder.faultTolerant()
+                .skip(ItemValidationException.class)
+                .skipLimit(Integer.MAX_VALUE);
+
+        builder.listener((org.springframework.batch.core.StepExecutionListener) validationLoggingListener);
+        builder.listener((org.springframework.batch.core.ItemProcessListener<?, ?>) validationLoggingListener);
+        builder.listener((org.springframework.batch.core.StepExecutionListener) subledgerMappingItemProcessor);
+
+        return builder.build();
     }
 
     @Bean
-    public ItemProcessor<SubledgerMapping, SubledgerMapping> subledgerMappingItemProcessor() {
-        return new SubledgerMappingItemProcessor();
+    @StepScope
+    public SubledgerMappingItemProcessor subledgerMappingItemProcessor(
+            SubledgerMappingValidator validator,
+            TransactionsRepository transactionsRepository,
+            AccountTypesRepository accountTypesRepository,
+            RefDataValidationLogRepository validationLogRepository) {
+        return new SubledgerMappingItemProcessor(validator, transactionsRepository, accountTypesRepository, validationLogRepository);
     }
 
     @Bean()
@@ -95,20 +127,35 @@ public class SubledgerMappingDataLoadConfig {
             @Override
             public SubledgerMapping mapFieldSet(FieldSet fieldSet) throws BindException {
                 SubledgerMapping subledgerMapping = new SubledgerMapping();
-                String sign = fieldSet.readString("SIGN");
-                if(Sign.isValid(sign)) {
-                    subledgerMapping.setSign(Sign.valueOf(sign));
-                }else {
-                    subledgerMapping.setSign(Sign.POSITIVE);
+                
+                String rawSign = fieldSet.readString("SIGN");
+                String rawEntryType = fieldSet.readString("ENTRYTYPE");
+                
+                // Store raw values in thread-local context for robust validation in the validator phase
+                RawValidationContext ctx = RAW_CONTEXT.get();
+                ctx.rawSign = rawSign;
+                ctx.rawEntryType = rawEntryType;
+                
+                // Safe-map Sign enum
+                if (com.fyntrac.common.enums.Sign.isValid(rawSign)) {
+                    String cleanSign = rawSign.trim().toUpperCase();
+                    subledgerMapping.setSign(com.fyntrac.common.enums.Sign.valueOf(cleanSign));
+                } else {
+                    subledgerMapping.setSign(null);
                 }
-
-                String entryType = fieldSet.readString("ENTRYTYPE");
-
-                if(EntryType.isValid(entryType)) {
-                    subledgerMapping.setEntryType(EntryType.valueOf(entryType));
-                }else{
-                    subledgerMapping.setEntryType(EntryType.CREDIT);
+                
+                // Safe-map EntryType enum
+                if (com.fyntrac.common.enums.EntryType.isValid(rawEntryType)) {
+                    String cleanEntryType = rawEntryType.trim();
+                    if (cleanEntryType.equalsIgnoreCase("DEBIT")) {
+                        subledgerMapping.setEntryType(com.fyntrac.common.enums.EntryType.DEBIT);
+                    } else if (cleanEntryType.equalsIgnoreCase("CREDIT")) {
+                        subledgerMapping.setEntryType(com.fyntrac.common.enums.EntryType.CREDIT);
+                    }
+                } else {
+                    subledgerMapping.setEntryType(null);
                 }
+                
                 subledgerMapping.setTransactionName(fieldSet.readString("TRANSACTIONNAME"));
                 subledgerMapping.setAccountSubType(fieldSet.readString("ACCOUNTSUBTYPE"));
                 return subledgerMapping;
@@ -137,6 +184,7 @@ public class SubledgerMappingDataLoadConfig {
     }
 
     @Bean
+    @StepScope
     public ItemWriter<SubledgerMapping> subledgerMappingItemWriter(TenantDataSourceProvider dataSourceProvider,
                                                                TenantContextHolder tenantContextHolder) {
         MongoItemWriter<SubledgerMapping> delegate = new MongoItemWriterBuilder<SubledgerMapping>()
@@ -146,4 +194,3 @@ public class SubledgerMappingDataLoadConfig {
         return new SubledgerMappingWriter(delegate, dataSourceProvider, tenantContextHolder);
     }
 }
-

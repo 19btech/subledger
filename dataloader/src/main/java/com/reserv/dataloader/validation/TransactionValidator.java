@@ -37,22 +37,22 @@ public class TransactionValidator {
 
         // Validate transactionName
         if (name == null || name.trim().isEmpty()) {
-            itemLogs.add(createError("NAME", ErrorCode.ERR_REQ_01, "Transaction name cannot be empty.", "ERROR"));
+            itemLogs.add(createError("NAME", name, ErrorCode.ERR_REQ_01, "Transaction name cannot be empty.", "ERROR"));
             hasError = true;
         } else {
             if (name.contains(" ")) {
                 if (name.trim().equals(name) && !name.contains("  ")) {
-                    itemLogs.add(createError("NAME", ErrorCode.ERR_SPC_01, "Transaction name contains spaces.", "ERROR"));
+                    itemLogs.add(createError("NAME", name, ErrorCode.ERR_SPC_01, "Transaction name contains spaces.", "ERROR"));
                     hasError = true;
                 }
             }
             if (!name.trim().equals(name)) {
-                itemLogs.add(createError("NAME", ErrorCode.ERR_SPC_02, "Transaction name has leading/trailing spaces.", "ERROR"));
+                itemLogs.add(createError("NAME", name, ErrorCode.ERR_SPC_02, "Transaction name has leading/trailing spaces.", "ERROR"));
                 hasError = true;
             }
 
             if (!hasError && !ALPHANUM_UNDERSCORE_PATTERN.matcher(name.trim()).matches()) {
-                itemLogs.add(createError("NAME", ErrorCode.ERR_FMT_01, "Transaction name contains special characters.", "ERROR"));
+                itemLogs.add(createError("NAME", name, ErrorCode.ERR_FMT_01, "Transaction name contains special characters.", "ERROR"));
                 hasError = true;
             }
 
@@ -62,7 +62,7 @@ public class TransactionValidator {
                     if (existing != null) {
                         // Pick object from validation only where ID is NOT equal to request object (Excludes self on update)
                         if (item.getId() == null || !existing.getId().equals(item.getId())) {
-                            itemLogs.add(createError("NAME", ErrorCode.ERR_DUP_01, "Duplicate transaction name in db: " + name.trim(), "ERROR"));
+                            itemLogs.add(createError("NAME", name, ErrorCode.ERR_DUP_01, "Duplicate transaction name in db: " + name.trim(), "ERROR"));
                             hasError = true;
                         }
                     }
@@ -75,25 +75,25 @@ public class TransactionValidator {
 
         // Validate journal (isGL)
         if (isGL == -2) {
-            itemLogs.add(createError("ISGL", ErrorCode.WRN_DEF_01, "Empty journal flag. Defaulting to true (1).", "WARNING"));
+            itemLogs.add(createError("ISGL", String.valueOf(isGL), ErrorCode.WRN_DEF_01, "Empty journal flag. Defaulting to true (1).", "WARNING"));
             item.setIsGL(1);
         } else if (isGL == -1) {
-            itemLogs.add(createError("ISGL", ErrorCode.ERR_BOOL_01, "Invalid boolean value for journal.", "ERROR"));
+            itemLogs.add(createError("ISGL", String.valueOf(isGL), ErrorCode.ERR_BOOL_01, "Invalid boolean value for journal.", "ERROR"));
             hasError = true;
         }
 
         // Validate reportable (isReplayable)
         if (isReplayable == -2) {
-            itemLogs.add(createError("ISREPLAYABLE", ErrorCode.WRN_DEF_01, "Empty reportable flag. Defaulting to true (1).", "WARNING"));
+            itemLogs.add(createError("ISREPLAYABLE", String.valueOf(isReplayable), ErrorCode.WRN_DEF_01, "Empty reportable flag. Defaulting to true (1).", "WARNING"));
             item.setIsReplayable(1);
         } else if (isReplayable == -1) {
-            itemLogs.add(createError("ISREPLAYABLE", ErrorCode.ERR_BOOL_01, "Invalid boolean value for reportable.", "ERROR"));
+            itemLogs.add(createError("ISREPLAYABLE", String.valueOf(isReplayable), ErrorCode.ERR_BOOL_01, "Invalid boolean value for reportable.", "ERROR"));
             hasError = true;
         }
 
         // Validate Logic Warning
         if (item.getIsGL() == 0 && item.getIsReplayable() == 0) {
-            itemLogs.add(createError("ISGL/ISREPLAYABLE", ErrorCode.WRN_LOGIC_01, "Both journal and reportable are false.", "WARNING"));
+            itemLogs.add(createError("ISGL/ISREPLAYABLE", "GL=0, REP=0", ErrorCode.WRN_LOGIC_01, "Both journal and reportable are false.", "WARNING"));
         }
 
         // Validate exclusive
@@ -118,28 +118,28 @@ public class TransactionValidator {
 
         // Validate transactionName
         if (name == null || name.trim().isEmpty()) {
-            itemLogs.add(createError("NAME", ErrorCode.ERR_REQ_01, "Transaction name cannot be empty.", "ERROR"));
+            itemLogs.add(createError("NAME", name, ErrorCode.ERR_REQ_01, "Transaction name cannot be empty.", "ERROR"));
             hasError = true;
         } else {
             if (name.contains(" ")) {
                 if (name.trim().equals(name) && !name.contains("  ")) {
-                    itemLogs.add(createError("NAME", ErrorCode.ERR_SPC_01, "Transaction name contains spaces.", "ERROR"));
+                    itemLogs.add(createError("NAME", name, ErrorCode.ERR_SPC_01, "Transaction name contains spaces.", "ERROR"));
                     hasError = true;
                 }
             }
             if (!name.trim().equals(name)) {
-                itemLogs.add(createError("NAME", ErrorCode.ERR_SPC_02, "Transaction name has leading/trailing spaces.", "ERROR"));
+                itemLogs.add(createError("NAME", name, ErrorCode.ERR_SPC_02, "Transaction name has leading/trailing spaces.", "ERROR"));
                 hasError = true;
             }
 
             if (!hasError && !ALPHANUM_UNDERSCORE_PATTERN.matcher(name.trim()).matches()) {
-                itemLogs.add(createError("NAME", ErrorCode.ERR_FMT_01, "Transaction name contains special characters.", "ERROR"));
+                itemLogs.add(createError("NAME", name, ErrorCode.ERR_FMT_01, "Transaction name contains special characters.", "ERROR"));
                 hasError = true;
             }
 
             if (!hasError) {
                 if (existingTransactionNames.contains(name.trim().toUpperCase())) {
-                    itemLogs.add(createError("NAME", ErrorCode.ERR_DUP_01, "Duplicate transaction name in db: " + name.trim(), "ERROR"));
+                    itemLogs.add(createError("NAME", name, ErrorCode.ERR_DUP_01, "Duplicate transaction name in db: " + name.trim(), "ERROR"));
                     hasError = true;
                 }
             }
@@ -147,25 +147,25 @@ public class TransactionValidator {
 
         // Validate journal (isGL)
         if (isGL == -2) {
-            itemLogs.add(createError("ISGL", ErrorCode.WRN_DEF_01, "Empty journal flag. Defaulting to true (1).", "WARNING"));
+            itemLogs.add(createError("ISGL", String.valueOf(isGL), ErrorCode.WRN_DEF_01, "Empty journal flag. Defaulting to true (1).", "WARNING"));
             item.setIsGL(1);
         } else if (isGL == -1) {
-            itemLogs.add(createError("ISGL", ErrorCode.ERR_BOOL_01, "Invalid boolean value for journal.", "ERROR"));
+            itemLogs.add(createError("ISGL", String.valueOf(isGL), ErrorCode.ERR_BOOL_01, "Invalid boolean value for journal.", "ERROR"));
             hasError = true;
         }
 
         // Validate reportable (isReplayable)
         if (isReplayable == -2) {
-            itemLogs.add(createError("ISREPLAYABLE", ErrorCode.WRN_DEF_01, "Empty reportable flag. Defaulting to true (1).", "WARNING"));
+            itemLogs.add(createError("ISREPLAYABLE", String.valueOf(isReplayable), ErrorCode.WRN_DEF_01, "Empty reportable flag. Defaulting to true (1).", "WARNING"));
             item.setIsReplayable(1);
         } else if (isReplayable == -1) {
-            itemLogs.add(createError("ISREPLAYABLE", ErrorCode.ERR_BOOL_01, "Invalid boolean value for reportable.", "ERROR"));
+            itemLogs.add(createError("ISREPLAYABLE", String.valueOf(isReplayable), ErrorCode.ERR_BOOL_01, "Invalid boolean value for reportable.", "ERROR"));
             hasError = true;
         }
 
         // Validate Logic Warning
         if (item.getIsGL() == 0 && item.getIsReplayable() == 0) {
-            itemLogs.add(createError("ISGL/ISREPLAYABLE", ErrorCode.WRN_LOGIC_01, "Both journal and reportable are false.", "WARNING"));
+            itemLogs.add(createError("ISGL/ISREPLAYABLE", "GL=0, REP=0", ErrorCode.WRN_LOGIC_01, "Both journal and reportable are false.", "WARNING"));
         }
 
         // Validate exclusive
@@ -180,7 +180,7 @@ public class TransactionValidator {
         return itemLogs;
     }
 
-    private ItemValidationException.ValidationError createError(String column, ErrorCode errorCode, String message, String severity) {
-        return new ItemValidationException.ValidationError(column, errorCode.name(), message, severity);
+    private ItemValidationException.ValidationError createError(String column, String value, ErrorCode errorCode, String message, String severity) {
+        return new ItemValidationException.ValidationError(column, value, errorCode.name(), message, severity);
     }
 }
