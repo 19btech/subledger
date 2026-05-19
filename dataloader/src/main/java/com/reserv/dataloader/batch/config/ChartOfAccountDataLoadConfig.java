@@ -1,15 +1,20 @@
 package com.reserv.dataloader.batch.config;
 
 import com.reserv.dataloader.batch.listener.JobCompletionNotificationListener;
+import com.reserv.dataloader.batch.listener.ValidationLoggingListener;
 import com.reserv.dataloader.batch.mapper.HeaderColumnNameMapper;
 import com.reserv.dataloader.batch.processor.ChartOfAccountItemProcessor;
+import com.reserv.dataloader.batch.exception.ItemValidationException;
+import com.reserv.dataloader.validation.ChartOfAccountValidator;
 import com.reserv.dataloader.batch.writer.GenericItemWriterAdapter;
 import  com.fyntrac.common.config.TenantContextHolder;
 import  com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.ChartOfAccount;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.ItemProcessListener;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
@@ -17,6 +22,7 @@ import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.batch.item.data.builder.MongoItemWriterBuilder;
@@ -65,19 +71,36 @@ ChartOfAccountDataLoadConfig {
     }
 
     @Bean
-    public Step chartOfAccountImportStep() {
-        return new StepBuilder("chartOfAccountImportStep", jobRepository)
-                .<Map<String,Object>, ChartOfAccount>chunk(10, new ResourcelessTransactionManager())
-                .reader(chartOfAccountReader("", ""))
-                .processor(chartOfAccountMapItemProcessor())
-                .writer(chartOfAccountWriter(dataSourceProvider,
-                        tenantContextHolder))
+    public Step chartOfAccountImportStep(
+            ItemProcessor<Map<String,Object>, ChartOfAccount> chartOfAccountMapItemProcessor,
+            ItemReader<Map<String, Object>> chartOfAccountReader,
+            ItemWriter<ChartOfAccount> chartOfAccountWriter,
+            ValidationLoggingListener validationLoggingListener) {
+
+        var builder = new StepBuilder("chartOfAccountImportStep", jobRepository)
+                .<Map<String, Object>, ChartOfAccount>chunk(10, new ResourcelessTransactionManager());
+
+        return builder
+                .reader(chartOfAccountReader)
+                .processor(chartOfAccountMapItemProcessor)
+                .faultTolerant()
+                .skip(ItemValidationException.class)
+                .skipLimit(Integer.MAX_VALUE)
+                .listener((StepExecutionListener) validationLoggingListener)
+                .listener((ItemProcessListener) validationLoggingListener)
+                .writer(chartOfAccountWriter)
                 .build();
     }
 
     @Bean
-    public ItemProcessor<Map<String,Object>,ChartOfAccount> chartOfAccountMapItemProcessor() {
-        return new ChartOfAccountItemProcessor();
+    @StepScope
+    public ChartOfAccountValidator chartOfAccountValidator(com.fyntrac.common.repository.AccountTypesRepository accountTypesRepository) {
+        return new ChartOfAccountValidator(accountTypesRepository);
+    }
+
+    @Bean
+    public ItemProcessor<Map<String,Object>,ChartOfAccount> chartOfAccountMapItemProcessor(ChartOfAccountValidator validator) {
+        return new ChartOfAccountItemProcessor(validator);
     }
 
     @StepScope

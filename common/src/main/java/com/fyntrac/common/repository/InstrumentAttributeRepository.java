@@ -43,4 +43,6 @@ public interface InstrumentAttributeRepository extends MongoRepository<Instrumen
     // Delete all InstrumentAttribute records for a given posting date
     void deleteByPostingDate(Integer postingDate);
 
+    boolean existsByInstrumentId(String instrumentId);
+    boolean existsByAttributeId(String attributeId);
 }
