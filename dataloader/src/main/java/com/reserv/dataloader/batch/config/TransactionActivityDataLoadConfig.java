@@ -7,26 +7,33 @@ import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.entity.MetricLevelLtd;
 import com.fyntrac.common.entity.TransactionActivity;
+import com.fyntrac.common.repository.InstrumentAttributeRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
+import com.fyntrac.common.repository.RefDataValidationLogRepository;
 import com.fyntrac.common.service.*;
 import com.fyntrac.common.service.aggregation.AggregationService;
 import com.fyntrac.common.service.aggregation.AttributeLevelAggregationService;
 import com.fyntrac.common.service.aggregation.InstrumentLevelAggregationService;
 import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
+import com.reserv.dataloader.batch.exception.ItemValidationException;
 import com.reserv.dataloader.batch.listener.TransactionActivityJobCompletionListener;
+import com.reserv.dataloader.batch.listener.ValidationLoggingListener;
 import com.reserv.dataloader.batch.mapper.HeaderColumnNameMapper;
 import com.reserv.dataloader.batch.processor.TransactionActivityItemProcessor;
 import com.reserv.dataloader.batch.tasklet.AttributeLevelAggregatorTasklet;
 import com.reserv.dataloader.batch.tasklet.InstrumentLevelAggregatorTasklet;
 import com.reserv.dataloader.batch.tasklet.MetricLevelAggregatorTasklet;
 import com.reserv.dataloader.batch.writer.TransactionActivityItemWriter;
+import com.reserv.dataloader.validation.TransactionActivityValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
+import org.springframework.batch.core.ItemProcessListener;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
@@ -72,17 +79,19 @@ public class TransactionActivityDataLoadConfig {
     private final MemcachedRepository memcachedRepository;
     private final PlatformTransactionManager transactionManager;
     private final DataService<MetricLevelLtd> dataService;
-    private  final SettingsService settingsService;
+    private final SettingsService settingsService;
     private final InstrumentAttributeService instrumentAttributeService;
     private final AttributeService attributeService;
     private final AccountingPeriodService accountingPeriodService;
     private final ExecutionStateService executionStateService;
     private final AggregationService aggregationService;
-    private  final AttributeLevelAggregationService attributeLevelAggregationService;
-    private  final InstrumentLevelAggregationService instrumentLevelAggregationService;
+    private final AttributeLevelAggregationService attributeLevelAggregationService;
+    private final InstrumentLevelAggregationService instrumentLevelAggregationService;
     private final MetricLevelAggregationService metricLevelAggregationService;
     private final TransactionService transactionService;
     private final TransactionActivityQueue transactionActivityQueue;
+    private final RefDataValidationLogRepository validationLogRepository;
+    private final com.fyntrac.common.repository.InstrumentAttributeRepository instrumentAttributeRepository;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("M/d/yyyy");
     @Autowired
     public TransactionActivityDataLoadConfig(JobRepository jobRepository
@@ -103,6 +112,8 @@ public class TransactionActivityDataLoadConfig {
     , MetricLevelAggregationService metricLevelAggregationService
     , TransactionService transactionService
     , TransactionActivityQueue transactionActivityQueue
+    , RefDataValidationLogRepository validationLogRepository
+    , com.fyntrac.common.repository.InstrumentAttributeRepository instrumentAttributeRepository
     ) {
         this.jobRepository = jobRepository;
         this.tenantContextHolder = tenantContextHolder;
@@ -122,7 +133,8 @@ public class TransactionActivityDataLoadConfig {
         this.metricLevelAggregationService = metricLevelAggregationService;
         this.transactionService = transactionService;
         this.transactionActivityQueue = transactionActivityQueue;
-
+        this.validationLogRepository = validationLogRepository;
+        this.instrumentAttributeRepository = instrumentAttributeRepository;
     }
 
     @Bean("transactionActivityUploadJob")
@@ -136,25 +148,39 @@ public class TransactionActivityDataLoadConfig {
     }
 
     @Bean
-    public Step transactionActivityImportStep() throws IOException {
+    public Step transactionActivityImportStep(
+            ItemProcessor<Map<String, Object>, TransactionActivity> transactionActivityItemProcessor,
+            ValidationLoggingListener validationLoggingListener) throws IOException {
         return new StepBuilder("transactionActivityImportStep", jobRepository)
                 .<Map<String, Object>, TransactionActivity>chunk(10, new ResourcelessTransactionManager())
                 .reader(transactionActivityReader(""))
-                .processor(transactionActivityItemProcessor())
+                .processor(transactionActivityItemProcessor)
+                .faultTolerant()
+                .skip(ItemValidationException.class)
+                .skipLimit(Integer.MAX_VALUE)
+                .listener((StepExecutionListener) validationLoggingListener)
+                .listener((ItemProcessListener) validationLoggingListener)
+                .listener(transactionActivityItemProcessor)   // @BeforeStep wiring
                 .writer(transactionActivityItemWriter(dataSourceProvider
                         , tenantContextHolder
                         , this.memcachedRepository
                         , this.instrumentAttributeService
                         , this.attributeService
                         , this.accountingPeriodService
-                , this.transactionActivityQueue
+                        , this.transactionActivityQueue
                 ))
                 .build();
     }
 
     @Bean
-    public ItemProcessor<Map<String,Object>, TransactionActivity> transactionActivityItemProcessor() {
-        return new TransactionActivityItemProcessor();
+    @StepScope
+    public TransactionActivityItemProcessor transactionActivityItemProcessor(
+            TransactionActivityValidator validator,
+            TransactionService transactionService,
+            com.fyntrac.common.repository.InstrumentAttributeRepository instrumentAttributeRepository,
+            RefDataValidationLogRepository validationLogRepository) {
+        return new TransactionActivityItemProcessor(
+                validator, transactionService, instrumentAttributeRepository, validationLogRepository);
     }
 
     @StepScope
