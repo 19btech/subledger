@@ -1,13 +1,20 @@
 package com.reserv.dataloader.batch.config;
 
-import com.reserv.dataloader.batch.processor.DynamicDataProcessor;
-import com.reserv.dataloader.batch.writer.DynamicMongoWriter;
 import com.fyntrac.common.entity.CustomTableColumn;
 import com.fyntrac.common.entity.CustomTableDefinition;
 import com.fyntrac.common.repository.CustomTableDefinitionRepository;
+import com.fyntrac.common.repository.InstrumentAttributeRepository;
+import com.fyntrac.common.repository.RefDataValidationLogRepository;
+import com.reserv.dataloader.batch.exception.ItemValidationException;
+import com.reserv.dataloader.batch.listener.ValidationLoggingListener;
+import com.reserv.dataloader.batch.processor.DynamicDataProcessor;
+import com.reserv.dataloader.batch.writer.DynamicMongoWriter;
+import com.reserv.dataloader.validation.DynamicTableValidator;
 import org.bson.Document;
+import org.springframework.batch.core.ItemProcessListener;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.configuration.annotation.JobScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
@@ -38,105 +45,127 @@ public class DynamicTableBatchConfig {
     private final PlatformTransactionManager transactionManager;
     private final MongoTemplate mongoTemplate;
     private final CustomTableDefinitionRepository tableDefRepository;
+    private final InstrumentAttributeRepository instrumentAttributeRepository;
+    private final RefDataValidationLogRepository validationLogRepository;
+    private final DynamicTableValidator dynamicTableValidator;
+    private final ValidationLoggingListener validationLoggingListener;
 
     public DynamicTableBatchConfig(JobRepository jobRepository,
                                    PlatformTransactionManager transactionManager,
                                    MongoTemplate mongoTemplate,
-                                   CustomTableDefinitionRepository tableDefRepository) {
+                                   CustomTableDefinitionRepository tableDefRepository,
+                                   InstrumentAttributeRepository instrumentAttributeRepository,
+                                   RefDataValidationLogRepository validationLogRepository,
+                                   DynamicTableValidator dynamicTableValidator,
+                                   ValidationLoggingListener validationLoggingListener) {
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
         this.mongoTemplate = mongoTemplate;
         this.tableDefRepository = tableDefRepository;
+        this.instrumentAttributeRepository = instrumentAttributeRepository;
+        this.validationLogRepository = validationLogRepository;
+        this.dynamicTableValidator = dynamicTableValidator;
+        this.validationLoggingListener = validationLoggingListener;
     }
+
+    // ------------------------------------------------------------------
+    // Job
+    // ------------------------------------------------------------------
 
     @Bean
     public Job dynamicLoadJob() {
         return new JobBuilder("dynamicLoadJob", jobRepository)
-                .start(dynamicLoadStep(null, null)) // Parameters injected at runtime
+                .start(dynamicLoadStep(null, null)) // Parameters injected at runtime via @JobScope
                 .build();
     }
+
+    // ------------------------------------------------------------------
+    // Step — follows AggregationDataLoadConfig.aggregationImportStep() pattern
+    // ------------------------------------------------------------------
 
     @Bean
     @JobScope
     public Step dynamicLoadStep(@Value("#{jobParameters['tableDefId']}") String tableDefId,
                                 @Value("#{jobParameters['filePath']}") String filePath) {
 
-        // 1. Fetch the definition from DB based on ID passed in Job Parameters
+        // 1. Fetch the table definition from DB based on ID passed in Job Parameters
         CustomTableDefinition tableDef = tableDefRepository.findById(tableDefId)
                 .orElseThrow(() -> new RuntimeException("Table definition not found for ID: " + tableDefId));
 
+        // 2. Build the @BeforeStep-capable processor (wired with validator + repos)
+        DynamicDataProcessor processor = new DynamicDataProcessor(
+                tableDef, dynamicTableValidator,
+                instrumentAttributeRepository, validationLogRepository);
+
         return new StepBuilder("dynamicLoadStep", jobRepository)
                 .<FieldSet, Document>chunk(100, transactionManager)
-                // We call dynamicReader manually here. The result is registered with the step.
                 .reader(dynamicReader(tableDef, filePath))
-                .processor(new DynamicDataProcessor(tableDef))
+                .processor(processor)
                 .writer(new DynamicMongoWriter(mongoTemplate, tableDef.getTableName()))
+                .listener(processor)   // @BeforeStep wiring — must be before faultTolerant()
+                .faultTolerant()
+                .skip(ItemValidationException.class)
+                .skipLimit(Integer.MAX_VALUE)
+                .listener((StepExecutionListener) validationLoggingListener)
+                .listener((ItemProcessListener) validationLoggingListener)
                 .build();
     }
 
-    // REMOVED @Bean and @StepScope. This is now just a helper method.
-    // REMOVED @Value from parameters. It receives values directly from dynamicLoadStep.
-    public FlatFileItemReader<FieldSet> dynamicReader(CustomTableDefinition tableDef, String filePath) {
-        // 1. Read the actual headers from the file to determine column positions dynamically
-        String[] csvHeaders = getHeadersFromFile(filePath);
+    // ------------------------------------------------------------------
+    // Reader — unchanged from original
+    // ------------------------------------------------------------------
 
-        // 2. Validate that the file headers contain necessary columns from tableDef
+    /**
+     * Reads the CSV dynamically — column names are taken from the file header row,
+     * not hardcoded.
+     */
+    public FlatFileItemReader<FieldSet> dynamicReader(CustomTableDefinition tableDef, String filePath) {
+        String[] csvHeaders = getHeadersFromFile(filePath);
         validateHeaders(csvHeaders, tableDef);
 
         return new FlatFileItemReaderBuilder<FieldSet>()
                 .name("dynamicReader")
                 .resource(new FileSystemResource(filePath))
-                .linesToSkip(1) // Skip the header line since we read it manually
+                .linesToSkip(1) // Header is read manually above
                 .lineTokenizer(new DelimitedLineTokenizer() {{
-                    setNames(csvHeaders); // Map indices to names based on the ACTUAL file header
+                    setNames(csvHeaders);
                     setStrict(false);
-                    // Use double quote as quote character to handle quoted values correctly during read
                     setQuoteCharacter('"');
                 }})
-                .fieldSetMapper(new PassThroughFieldSetMapper()) // Return raw FieldSet
+                .fieldSetMapper(new PassThroughFieldSetMapper())
                 .build();
     }
 
-    /**
-     * Reads the first line of the CSV to get the actual header names.
-     */
+    // ------------------------------------------------------------------
+    // Helpers — unchanged from original
+    // ------------------------------------------------------------------
+
     private String[] getHeadersFromFile(String filePath) {
         try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
             String line = br.readLine();
-            if (line == null) {
-                throw new RuntimeException("File is empty: " + filePath);
-            }
-            // Simple split by comma. For complex CSVs (quotes, commas in values),
-            // consider using a dedicated CSV library here.
+            if (line == null) throw new RuntimeException("File is empty: " + filePath);
             return Arrays.stream(line.split(","))
                     .map(String::trim)
-                    .map(header -> header.replace("\"", "")) // Clean any surrounding quotes
+                    .map(h -> h.replace("\"", ""))
                     .toArray(String[]::new);
         } catch (IOException e) {
             throw new RuntimeException("Error reading header from file: " + filePath, e);
         }
     }
 
-    /**
-     * Compares file headers with Table Definition to ensure data integrity.
-     * Case-insensitive comparison.
-     */
     private void validateHeaders(String[] fileHeaders, CustomTableDefinition tableDef) {
-        // Convert all file headers to lower case set for efficient, case-insensitive lookup
         Set<String> fileHeaderSet = Arrays.stream(fileHeaders)
                 .map(String::toLowerCase)
                 .collect(Collectors.toSet());
 
         for (CustomTableColumn col : tableDef.getColumns()) {
-            // If a column is NOT nullable (required) in DB, it MUST exist in the CSV file
-            // We verify by checking if the lower-case column name exists in our set
             if (!col.getNullable() && !fileHeaderSet.contains(col.getColumnName().toLowerCase())) {
                 throw new RuntimeException("Missing required column in CSV file: " + col.getColumnName());
             }
         }
     }
 
-    // Simple mapper that passes the FieldSet through to the processor
+    /** Simple mapper that passes the FieldSet through to the processor. */
     public static class PassThroughFieldSetMapper implements FieldSetMapper<FieldSet> {
         @Override
         public FieldSet mapFieldSet(FieldSet fieldSet) {

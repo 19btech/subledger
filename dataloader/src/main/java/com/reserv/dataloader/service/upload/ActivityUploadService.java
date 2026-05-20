@@ -78,6 +78,7 @@ public class ActivityUploadService {
             JobParameters params = new JobParametersBuilder()
                     .addString("tableDefId", customTableDefinition.getId()) // ID from Mongo
                     .addString("filePath", fileName)
+                    .addString("tenantId", this.dataService.getTenantId())  // required for reference preload
                     .addLong("time", System.currentTimeMillis())
                     .addLong("run.id", uploadId)
                     .toJobParameters();
@@ -98,8 +99,9 @@ public class ActivityUploadService {
                         Integer executionDate = executionState.getExecutionDate();
                         Integer maxPostingDate =
                                 this.dataService.getMaxPostingDate(customTableDefinition.getTableName(), executionDate);
-                        postingDate = maxPostingDate > executionDate ? maxPostingDate : executionDate;
-
+                        // maxPostingDate is null when no records were written (e.g. all rows failed validation)
+                        postingDate = (maxPostingDate != null && maxPostingDate > executionDate)
+                                ? maxPostingDate : executionDate;
                     }
                     this.logActivity(uploadId, postingDate, customTableDefinition.getTableName(),jobExecution,
                             FileUploadActivityType.CUSTOM_TABLE);
