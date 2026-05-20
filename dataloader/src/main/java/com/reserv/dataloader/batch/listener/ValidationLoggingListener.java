@@ -66,6 +66,7 @@ public class ValidationLoggingListener implements ItemProcessListener<Object, Ob
                     dbLog.setMessage(err.getMessage());
                     dbLog.setJobId(this.jobId);
                     dbLog.setErrorCategory("DATA");
+                    dbLog.setValidationType(com.fyntrac.common.enums.ValidationType.JOURNAL_MAPPING);
                     return dbLog;
                 }).collect(Collectors.toList());
 

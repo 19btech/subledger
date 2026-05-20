@@ -1,12 +1,13 @@
 package com.reserv.dataloader.batch.processor;
 
+import com.fyntrac.common.entity.ActivityDataValidationLog;
 import com.fyntrac.common.entity.InstrumentAttribute;
-import com.fyntrac.common.entity.RefDataValidationLog;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.entity.Transactions;
+import com.fyntrac.common.repository.ActivityDataValidationLogRepository;
 import com.fyntrac.common.repository.InstrumentAttributeRepository;
-import com.fyntrac.common.repository.RefDataValidationLogRepository;
 import com.fyntrac.common.service.TransactionService;
+import com.reserv.dataloader.service.ActivityValidationLogService;
 import com.reserv.dataloader.validation.TransactionActivityValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,8 +33,9 @@ class TransactionActivityItemProcessorTest {
 
     @Mock private TransactionService transactionService;
     @Mock private InstrumentAttributeRepository instrumentAttributeRepository;
-    @Mock private RefDataValidationLogRepository validationLogRepository;
+    @Mock private ActivityDataValidationLogRepository activityLogRepository;
 
+    private ActivityValidationLogService validationLogService;
     private TransactionActivityItemProcessor processor;
 
     private static final String VALID_INSTRUMENT_ID  = "INST-001";
@@ -43,8 +45,9 @@ class TransactionActivityItemProcessorTest {
     @BeforeEach
     void setUp() {
         TransactionActivityValidator validator = new TransactionActivityValidator();
+        validationLogService = new ActivityValidationLogService(activityLogRepository);
         processor = new TransactionActivityItemProcessor(
-                validator, transactionService, instrumentAttributeRepository, validationLogRepository);
+                validator, transactionService, instrumentAttributeRepository, validationLogService);
 
         // Stub InstrumentAttribute preload
         InstrumentAttribute ia = new InstrumentAttribute();
@@ -81,7 +84,7 @@ class TransactionActivityItemProcessorTest {
         assertEquals(VALID_ATTRIBUTE_ID,  result.getAttributeId());
         assertEquals(VALID_TX_NAME,       result.getTransactionName());
         assertTrue(result.getValidationErrors().isEmpty());
-        verify(validationLogRepository, never()).saveAll(any());
+        verify(activityLogRepository, never()).saveAll(any());
     }
 
     // -----------------------------------------------------------------------
@@ -246,13 +249,13 @@ class TransactionActivityItemProcessorTest {
         TransactionActivity result = processor.process(item);
         assertNull(result, "Expected processor to return null for invalid row");
 
-        ArgumentCaptor<List<RefDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
-        verify(validationLogRepository, atLeastOnce()).saveAll(captor.capture());
+        ArgumentCaptor<List<ActivityDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
+        verify(activityLogRepository, atLeastOnce()).saveAll(captor.capture());
 
-        List<RefDataValidationLog> logs = captor.getValue();
+        List<ActivityDataValidationLog> logs = captor.getValue();
         assertTrue(
                 logs.stream().anyMatch(l ->
-                        expectedColumn.equalsIgnoreCase(l.getSourceColumn())
+                        expectedColumn.equalsIgnoreCase(l.getFieldName())
                         && expectedErrorCode.equals(l.getErrorCode())),
                 "Expected error " + expectedErrorCode + " on column " + expectedColumn
                         + " but got: " + logs);

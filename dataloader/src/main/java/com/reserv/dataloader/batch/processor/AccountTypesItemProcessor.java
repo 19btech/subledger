@@ -66,6 +66,7 @@ public class AccountTypesItemProcessor implements ItemProcessor<AccountTypes, Ac
                 logEntity.setMessage(err.getMessage());
                 logEntity.setJobId(this.jobId);
                 logEntity.setErrorCategory("DATA_VALIDATION");
+                logEntity.setValidationType(com.fyntrac.common.enums.ValidationType.JOURNAL_MAPPING);
                 return logEntity;
             }).collect(Collectors.toList());
 

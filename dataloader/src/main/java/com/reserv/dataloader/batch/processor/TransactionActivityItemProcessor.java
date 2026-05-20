@@ -3,11 +3,12 @@ package com.reserv.dataloader.batch.processor;
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.enums.Source;
+import com.fyntrac.common.enums.ValidationType;
 import com.fyntrac.common.repository.InstrumentAttributeRepository;
-import com.fyntrac.common.repository.RefDataValidationLogRepository;
 import com.fyntrac.common.service.TransactionService;
 import com.fyntrac.common.utils.DateUtil;
 import com.reserv.dataloader.batch.exception.ItemValidationException;
+import com.reserv.dataloader.service.ActivityValidationLogService;
 import com.reserv.dataloader.validation.TransactionActivityValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +28,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
@@ -48,11 +50,12 @@ public class TransactionActivityItemProcessor
     private final TransactionActivityValidator validator;
     private final TransactionService transactionService;
     private final InstrumentAttributeRepository instrumentAttributeRepository;
-    private final RefDataValidationLogRepository validationLogRepository;
+    private final ActivityValidationLogService validationLogService;
 
     // Step-scoped state
     private Long jobId;
     private String tenantId;
+    private final AtomicLong rowCounter = new AtomicLong(0);
 
     // Preloaded reference sets — populated once in @BeforeStep
     private final Set<String> validInstrumentIds    = new HashSet<>();
@@ -63,11 +66,11 @@ public class TransactionActivityItemProcessor
             TransactionActivityValidator validator,
             TransactionService transactionService,
             InstrumentAttributeRepository instrumentAttributeRepository,
-            RefDataValidationLogRepository validationLogRepository) {
+            ActivityValidationLogService validationLogService) {
         this.validator = validator;
         this.transactionService = transactionService;
         this.instrumentAttributeRepository = instrumentAttributeRepository;
-        this.validationLogRepository = validationLogRepository;
+        this.validationLogService = validationLogService;
     }
 
     // ------------------------------------------------------------------
@@ -78,6 +81,7 @@ public class TransactionActivityItemProcessor
     public void beforeStep(StepExecution stepExecution) {
         this.tenantId = stepExecution.getJobParameters().getString("tenantId");
         this.jobId    = stepExecution.getJobExecutionId();
+        this.rowCounter.set(0);
         log.info("Initializing TransactionActivityItemProcessor for tenant: {} job: {}", tenantId, jobId);
 
         validInstrumentIds.clear();
@@ -130,6 +134,7 @@ public class TransactionActivityItemProcessor
     public TransactionActivity process(Map<String, Object> item) throws Exception {
 
         // 1. Validate inside tenant context
+        long row = rowCounter.incrementAndGet();
         List<ItemValidationException.ValidationError> errors;
         if (tenantId != null) {
             errors = TenantContextHolder.runWithTenant(tenantId,
@@ -138,32 +143,31 @@ public class TransactionActivityItemProcessor
             errors = validator.validate(item, validInstrumentIds, validAttributeIds, validTransactionNames);
         }
 
-        // 2. Persist errors and skip row when any ERROR-severity violation found
+        // 2. Persist errors to activity_data_validation_log and skip row
         boolean hasError = errors.stream().anyMatch(e -> "ERROR".equals(e.getSeverity()));
         if (hasError) {
-            List<com.fyntrac.common.entity.RefDataValidationLog> logs = errors.stream().map(err -> {
-                com.fyntrac.common.entity.RefDataValidationLog dbLog =
-                        new com.fyntrac.common.entity.RefDataValidationLog();
-                dbLog.setSourceTable("TransactionActivity");
-                dbLog.setSourceColumn(err.getColumn());
-                dbLog.setSourceColumnValue(err.getValue());
-                dbLog.setSeverity(err.getSeverity());
-                dbLog.setErrorCode(err.getErrorCode());
-                dbLog.setMessage(err.getMessage());
-                dbLog.setJobId(this.jobId);
-                dbLog.setErrorCategory("DATA");
-                return dbLog;
-            }).collect(Collectors.toList());
+            String instrumentId = toStr(item.get("INSTRUMENTID"));
+            String attributeId  = toStr(item.get("ATTRIBUTEID"));
+            int postingDate = 0;
+            try {
+                Date pd = DateUtil.parseDate(toStr(item.get("POSTINGDATE")));
+                if (pd != null) postingDate = DateUtil.dateInNumber(pd);
+            } catch (Exception ignored) {}
+            int effectiveDate = 0;
+            try {
+                Date ed = parseDate(item.get("TRANSACTIONDATE"));
+                if (ed != null) effectiveDate = DateUtil.dateInNumber(ed);
+            } catch (Exception ignored) {}
 
-            if (tenantId != null) {
-                TenantContextHolder.runWithTenant(tenantId, () -> {
-                    validationLogRepository.saveAll(logs);
-                });
-            } else {
-                validationLogRepository.saveAll(logs);
-            }
-            log.warn("Filtered row and saved {} TransactionActivity validation logs to DB.", logs.size());
-            return null; // silently skip — no Spring Batch rollback
+            validationLogService.saveAll(
+                    errors,
+                    ValidationType.ACTIVITY,
+                    "TransactionActivity",
+                    this.jobId,
+                    this.tenantId,
+                    new ActivityValidationLogService.RowContext(
+                            row, instrumentId, attributeId, postingDate, effectiveDate));
+            return null;
         }
 
         // 3. Map raw CSV row to entity

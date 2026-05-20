@@ -87,6 +87,7 @@ public class AttributesItemProcessor implements ItemProcessor<Attributes, Attrib
                 dbLog.setMessage(err.getMessage());
                 dbLog.setJobId(this.jobId);
                 dbLog.setErrorCategory("DATA");
+                dbLog.setValidationType(com.fyntrac.common.enums.ValidationType.ACCOUNTING_RULES);
                 return dbLog;
             }).collect(Collectors.toList());
 
@@ -116,6 +117,7 @@ public class AttributesItemProcessor implements ItemProcessor<Attributes, Attrib
                 dbLog.setMessage("Duplicate attribute configuration found in file: " + attributeName);
                 dbLog.setJobId(this.jobId);
                 dbLog.setErrorCategory("DATA");
+                dbLog.setValidationType(com.fyntrac.common.enums.ValidationType.ACCOUNTING_RULES);
 
                 if (this.tenantId != null) {
                     TenantContextHolder.runWithTenant(this.tenantId, () -> {

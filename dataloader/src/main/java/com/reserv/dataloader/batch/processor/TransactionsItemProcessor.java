@@ -88,6 +88,7 @@ public class TransactionsItemProcessor implements ItemProcessor<Transactions, Tr
                 dbLog.setMessage(err.getMessage());
                 dbLog.setJobId(this.jobId);
                 dbLog.setErrorCategory("DATA");
+                dbLog.setValidationType(com.fyntrac.common.enums.ValidationType.ACCOUNTING_RULES);
                 return dbLog;
             }).collect(java.util.stream.Collectors.toList());
 

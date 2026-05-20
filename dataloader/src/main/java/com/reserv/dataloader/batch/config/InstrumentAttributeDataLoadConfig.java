@@ -5,6 +5,7 @@ import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.repository.AttributesRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.repository.RefDataValidationLogRepository;
+import com.reserv.dataloader.service.ActivityValidationLogService;
 import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.InstrumentAttributeService;
@@ -120,9 +121,9 @@ public class InstrumentAttributeDataLoadConfig {
     @StepScope
     public InstrumentAttributeItemProcessor instrumentAttributeItemProcessor(
             InstrumentAttributeValidator validator,
-            RefDataValidationLogRepository validationLogRepository,
+            ActivityValidationLogService validationLogService,
             AttributesRepository attributesRepository) {
-        return new InstrumentAttributeItemProcessor(validator, validationLogRepository, attributesRepository);
+        return new InstrumentAttributeItemProcessor(validator, validationLogService, attributesRepository);
     }
 
     // ------------------------------------------------------------------

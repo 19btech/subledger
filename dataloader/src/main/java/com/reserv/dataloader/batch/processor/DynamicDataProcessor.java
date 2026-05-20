@@ -3,10 +3,11 @@ package com.reserv.dataloader.batch.processor;
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.entity.CustomTableColumn;
 import com.fyntrac.common.entity.CustomTableDefinition;
+import com.fyntrac.common.enums.ValidationType;
 import com.fyntrac.common.repository.InstrumentAttributeRepository;
-import com.fyntrac.common.repository.RefDataValidationLogRepository;
 import com.fyntrac.common.utils.DateUtil;
 import com.reserv.dataloader.batch.exception.ItemValidationException;
+import com.reserv.dataloader.service.ActivityValidationLogService;
 import com.reserv.dataloader.validation.DynamicTableValidator;
 import org.bson.Document;
 import org.slf4j.Logger;
@@ -25,6 +26,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
@@ -46,11 +48,12 @@ public class DynamicDataProcessor
     private final CustomTableDefinition tableDefinition;
     private final DynamicTableValidator validator;
     private final InstrumentAttributeRepository instrumentAttributeRepository;
-    private final RefDataValidationLogRepository validationLogRepository;
+    private final ActivityValidationLogService validationLogService;
 
     // Step-scoped state
     private Long jobId;
     private String tenantId;
+    private final AtomicLong rowCounter = new AtomicLong(0);
 
     // Preloaded reference sets (UPPER-CASE keys for O(1) lookup)
     private final Set<String> validInstrumentIds = new HashSet<>();
@@ -62,11 +65,11 @@ public class DynamicDataProcessor
     public DynamicDataProcessor(CustomTableDefinition tableDefinition,
                                 DynamicTableValidator validator,
                                 InstrumentAttributeRepository instrumentAttributeRepository,
-                                RefDataValidationLogRepository validationLogRepository) {
+                                ActivityValidationLogService validationLogService) {
         this.tableDefinition = tableDefinition;
         this.validator = validator;
         this.instrumentAttributeRepository = instrumentAttributeRepository;
-        this.validationLogRepository = validationLogRepository;
+        this.validationLogService = validationLogService;
     }
 
     // ------------------------------------------------------------------
@@ -77,6 +80,7 @@ public class DynamicDataProcessor
     public void beforeStep(StepExecution stepExecution) {
         this.tenantId = stepExecution.getJobParameters().getString("tenantId");
         this.jobId    = stepExecution.getJobExecutionId();
+        this.rowCounter.set(0);
         log.info("Initializing DynamicDataProcessor for table='{}' tenant='{}' job={}",
                 tableDefinition.getTableName(), tenantId, jobId);
 
@@ -117,6 +121,7 @@ public class DynamicDataProcessor
     public Document process(FieldSet fieldSet) throws Exception {
 
         // 1. Validate inside tenant context
+        long row = rowCounter.incrementAndGet();
         List<ItemValidationException.ValidationError> errors;
         if (tenantId != null) {
             errors = TenantContextHolder.runWithTenant(tenantId,
@@ -127,30 +132,36 @@ public class DynamicDataProcessor
                     seenRowKeys, validInstrumentIds, validAttributeIds);
         }
 
-        // 2. Persist errors and skip row when any ERROR-severity violation found
+        // 2. Persist errors to activity_data_validation_log and skip row
         boolean hasError = errors.stream().anyMatch(e -> "ERROR".equals(e.getSeverity()));
         if (hasError) {
-            List<com.fyntrac.common.entity.RefDataValidationLog> logs = errors.stream().map(err -> {
-                com.fyntrac.common.entity.RefDataValidationLog dbLog =
-                        new com.fyntrac.common.entity.RefDataValidationLog();
-                dbLog.setSourceTable(tableDefinition.getTableName());
-                dbLog.setSourceColumn(err.getColumn());
-                dbLog.setSourceColumnValue(err.getValue());
-                dbLog.setSeverity(err.getSeverity());
-                dbLog.setErrorCode(err.getErrorCode());
-                dbLog.setMessage(err.getMessage());
-                dbLog.setJobId(this.jobId);
-                dbLog.setErrorCategory("DATA");
-                return dbLog;
-            }).collect(Collectors.toList());
+            String instrumentId = safeRead(fieldSet, "INSTRUMENTID");
+            String attributeId  = safeRead(fieldSet, "ATTRIBUTEID");
+            Integer postingDate = null;
+            Integer effectiveDate = null;
+            try {
+                String pdStr = safeRead(fieldSet, "POSTINGDATE");
+                if (pdStr != null && !pdStr.isBlank()) {
+                    Date pd = DateUtil.parseDate(pdStr.trim());
+                    if (pd != null) postingDate = DateUtil.dateInNumber(pd);
+                }
+            } catch (Exception ignored) {}
+            try {
+                String edStr = safeRead(fieldSet, "EFFECTIVEDATE");
+                if (edStr != null && !edStr.isBlank()) {
+                    Date ed = DateUtil.parseDate(edStr.trim());
+                    if (ed != null) effectiveDate = DateUtil.dateInNumber(ed);
+                }
+            } catch (Exception ignored) {}
 
-            if (tenantId != null) {
-                TenantContextHolder.runWithTenant(tenantId, () ->
-                        validationLogRepository.saveAll(logs));
-            } else {
-                validationLogRepository.saveAll(logs);
-            }
-            log.warn("Filtered row and saved {} DynamicTable validation logs to DB.", logs.size());
+            validationLogService.saveAll(
+                    errors,
+                    ValidationType.CUSTOM_ACTIVITY,
+                    tableDefinition.getTableName(),
+                    this.jobId,
+                    this.tenantId,
+                    new ActivityValidationLogService.RowContext(
+                            row, instrumentId, attributeId, postingDate, effectiveDate));
             return null; // silently skip — no Spring Batch rollback
         }
 

@@ -4,11 +4,11 @@ import com.fyntrac.common.entity.CustomTableColumn;
 import com.fyntrac.common.entity.CustomTableDefinition;
 import com.fyntrac.common.repository.CustomTableDefinitionRepository;
 import com.fyntrac.common.repository.InstrumentAttributeRepository;
-import com.fyntrac.common.repository.RefDataValidationLogRepository;
 import com.reserv.dataloader.batch.exception.ItemValidationException;
 import com.reserv.dataloader.batch.listener.ValidationLoggingListener;
 import com.reserv.dataloader.batch.processor.DynamicDataProcessor;
 import com.reserv.dataloader.batch.writer.DynamicMongoWriter;
+import com.reserv.dataloader.service.ActivityValidationLogService;
 import com.reserv.dataloader.validation.DynamicTableValidator;
 import org.bson.Document;
 import org.springframework.batch.core.ItemProcessListener;
@@ -46,7 +46,7 @@ public class DynamicTableBatchConfig {
     private final MongoTemplate mongoTemplate;
     private final CustomTableDefinitionRepository tableDefRepository;
     private final InstrumentAttributeRepository instrumentAttributeRepository;
-    private final RefDataValidationLogRepository validationLogRepository;
+    private final ActivityValidationLogService validationLogService;
     private final DynamicTableValidator dynamicTableValidator;
     private final ValidationLoggingListener validationLoggingListener;
 
@@ -55,7 +55,7 @@ public class DynamicTableBatchConfig {
                                    MongoTemplate mongoTemplate,
                                    CustomTableDefinitionRepository tableDefRepository,
                                    InstrumentAttributeRepository instrumentAttributeRepository,
-                                   RefDataValidationLogRepository validationLogRepository,
+                                   ActivityValidationLogService validationLogService,
                                    DynamicTableValidator dynamicTableValidator,
                                    ValidationLoggingListener validationLoggingListener) {
         this.jobRepository = jobRepository;
@@ -63,7 +63,7 @@ public class DynamicTableBatchConfig {
         this.mongoTemplate = mongoTemplate;
         this.tableDefRepository = tableDefRepository;
         this.instrumentAttributeRepository = instrumentAttributeRepository;
-        this.validationLogRepository = validationLogRepository;
+        this.validationLogService = validationLogService;
         this.dynamicTableValidator = dynamicTableValidator;
         this.validationLoggingListener = validationLoggingListener;
     }
@@ -95,7 +95,7 @@ public class DynamicTableBatchConfig {
         // 2. Build the @BeforeStep-capable processor (wired with validator + repos)
         DynamicDataProcessor processor = new DynamicDataProcessor(
                 tableDef, dynamicTableValidator,
-                instrumentAttributeRepository, validationLogRepository);
+                instrumentAttributeRepository, validationLogService);
 
         return new StepBuilder("dynamicLoadStep", jobRepository)
                 .<FieldSet, Document>chunk(100, transactionManager)

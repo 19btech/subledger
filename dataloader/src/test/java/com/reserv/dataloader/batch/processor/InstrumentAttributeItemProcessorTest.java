@@ -1,10 +1,11 @@
 package com.reserv.dataloader.batch.processor;
 
+import com.fyntrac.common.entity.ActivityDataValidationLog;
 import com.fyntrac.common.entity.InstrumentAttribute;
-import com.fyntrac.common.entity.RefDataValidationLog;
 import com.fyntrac.common.entity.factory.InstrumentAttributeFactory;
+import com.fyntrac.common.repository.ActivityDataValidationLogRepository;
 import com.fyntrac.common.repository.AttributesRepository;
-import com.fyntrac.common.repository.RefDataValidationLogRepository;
+import com.reserv.dataloader.service.ActivityValidationLogService;
 import com.reserv.dataloader.validation.InstrumentAttributeValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,17 +31,19 @@ import static org.mockito.Mockito.*;
 class InstrumentAttributeItemProcessorTest {
 
     @Mock private AttributesRepository attributesRepository;
-    @Mock private RefDataValidationLogRepository validationLogRepository;
+    @Mock private ActivityDataValidationLogRepository activityLogRepository;
     @Mock private InstrumentAttributeFactory instrumentAttributeFactory;
 
+    private ActivityValidationLogService validationLogService;
     private InstrumentAttributeItemProcessor processor;
 
     @BeforeEach
     void setUp() {
         InstrumentAttributeValidator validator =
                 new InstrumentAttributeValidator(attributesRepository);
+        validationLogService = new ActivityValidationLogService(activityLogRepository);
         processor = new InstrumentAttributeItemProcessor(
-                validator, validationLogRepository, attributesRepository);
+                validator, validationLogService, attributesRepository);
 
         // Inject mocked factory via reflection (@Autowired field)
         try {
@@ -53,7 +56,6 @@ class InstrumentAttributeItemProcessorTest {
         }
 
         // attributesRepository.findAll() used in @BeforeStep preload — return empty list
-        // (ATTRIBUTEID validation is disabled, so the set is irrelevant here)
         when(attributesRepository.findAll()).thenReturn(List.of());
 
         JobParameters params = new JobParametersBuilder()
@@ -75,8 +77,8 @@ class InstrumentAttributeItemProcessorTest {
         item.put("POSTINGDATE",   "05/19/2026");
         item.put("EFFECTIVEDATE", "05/18/2026");
         item.put("INSTRUMENTID",  "INST-001");
-        item.put("ATTRIBUTEID",   "ATTR-001");   // not validated — any value is fine
-        item.put("USERID",        "user_abc");   // not validated — any value is fine
+        item.put("ATTRIBUTEID",   "ATTR-001");
+        item.put("USERID",        "user_abc");
 
         InstrumentAttribute mockEntity = new InstrumentAttribute();
         mockEntity.setInstrumentId("INST-001");
@@ -91,8 +93,7 @@ class InstrumentAttributeItemProcessorTest {
 
         assertNotNull(result);
         assertEquals("INST-001", result.getInstrumentId());
-        assertTrue(result.getValidationErrors().isEmpty());
-        verify(validationLogRepository, never()).saveAll(any());
+        verify(activityLogRepository, never()).saveAll(any());
     }
 
     // -----------------------------------------------------------------------
@@ -109,10 +110,10 @@ class InstrumentAttributeItemProcessorTest {
 
         InstrumentAttribute mockEntity = new InstrumentAttribute();
         mockEntity.setInstrumentId("101");
-        mockEntity.setAttributeId("1.0");   // raw value preserved
+        mockEntity.setAttributeId("1.0");
 
         when(instrumentAttributeFactory.create(
-                eq("test_tenant"), eq("101"), eq("1.0"),   // attributeId passed as-is
+                eq("test_tenant"), eq("101"), eq("1.0"),
                 any(Date.class), eq(0), eq(20260519), any(), any()))
                 .thenReturn(mockEntity);
 
@@ -120,8 +121,7 @@ class InstrumentAttributeItemProcessorTest {
 
         assertNotNull(result);
         assertEquals("101",  result.getInstrumentId());
-        assertEquals("1.0",  result.getAttributeId());   // raw value preserved
-        assertTrue(result.getValidationErrors().isEmpty());
+        assertEquals("1.0",  result.getAttributeId());
     }
 
     // -----------------------------------------------------------------------
@@ -138,12 +138,12 @@ class InstrumentAttributeItemProcessorTest {
         InstrumentAttribute result = processor.process(item);
         assertNull(result);
 
-        ArgumentCaptor<List<RefDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
-        verify(validationLogRepository, times(1)).saveAll(captor.capture());
+        ArgumentCaptor<List<ActivityDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
+        verify(activityLogRepository, times(1)).saveAll(captor.capture());
 
-        List<RefDataValidationLog> logs = captor.getValue();
+        List<ActivityDataValidationLog> logs = captor.getValue();
         assertEquals(1, logs.size());
-        assertEquals("POSTINGDATE", logs.get(0).getSourceColumn());
+        assertEquals("POSTINGDATE", logs.get(0).getFieldName());
         assertEquals("ERR_REQ_02",  logs.get(0).getErrorCode());
     }
 
@@ -157,12 +157,12 @@ class InstrumentAttributeItemProcessorTest {
         InstrumentAttribute result = processor.process(item);
         assertNull(result);
 
-        ArgumentCaptor<List<RefDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
-        verify(validationLogRepository, times(1)).saveAll(captor.capture());
+        ArgumentCaptor<List<ActivityDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
+        verify(activityLogRepository, times(1)).saveAll(captor.capture());
 
-        List<RefDataValidationLog> logs = captor.getValue();
+        List<ActivityDataValidationLog> logs = captor.getValue();
         assertEquals(1, logs.size());
-        assertEquals("EFFECTIVEDATE", logs.get(0).getSourceColumn());
+        assertEquals("EFFECTIVEDATE", logs.get(0).getFieldName());
         assertEquals("ERR_REQ_02",    logs.get(0).getErrorCode());
     }
 
@@ -180,15 +180,15 @@ class InstrumentAttributeItemProcessorTest {
         InstrumentAttribute result = processor.process(item);
         assertNull(result);
 
-        ArgumentCaptor<List<RefDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
-        verify(validationLogRepository, times(1)).saveAll(captor.capture());
+        ArgumentCaptor<List<ActivityDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
+        verify(activityLogRepository, times(1)).saveAll(captor.capture());
 
-        List<RefDataValidationLog> logs = captor.getValue();
+        List<ActivityDataValidationLog> logs = captor.getValue();
         assertEquals(2, logs.size());
         assertTrue(logs.stream().anyMatch(l ->
-                "POSTINGDATE".equals(l.getSourceColumn()) && "ERR_FMT_DT".equals(l.getErrorCode())));
+                "POSTINGDATE".equals(l.getFieldName()) && "ERR_FMT_DT".equals(l.getErrorCode())));
         assertTrue(logs.stream().anyMatch(l ->
-                "EFFECTIVEDATE".equals(l.getSourceColumn()) && "ERR_FMT_DT".equals(l.getErrorCode())));
+                "EFFECTIVEDATE".equals(l.getFieldName()) && "ERR_FMT_DT".equals(l.getErrorCode())));
     }
 
     // -----------------------------------------------------------------------
@@ -205,12 +205,12 @@ class InstrumentAttributeItemProcessorTest {
         InstrumentAttribute result = processor.process(item);
         assertNull(result);
 
-        ArgumentCaptor<List<RefDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
-        verify(validationLogRepository, times(1)).saveAll(captor.capture());
+        ArgumentCaptor<List<ActivityDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
+        verify(activityLogRepository, times(1)).saveAll(captor.capture());
 
-        List<RefDataValidationLog> logs = captor.getValue();
+        List<ActivityDataValidationLog> logs = captor.getValue();
         assertEquals(1, logs.size());
-        assertEquals("INSTRUMENTID", logs.get(0).getSourceColumn());
+        assertEquals("INSTRUMENTID", logs.get(0).getFieldName());
         assertEquals("ERR_REQ_03",   logs.get(0).getErrorCode());
     }
 
@@ -228,12 +228,12 @@ class InstrumentAttributeItemProcessorTest {
         InstrumentAttribute result = processor.process(item);
         assertNull(result);
 
-        ArgumentCaptor<List<RefDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
-        verify(validationLogRepository, times(1)).saveAll(captor.capture());
+        ArgumentCaptor<List<ActivityDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
+        verify(activityLogRepository, times(1)).saveAll(captor.capture());
 
-        List<RefDataValidationLog> logs = captor.getValue();
+        List<ActivityDataValidationLog> logs = captor.getValue();
         assertEquals(1, logs.size());
-        assertEquals("INSTRUMENTID", logs.get(0).getSourceColumn());
+        assertEquals("INSTRUMENTID", logs.get(0).getFieldName());
         assertEquals("ERR_SPC_01",   logs.get(0).getErrorCode());
     }
 }

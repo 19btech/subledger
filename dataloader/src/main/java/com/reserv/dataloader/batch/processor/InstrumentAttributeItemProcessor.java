@@ -4,10 +4,11 @@ import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.entity.factory.InstrumentAttributeFactory;
 import com.fyntrac.common.enums.Source;
+import com.fyntrac.common.enums.ValidationType;
 import com.fyntrac.common.repository.AttributesRepository;
-import com.fyntrac.common.repository.RefDataValidationLogRepository;
 import com.fyntrac.common.utils.DateUtil;
 import com.reserv.dataloader.batch.exception.ItemValidationException;
+import com.reserv.dataloader.service.ActivityValidationLogService;
 import com.reserv.dataloader.validation.InstrumentAttributeValidator;
 import org.bson.types.ObjectId;
 import org.slf4j.Logger;
@@ -47,7 +48,7 @@ public class InstrumentAttributeItemProcessor
     private static final Logger log = LoggerFactory.getLogger(InstrumentAttributeItemProcessor.class);
 
     private final InstrumentAttributeValidator validator;
-    private final RefDataValidationLogRepository validationLogRepository;
+    private final ActivityValidationLogService validationLogService;
     private final AttributesRepository attributesRepository;
 
     @Autowired
@@ -59,16 +60,17 @@ public class InstrumentAttributeItemProcessor
     // Step-scoped state
     private Long jobId;
     private String tenantId;
+    private final java.util.concurrent.atomic.AtomicLong rowCounter = new java.util.concurrent.atomic.AtomicLong(0);
 
     // Preloaded reference sets (normalised to UPPER-CASE for O(1) lookup)
     private final Set<String> validAttributeIds = new HashSet<>();
 
     public InstrumentAttributeItemProcessor(
             InstrumentAttributeValidator validator,
-            RefDataValidationLogRepository validationLogRepository,
+            ActivityValidationLogService validationLogService,
             AttributesRepository attributesRepository) {
         this.validator = validator;
-        this.validationLogRepository = validationLogRepository;
+        this.validationLogService = validationLogService;
         this.attributesRepository = attributesRepository;
     }
 
@@ -80,6 +82,7 @@ public class InstrumentAttributeItemProcessor
     public void beforeStep(StepExecution stepExecution) {
         this.tenantId = stepExecution.getJobParameters().getString("tenantId");
         this.jobId    = stepExecution.getJobExecutionId();
+        this.rowCounter.set(0);
         log.info("Initializing InstrumentAttributeItemProcessor for tenant: {} job: {}", tenantId, jobId);
 
         validAttributeIds.clear();
@@ -122,6 +125,7 @@ public class InstrumentAttributeItemProcessor
     public InstrumentAttribute process(Map<String, Object> item) throws Exception {
 
         // 1. Validate — inside tenant context so any lazy repo call is scoped correctly
+        long row = rowCounter.incrementAndGet();
         List<ItemValidationException.ValidationError> errors;
         if (tenantId != null) {
             errors = TenantContextHolder.runWithTenant(tenantId,
@@ -130,31 +134,25 @@ public class InstrumentAttributeItemProcessor
             errors = validator.validate(item, validAttributeIds);
         }
 
-        // 2. Persist errors and skip row when any ERROR-severity violation found
+        // 2. Persist errors to activity_data_validation_log and skip row
         boolean hasError = errors.stream().anyMatch(e -> "ERROR".equals(e.getSeverity()));
         if (hasError) {
-            List<com.fyntrac.common.entity.RefDataValidationLog> logs = errors.stream().map(err -> {
-                com.fyntrac.common.entity.RefDataValidationLog dbLog =
-                        new com.fyntrac.common.entity.RefDataValidationLog();
-                dbLog.setSourceTable("InstrumentAttribute");
-                dbLog.setSourceColumn(err.getColumn());
-                dbLog.setSourceColumnValue(err.getValue());
-                dbLog.setSeverity(err.getSeverity());
-                dbLog.setErrorCode(err.getErrorCode());
-                dbLog.setMessage(err.getMessage());
-                dbLog.setJobId(this.jobId);
-                dbLog.setErrorCategory("DATA");
-                return dbLog;
-            }).collect(Collectors.toList());
+            String instrumentId = toStr(item.get("INSTRUMENTID"));
+            String attributeId  = toStr(item.get("ATTRIBUTEID"));
+            int postingDate = 0;
+            try {
+                Date pd = DateUtil.parseDate(toStr(item.get("POSTINGDATE")));
+                if (pd != null) postingDate = DateUtil.dateInNumber(pd);
+            } catch (Exception ignored) {}
 
-            if (tenantId != null) {
-                TenantContextHolder.runWithTenant(tenantId, () -> {
-                    validationLogRepository.saveAll(logs);
-                });
-            } else {
-                validationLogRepository.saveAll(logs);
-            }
-            log.warn("Filtered row and saved {} InstrumentAttribute validation logs to DB.", logs.size());
+            validationLogService.saveAll(
+                    errors,
+                    ValidationType.ACTIVITY,
+                    "InstrumentAttribute",
+                    this.jobId,
+                    this.tenantId,
+                    new ActivityValidationLogService.RowContext(
+                            row, instrumentId, attributeId, postingDate, null));
             return null; // silently skip — no Spring Batch rollback
         }
 
@@ -218,9 +216,6 @@ public class InstrumentAttributeItemProcessor
         if (result.getId() == null) {
             result.setId(new ObjectId().toString());
         }
-
-        // Attach empty error list so downstream code can safely call getValidationErrors()
-        result.setValidationErrors(new ArrayList<>());
 
         return result;
     }

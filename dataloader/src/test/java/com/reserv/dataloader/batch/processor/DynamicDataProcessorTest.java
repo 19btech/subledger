@@ -1,11 +1,12 @@
 package com.reserv.dataloader.batch.processor;
 
+import com.fyntrac.common.entity.ActivityDataValidationLog;
 import com.fyntrac.common.entity.CustomTableColumn;
 import com.fyntrac.common.entity.CustomTableDefinition;
 import com.fyntrac.common.entity.InstrumentAttribute;
-import com.fyntrac.common.entity.RefDataValidationLog;
+import com.fyntrac.common.repository.ActivityDataValidationLogRepository;
 import com.fyntrac.common.repository.InstrumentAttributeRepository;
-import com.fyntrac.common.repository.RefDataValidationLogRepository;
+import com.reserv.dataloader.service.ActivityValidationLogService;
 import com.reserv.dataloader.validation.DynamicTableValidator;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,8 +31,9 @@ import static org.mockito.Mockito.*;
 class DynamicDataProcessorTest {
 
     @Mock private InstrumentAttributeRepository instrumentAttributeRepository;
-    @Mock private RefDataValidationLogRepository validationLogRepository;
+    @Mock private ActivityDataValidationLogRepository activityLogRepository;
 
+    private ActivityValidationLogService validationLogService;
     private DynamicDataProcessor processor;
     private CustomTableDefinition tableDef;
 
@@ -52,8 +54,9 @@ class DynamicDataProcessorTest {
         tableDef.addColumn(new CustomTableColumn("Amount", "amount", CustomTableColumn.DataType.NUMBER, true, 6));
 
         DynamicTableValidator validator = new DynamicTableValidator();
+        validationLogService = new ActivityValidationLogService(activityLogRepository);
         processor = new DynamicDataProcessor(tableDef, validator,
-                instrumentAttributeRepository, validationLogRepository);
+                instrumentAttributeRepository, validationLogService);
 
         // Stub preload
         InstrumentAttribute ia = new InstrumentAttribute();
@@ -83,7 +86,7 @@ class DynamicDataProcessorTest {
         Document result = processor.process(fieldSet);
 
         assertNotNull(result);
-        verify(validationLogRepository, never()).saveAll(any());
+        verify(activityLogRepository, never()).saveAll(any());
     }
 
     // -----------------------------------------------------------------------
@@ -219,7 +222,7 @@ class DynamicDataProcessorTest {
 
         assertNotNull(first,  "First row should be accepted");
         assertNotNull(second, "Second row differs in 'name' column and must NOT be flagged as duplicate");
-        verify(validationLogRepository, never()).saveAll(any());
+        verify(activityLogRepository, never()).saveAll(any());
     }
 
     // -----------------------------------------------------------------------
@@ -239,13 +242,13 @@ class DynamicDataProcessorTest {
     }
 
     private void assertErrorCode(String expectedColumn, String expectedCode) {
-        ArgumentCaptor<List<RefDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
-        verify(validationLogRepository, atLeastOnce()).saveAll(captor.capture());
+        ArgumentCaptor<List<ActivityDataValidationLog>> captor = ArgumentCaptor.forClass(List.class);
+        verify(activityLogRepository, atLeastOnce()).saveAll(captor.capture());
 
-        List<RefDataValidationLog> logs = captor.getValue();
+        List<ActivityDataValidationLog> logs = captor.getValue();
         assertTrue(
                 logs.stream().anyMatch(l ->
-                        expectedColumn.equalsIgnoreCase(l.getSourceColumn())
+                        expectedColumn.equalsIgnoreCase(l.getFieldName())
                         && expectedCode.equals(l.getErrorCode())),
                 "Expected error " + expectedCode + " on column " + expectedColumn
                         + " but got: " + logs);

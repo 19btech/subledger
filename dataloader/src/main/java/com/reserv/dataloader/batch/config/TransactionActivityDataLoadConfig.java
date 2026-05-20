@@ -10,6 +10,7 @@ import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.repository.InstrumentAttributeRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.repository.RefDataValidationLogRepository;
+import com.reserv.dataloader.service.ActivityValidationLogService;
 import com.fyntrac.common.service.*;
 import com.fyntrac.common.service.aggregation.AggregationService;
 import com.fyntrac.common.service.aggregation.AttributeLevelAggregationService;
@@ -178,9 +179,9 @@ public class TransactionActivityDataLoadConfig {
             TransactionActivityValidator validator,
             TransactionService transactionService,
             com.fyntrac.common.repository.InstrumentAttributeRepository instrumentAttributeRepository,
-            RefDataValidationLogRepository validationLogRepository) {
+            ActivityValidationLogService validationLogService) {
         return new TransactionActivityItemProcessor(
-                validator, transactionService, instrumentAttributeRepository, validationLogRepository);
+                validator, transactionService, instrumentAttributeRepository, validationLogService);
     }
 
     @StepScope

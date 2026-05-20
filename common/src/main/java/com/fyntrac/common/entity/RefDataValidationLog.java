@@ -1,5 +1,6 @@
 package com.fyntrac.common.entity;
 
+import com.fyntrac.common.enums.ValidationType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -75,6 +76,12 @@ public class RefDataValidationLog {
      * Audit timestamp recording logging occurrence.
      */
     private LocalDateTime createdTimestamp;
+
+    /**
+     * Categorises the source pipeline that produced this log entry.
+     * Maps to the {@link ValidationType} enum (ACCOUNTING_RULES, JOURNAL_MAPPING, ACTIVITY, CUSTOM_ACTIVITY).
+     */
+    private ValidationType validationType;
 
     /**
      * Date identifier corresponding to financial period alignment.
