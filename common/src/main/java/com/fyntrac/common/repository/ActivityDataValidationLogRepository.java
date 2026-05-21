@@ -16,4 +16,12 @@ public interface ActivityDataValidationLogRepository
     List<ActivityDataValidationLog> findByValidationType(ValidationType validationType);
 
     List<ActivityDataValidationLog> findByJobIdAndValidationType(Long jobId, ValidationType validationType);
+
+    List<ActivityDataValidationLog> findByErrorCode(String errorCode);
+
+    List<ActivityDataValidationLog> findByJobIdAndErrorCode(Long jobId, String errorCode);
+
+    List<ActivityDataValidationLog> findByInstrumentId(String instrumentId);
+
+    List<ActivityDataValidationLog> findByJobIdAndInstrumentId(Long jobId, String instrumentId);
 }
