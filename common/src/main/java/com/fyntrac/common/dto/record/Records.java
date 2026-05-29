@@ -574,4 +574,11 @@ public class Records {
         private static final long serialVersionUID = -4291181294245150358L;
     }
 
+    public record JobResultResponseRecord(
+            Long jobId,
+            String status,
+            Integer successCount
+    )implements Serializable  {
+        private static final long serialVersionUID = 1234567890123456789L; // Example serialVersionUID, should be generated uniquely
+    }
 }

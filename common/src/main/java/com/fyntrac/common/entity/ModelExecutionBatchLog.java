@@ -25,6 +25,7 @@ public class ModelExecutionBatchLog implements Serializable {
 
     @Id
     private String id;
+    private String executionInstanceId;
     private String jobId;
     private Integer batchNumber;   // page/chunk number from the producer side
     private String tenantId;

@@ -15,6 +15,7 @@ import com.reserv.dataloader.service.DataloaderExcelFileService;
 import com.reserv.dataloader.service.ModelUploadService;
 import com.reserv.dataloader.service.model.EventConfigurationValidator;
 import com.reserv.dataloader.service.model.ModelExecutionService;
+import com.reserv.dataloader.service.model.workflow.WorkflowExecutionFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -41,6 +42,7 @@ public class ModelController {
     private final ExcelModelService excelModelService;
     private final com.fyntrac.common.service.ExecutionStateService executionStateService;
     private final com.fyntrac.common.repository.ModelExecutionBatchLogRepository modelExecutionBatchLogRepository;
+    private final WorkflowExecutionFactory workflowExecutionFactory;
 
     @Autowired
     public ModelController(DataloaderExcelFileService fileService
@@ -49,7 +51,8 @@ public class ModelController {
             , ModelExecutionService modelExecutionService
             , ExcelModelService excelModelService
             , com.fyntrac.common.service.ExecutionStateService executionStateService
-            , com.fyntrac.common.repository.ModelExecutionBatchLogRepository modelExecutionBatchLogRepository) {
+            , com.fyntrac.common.repository.ModelExecutionBatchLogRepository modelExecutionBatchLogRepository
+            , WorkflowExecutionFactory workflowExecutionFactory) {
         this.fileService = fileService;
         this.modelService = modelServicen;
         this.modelUploadService = modelUploadService;
@@ -57,6 +60,7 @@ public class ModelController {
         this.excelModelService = excelModelService;
         this.executionStateService = executionStateService;
         this.modelExecutionBatchLogRepository = modelExecutionBatchLogRepository;
+        this.workflowExecutionFactory = workflowExecutionFactory;
     }
 
     // Upload endpoint
@@ -257,23 +261,19 @@ public class ModelController {
 
             // Streaming pipeline: generate events page-by-page and dispatch each batch
             // immediately. Only one page of instrument IDs lives in heap at a time.
-            this.modelExecutionService.prepareExcelExecution(dateRequestRecord.date(), postingDate);
-            excelModelService.generateEventAndDispatch(postingDate,
-                    batch -> this.modelExecutionService.dispatchExcelBatch(executionDate, batch));
-            this.modelExecutionService.finalizeExcelExecution(); // releases lock internally
+            workflowExecutionFactory.execute("EXCEL", tenant, dateRequestRecord.date(), postingDate);
 
             return ResponseEntity.ok("Model executed successfully, for : " + dateRequestRecord.date());
         } catch (IllegalArgumentException e) {
-            modelExecutionService.releaseExecutionLock(tenant);
             log.error(StringUtil.getStackTrace(e));
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (Exception e) {
-            modelExecutionService.releaseExecutionLock(tenant);
             log.error(StringUtil.getStackTrace(e));
             return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
         } catch (Throwable e) {
-            modelExecutionService.releaseExecutionLock(tenant);
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } finally {
+            modelExecutionService.releaseExecutionLock(tenant);
         }
     }
 
@@ -285,44 +285,29 @@ public class ModelController {
                     .body("A model execution is already running for tenant [" + tenant + "]. Please wait for it to complete.");
         }
         try {
-            log.info("dsl model execution requested for date: {}", dateRequestRecord.date());
+            // Trigger the Orchestrated Workflow
+            // modelExecutionService.executeDslOrchestrated(dateRequestRecord.date(), postingDate);
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
             Date executionDate = DateUtil.parseDate(dateRequestRecord.date(), formatter);
             int postingDate = DateUtil.dateInNumber(executionDate);
 
             // Clean up all derived data for this posting date before re-execution
-           // this.modelExecutionService.cleanupDataForPostingDate(postingDate);
+            // this.modelExecutionService.cleanupDataForPostingDate(postingDate);
 
             // Streaming pipeline: generate events page-by-page and dispatch each batch
             // immediately. Only one page of instrument IDs lives in heap at a time.
-            this.modelExecutionService.preparePythonExecution(dateRequestRecord.date(), postingDate);
-            excelModelService.generateEventAndDispatch(postingDate,
-                    batch -> this.modelExecutionService.dispatchPythonBatch(executionDate, batch));
-            this.modelExecutionService.finalizePythonExecution(); // releases lock internally
+            // Trigger the Orchestrated Workflow
+            workflowExecutionFactory.execute("DSL", tenant, dateRequestRecord.date(), postingDate);
 
-            // Update ExecutionState if executionDate < postingDate
-            com.fyntrac.common.entity.ExecutionState executionState = executionStateService.getExecutionState();
-            if (executionState != null
-                    && executionState.getExecutionDate() != null
-                    && executionState.getExecutionDate() < postingDate) {
-                executionState.setLastExecutionDate(executionState.getExecutionDate());
-                executionState.setExecutionDate(postingDate);
-                executionStateService.update(executionState);
-            }
-
-            return ResponseEntity.ok("dsl model execution initiated for: " + dateRequestRecord.date());
-        } catch (IllegalArgumentException e) {
-            modelExecutionService.releaseExecutionLock(tenant);
-            log.error(StringUtil.getStackTrace(e));
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+            return ResponseEntity.ok("dsl model execution initiated and completed for: " + dateRequestRecord.date());
         } catch (Exception e) {
-            modelExecutionService.releaseExecutionLock(tenant);
             log.error(StringUtil.getStackTrace(e));
             return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
         } catch (Throwable e) {
-            modelExecutionService.releaseExecutionLock(tenant);
             log.error("dsl model execution error: {}", e.getMessage());
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        } finally {
+            modelExecutionService.releaseExecutionLock(tenant);
         }
     }
 

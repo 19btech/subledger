@@ -69,6 +69,11 @@ public class AggregationService  extends CacheBasedService<Aggregation> {
                 .collect(Collectors.toList());
     }
 
+    public void aggregateBatch(String payload, String tenantId) {
+        log.info("Aggregating batch for tenant {}. Payload size: {}", tenantId, payload != null ? payload.length() : 0);
+        // TODO: Implement batch aggregation logic
+    }
+
     public Collection<String> fetchMetrics() {
         return this.dataService.getMongoTemplate().query(Aggregation.class)  // Replace
                 // Metric.class with your actual class

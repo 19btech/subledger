@@ -17,6 +17,7 @@ import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.StringUtil;
 import com.fyntrac.model.pulsar.producer.AggregationMessageProducer;
 import com.fyntrac.model.pulsar.producer.GeneralLedgerMessageProducer;
+import com.fyntrac.model.pulsar.producer.ModelCompletionProducer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -50,6 +51,7 @@ public class ModelExecutionService {
     private final InstrumentAttributeService instrumentAttributeService;
     private final TransactionActivityQueue transactionActivityQueue;
     private final EventRepository eventRepository;
+    private final ModelCompletionProducer modelCompletionProducer;
 
     public ModelExecutionService(ModelDataService modelDataService
             , MemcachedRepository memcachedRepository
@@ -63,7 +65,8 @@ public class ModelExecutionService {
             , AggregationMessageProducer aggregationMessageProducer
             , InstrumentAttributeService instrumentAttributeService
             , TransactionActivityQueue transactionActivityQueue
-            , EventRepository eventRepository) {
+            , EventRepository eventRepository
+            , ModelCompletionProducer modelCompletionProducer) {
         this.modelDataService = modelDataService;
         this.memcachedRepository = memcachedRepository;
         this.accountingPeriodService = accountingPeriodService;
@@ -77,10 +80,14 @@ public class ModelExecutionService {
         this.instrumentAttributeService = instrumentAttributeService;
         this.transactionActivityQueue = transactionActivityQueue;
         this.eventRepository = eventRepository;
+        this.modelCompletionProducer = modelCompletionProducer;
 
     }
 
-    public void executeExcelModels(Date executionDate, Records.ModelExecutionMessageRecord msg) throws Throwable {
+    public void executeExcelModels(Date executionDate, Records.ModelExecutionMessageRecord msg, String correlationId) throws Throwable {
+        boolean success = true;
+        String errorMsg = null;
+        long jobId = System.currentTimeMillis();
         try {
             List<Model> models = this.modelDataService.getActiveModels(msg.tenantId());
             // this.eventRepository.findAllByPostingDate(Date)
@@ -132,7 +139,6 @@ public class ModelExecutionService {
             String tenantId = msg.tenantId();
             int postingDate = DateUtil.dateInNumber(executionDate);
             String jobKey = String.format("%s-%s-%d", tenantId, "TA", postingDate);
-            long jobId = System.currentTimeMillis();
             // Step 3: Virtual Thread Pool
             try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
@@ -190,13 +196,15 @@ public class ModelExecutionService {
                 }
             } catch (Throwable e) {
                 log.error("Error in executeModels", e);
+                success = false;
+                errorMsg = e.getMessage();
                 throw e; // Rethrow the exception for further handling
             } finally {
-                Records.ExecuteAggregationMessageRecord aggregationMessageRecord =
-                        RecordFactory.createExecutionAggregationRecord(tenantId, jobId, (long) postingDate);
-                aggregationMessageProducer.executeAggregation(aggregationMessageRecord);
-                Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenantId, jobId);
-                generalLedgerMessageProducer.bookTempGL(glRec);
+                if (correlationId != null && !correlationId.isBlank()) {
+                    String resultPayload = String.format("{\"jobId\": %d, \"status\": \"%s\"}",
+                            jobId, success ? "SUCCESS" : "FAILED");
+                    modelCompletionProducer.sendCompletionMessage(correlationId, success, resultPayload, errorMsg);
+                }
 
                 if (msg.isLast()) {
                     if (postingDate > executionState.getExecutionDate()) {
@@ -208,6 +216,8 @@ public class ModelExecutionService {
             }
         } catch (Exception exp) {
             log.error(StringUtil.getStackTrace(exp));
+            success = false;
+            errorMsg = exp.getMessage();
             throw exp;
         }
     }

@@ -1,27 +1,25 @@
 
 package com.reserv.dataloader.service.model;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fyntrac.common.cache.collection.CacheList;
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.RecordFactory;
+import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.Event;
+import com.fyntrac.common.entity.ExecutionState;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.entity.ModelExecutionBatchLog;
-import com.fyntrac.common.repository.AttributeLevelBalanceRepository;
-import com.fyntrac.common.repository.EventRepository;
-import com.fyntrac.common.repository.GeneralLedgerEnteryStageRepository;
-import com.fyntrac.common.repository.InstrumentAttributeRepository;
-import com.fyntrac.common.repository.InstrumentLevelLtdRepository;
-import com.fyntrac.common.repository.MemcachedRepository;
-import com.fyntrac.common.repository.MetricLevelLtdRepository;
-import com.fyntrac.common.repository.ModelExecutionBatchLogRepository;
-import com.fyntrac.common.repository.TransactionActivityRepository;
+import com.fyntrac.common.repository.*;
 import com.fyntrac.common.service.ExcelModelService;
 import com.fyntrac.common.service.InstrumentAttributeService;
+import com.fyntrac.common.service.NativeJsonParserService;
 import com.fyntrac.common.utils.DateUtil;
-import com.fyntrac.common.utils.StringUtil;
+import com.reserv.dataloader.pulsar.producer.GeneralLedgerMessageProducer;
 import com.reserv.dataloader.pulsar.producer.ModelExecutionProducer;
 import com.reserv.dataloader.pulsar.producer.PythonModelExecutionProducer;
+import com.reserv.dataloader.service.AggregationExecutionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,17 +27,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -56,6 +48,13 @@ public class ModelExecutionService {
     private final ExcelModelService excelModelService;
     private final EventRepository eventRepository;
     private final ModelExecutionBatchLogRepository batchLogRepository;
+    private final com.fyntrac.common.repository.ExecutionInstanceRepository executionInstanceRepository;
+    private final com.fyntrac.common.service.BatchCompletionWaiter batchCompletionWaiter;
+    private final com.fyntrac.common.service.aggregation.AggregationService aggregationService;
+    private final com.fyntrac.common.service.GeneralLedgerAccountService glAccountService;
+    private final com.fyntrac.common.service.ExecutionStateService executionStateService;
+    private final GeneralLedgerMessageProducer generalLedgerMessageProducer;
+    private final ObjectMapper objectMapper;
 
     // Repositories for pre-execution data cleanup
     private final TransactionActivityRepository transactionActivityRepository;
@@ -64,6 +63,7 @@ public class ModelExecutionService {
     private final AttributeLevelBalanceRepository attributeLevelBalanceRepository;
     private final InstrumentLevelLtdRepository instrumentLevelLtdRepository;
     private final MetricLevelLtdRepository metricLevelLtdRepository;
+    private final AggregationExecutionService aggregationExecutionService;
 
     @Value("${fyntrac.chunk.size}")
     private int pageSize;
@@ -118,12 +118,20 @@ public class ModelExecutionService {
     , ExcelModelService excelModelService
     , EventRepository eventRepository
     , ModelExecutionBatchLogRepository batchLogRepository
+    , com.fyntrac.common.repository.ExecutionInstanceRepository executionInstanceRepository
+    , com.fyntrac.common.service.BatchCompletionWaiter batchCompletionWaiter
+    , com.fyntrac.common.service.aggregation.AggregationService aggregationService
+    , com.fyntrac.common.service.GeneralLedgerAccountService glAccountService
+    , com.fyntrac.common.service.ExecutionStateService executionStateService
     , TransactionActivityRepository transactionActivityRepository
     , InstrumentAttributeRepository instrumentAttributeRepository
     , GeneralLedgerEnteryStageRepository generalLedgerEnteryStageRepository
     , AttributeLevelBalanceRepository attributeLevelBalanceRepository
     , InstrumentLevelLtdRepository instrumentLevelLtdRepository
-    , MetricLevelLtdRepository metricLevelLtdRepository) {
+    , MetricLevelLtdRepository metricLevelLtdRepository
+    , AggregationExecutionService aggregationExecutionService
+    , GeneralLedgerMessageProducer generalLedgerMessageProducer
+    , ObjectMapper objectMapper) {
         this.instrumentAttributeService = instrumentAttributeService;
         this.memcachedRepository = memcachedRepository;
         this.modelExecutionProducer = modelExecutionProducer;
@@ -131,12 +139,20 @@ public class ModelExecutionService {
         this.excelModelService = excelModelService;
         this.eventRepository = eventRepository;
         this.batchLogRepository = batchLogRepository;
+        this.executionInstanceRepository = executionInstanceRepository;
+        this.batchCompletionWaiter = batchCompletionWaiter;
+        this.aggregationService = aggregationService;
+        this.glAccountService = glAccountService;
+        this.executionStateService = executionStateService;
         this.transactionActivityRepository = transactionActivityRepository;
         this.instrumentAttributeRepository = instrumentAttributeRepository;
         this.generalLedgerEnteryStageRepository = generalLedgerEnteryStageRepository;
         this.attributeLevelBalanceRepository = attributeLevelBalanceRepository;
         this.instrumentLevelLtdRepository = instrumentLevelLtdRepository;
         this.metricLevelLtdRepository = metricLevelLtdRepository;
+        this.aggregationExecutionService = aggregationExecutionService;
+        this .generalLedgerMessageProducer = generalLedgerMessageProducer;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -319,6 +335,16 @@ public class ModelExecutionService {
         }
     }
 
+    public void dispatchExcelBatchOrchestrated(Date executionDate, Set<String> instrumentIds, String correlationId) {
+        if (instrumentIds == null || instrumentIds.isEmpty()) return;
+        int page = streamPageCounter.getAndIncrement();
+        List<String> idList = new ArrayList<>(instrumentIds);
+        TenantContextHolder.runWithTenant(streamTenant, () -> {
+            postModelExecutionMessageOrchestrated(executionDate, idList, page, false, correlationId);
+            return null;
+        });
+    }
+
     /** Called once after generateEventAndDispatch() completes for Excel. Writes summary log and releases tenant lock. */
     public void finalizeExcelExecution() {
         try {
@@ -395,29 +421,148 @@ public class ModelExecutionService {
         }
     }
 
-    /** Called once after generateEventAndDispatch() completes for Python. Writes summary log and releases tenant lock. */
-    public void finalizePythonExecution() {
+    /**
+     * Orchestrated DSL Execution Workflow.
+     * Sequence: Pre-validations -> Event Generation (Loop: Dispatch -> Wait -> Aggregate -> GL Sync) -> EOD.
+     */
+    public void executeDslOrchestrated(String date, int postingDate) throws Throwable {
+        String tenant = TenantContextHolder.getTenant();
+
+        // 1. Initialize ExecutionInstance
+        com.fyntrac.common.entity.ExecutionInstance instance = com.fyntrac.common.entity.ExecutionInstance.builder()
+                .id(UUID.randomUUID().toString())
+                .tenantId(tenant)
+                .postingDate(postingDate)
+                .modelType("DSL")
+                .status("INITIALIZING")
+                .startTime(new Date())
+                .build();
+        executionInstanceRepository.save(instance);
+
+        log.info("Starting orchestrated DSL execution: instanceId={} tenant={} postingDate={}", instance.getId(), tenant, postingDate);
+
         try {
-            long overallDuration = System.currentTimeMillis() - streamOverallStart;
-            long successBatches  = pythonBatchResults.stream().filter(BatchResult::success).count();
-            long failedBatches   = pythonBatchResults.size() - successBatches;
-            int  totalInstruments = pythonBatchResults.stream().mapToInt(BatchResult::itemsSent).sum();
-            String summaryStatus = failedBatches == 0 ? "SUCCESS" : "PARTIAL_SUCCESS";
-            try {
-                ModelExecutionBatchLog summary = ModelExecutionBatchLog.builder()
-                        .jobId(streamJobId).tenantId(streamTenant).postingDate(streamPostingDate)
-                        .modelType("PYTHON").logType("EXECUTION_SUMMARY")
-                        .instrumentCount(totalInstruments).successCount((int) successBatches)
-                        .failedCount((int) failedBatches).status(summaryStatus)
-                        .durationMs(overallDuration).createdAt(new Date()).build();
-                batchLogRepository.save(summary);
-                log.info("Python EXECUTION_SUMMARY: jobId={} status={} batches={} instruments={} duration={}ms",
-                        streamJobId, summaryStatus, pythonBatchResults.size(), totalInstruments, overallDuration);
-            } catch (Exception e) {
-                log.warn("Failed to save Python EXECUTION_SUMMARY: {}", e.getMessage());
+            // 2. Pre-Processing & Preparation
+            instance.setStatus("GENERATING_EVENTS");
+            executionInstanceRepository.save(instance);
+
+            this.preparePythonExecution(date, postingDate);
+
+            // Local variables for the callback
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
+            Date executionDate = DateUtil.parseDate(date, formatter);
+            java.util.concurrent.atomic.AtomicInteger batchCounter = new java.util.concurrent.atomic.AtomicInteger(0);
+
+            // 3. Core Execution Loop (Steps 2, 3, 4)
+            // We use the existing event generator but a custom dispatcher
+            excelModelService.generateEventAndDispatch(postingDate, batch -> {
+                int batchNumber = batchCounter.getAndIncrement();
+                String correlationId = instance.getId() + "_batch_" + batchNumber;
+                try {
+                    log.info("Processing batch {} for instance {}. CorrelationId: {}", batchNumber, instance.getId(), correlationId);
+
+                    // [Step 2A] Dispatch to Python
+                    this.dispatchPythonBatchOrchestrated(executionDate, batch, correlationId);
+
+                    // [Step 2B/C] SUSPEND and WAIT for callback
+                    com.fyntrac.common.service.BatchCompletionWaiter.BatchResult result =
+                            batchCompletionWaiter.waitForCompletion(correlationId, 600000L); // 10min timeout_ la la
+
+                    if (result == null || !"SUCCESS".equals(result.status())) {
+                        throw new RuntimeException("Python processing failed for batch " + batchNumber + ": " +
+                                (result != null ? result.errorMessage() : "Null result"));
+                    }
+
+                    // Extract jobId from the result payload JSON
+                    long pythonJobId = -1;
+                    try {
+                        JsonNode root = objectMapper.readTree(result.payload());
+                        if (root != null && root.has("jobId")) {
+                            pythonJobId = root.get("jobId").asLong();
+                            log.info("Extracted Python jobId: {} for correlationId: {}", pythonJobId, correlationId);
+                        }
+                    } catch (Exception e) {
+                        log.error("Failed to parse jobId from Python result payload: {}. Payload: {}", e.getMessage(), result.payload());
+                    }
+
+                    // [Step 3] Immediate Financial Aggregation
+                    // aggregationService.aggregateBatch(result.payload(), tenant);
+                    // String tenantId, long jobId, Long aggregationDate
+                    // RecordFactory.createExecutionAggregationRecord(tenant, result.);
+                    Records.JobResultResponseRecord jobResultResponseRecord = NativeJsonParserService.parseJobResultSafely(result.payload());
+                    Records.ExecuteAggregationMessageRecord executeAggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenant,
+                            jobResultResponseRecord.jobId(), Long.valueOf(postingDate) );
+                    ExecutionState executionState = executionStateService.getExecutionState();
+                    aggregationExecutionService.execute(executeAggregationMessageRecord, executionState);
+                    //go [Step 4] Real-Time General Ledger Sync
+                    // glAccountService.syncBatch(result.payload(), tenant);
+                    Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenant, jobResultResponseRecord.jobId());
+                    generalLedgerMessageProducer.bookTempGL(glRec);
+                    // Update instance progress
+                    updateInstanceProgress(instance);
+
+                } catch (Exception e) {
+                    log.error("Critical failure in batch {} for instance {}: {}", batchNumber, instance.getId(), e.getMessage());
+                    throw new RuntimeException(e);
+                }
+            });
+
+            // 4. End of Day (EOD) Wrapping
+            instance.setStatus("EOD_PROCESSING");
+            executionInstanceRepository.save(instance);
+            performEODProcessing(instance);
+
+            instance.setStatus("COMPLETED");
+            instance.setEndTime(new Date());
+            executionInstanceRepository.save(instance);
+
+        } catch (Exception e) {
+            log.error("Orchestration failed for instance {}: {}", instance.getId(), e.getMessage());
+            instance.setStatus("FAILED");
+            instance.setErrorMessage(e.getMessage());
+            executionInstanceRepository.save(instance);
+            throw e;
+        }
+    }
+
+    private void dispatchPythonBatchOrchestrated(Date executionDate, Set<String> instrumentIds, String correlationId) {
+        if (instrumentIds == null || instrumentIds.isEmpty()) return;
+        String tenantId = TenantContextHolder.getTenant();
+
+        // The producer needs to be updated to accept correlationId
+        this.pythonModelExecutionProducer.sendPythonModelExecutionMessageOrchestrated(
+                RecordFactory.createPythonModelExecutionMessage(tenantId, DateUtil.dateInNumber(executionDate), new ArrayList<>(instrumentIds), false),
+                correlationId);
+
+        log.debug("Orchestrated dispatch: batch correlationId={} instrumentsCount={}", correlationId, instrumentIds.size());
+    }
+
+    private void updateInstanceProgress(com.fyntrac.common.entity.ExecutionInstance instance) {
+        instance.setCompletedBatches(instance.getCompletedBatches() == null ? 1 : instance.getCompletedBatches() + 1);
+        executionInstanceRepository.save(instance);
+    }
+
+    private void performEODProcessing(com.fyntrac.common.entity.ExecutionInstance instance) {
+        log.info("Performing EOD processing for instanceId={} tenant={}", instance.getId(), instance.getTenantId());
+
+        try {
+            String tenant = instance.getTenantId();
+            com.fyntrac.common.entity.ExecutionState state = executionStateService.getExecutionState();
+            Records.ExecuteAggregationMessageRecord executeAggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenant,
+                    0, instance.getPostingDate().longValue() );
+
+            aggregationExecutionService.executePostAggregation(executeAggregationMessageRecord, state);
+            if (state != null) {
+                if(instance.getPostingDate() > state.getExecutionDate()) {
+                    state.setLastExecutionDate(state.getExecutionDate());
+                    state.setExecutionDate(instance.getPostingDate());
+                    executionStateService.update(state);
+                }
+
+                log.info("EOD: Updated lastExecutionDate to {} for tenant {}", instance.getPostingDate(), tenant);
             }
-        } finally {
-            releaseExecutionLock(streamTenant);
+        } catch (Exception e) {
+            log.error("EOD Processing failed for instance {}: {}", instance.getId(), e.getMessage());
         }
     }
 
@@ -585,6 +730,18 @@ public class ModelExecutionService {
                 DateUtil.dateInNumber(executionDate), key, isLast));
         // Collect into CacheList
 
+    }
+
+    private void postModelExecutionMessageOrchestrated(Date executionDate, List<String> instruments, int page, boolean isLast, String correlationId) {
+        com.fyntrac.common.cache.collection.CacheList<String> cacheList = new com.fyntrac.common.cache.collection.CacheList<>();
+        instruments.forEach(cacheList::add);
+        int hashCode = java.util.Objects.hash(cacheList);
+        String tenantId = TenantContextHolder.getTenant();
+        String key = "Model" + tenantId + hashCode;
+        this.memcachedRepository.putInCache(key, cacheList);
+        this.modelExecutionProducer.sendModelExecutionMessageOrchestrated(
+                com.fyntrac.common.dto.record.RecordFactory.createModelExecutionMessage(tenantId,
+                com.fyntrac.common.utils.DateUtil.dateInNumber(executionDate), key, isLast), correlationId);
     }
 
     /**

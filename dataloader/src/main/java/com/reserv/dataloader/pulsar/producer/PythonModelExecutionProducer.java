@@ -22,4 +22,13 @@ public class PythonModelExecutionProducer {
                 topic, messageRecord.tenantId());
         log.info("PythonModelExecutionProducer::send MessageId {}", msgId);
     }
+
+    public void sendPythonModelExecutionMessageOrchestrated(Records.PythonModelExecutionMessageRecord messageRecord, String correlationId) {
+        var msgId = pulsarTemplate.newMessage(messageRecord)
+                .withTopic(topic)
+                .withMessageCustomizer(mb -> mb.property("correlationId", correlationId))
+                .send();
+        log.info("PythonModelExecutionProducer::sendOrchestrated topic={} tenant={} correlationId={} msgId={}",
+                topic, messageRecord.tenantId(), correlationId, msgId);
+    }
 }

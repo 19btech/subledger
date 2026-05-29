@@ -599,5 +599,11 @@ public class RecordFactory {
         return createRecord(() -> new Records.ActivityLogRecord(uploadId, jobName, postingDate, starting, endTime, activityStatus,
                 details));
     }
+
+    public static Records.JobResultResponseRecord createJobResultResponseRecord(Long jobId,
+                                                                                String status,
+                                                                                Integer successCount) {
+        return  createRecord(() -> new Records.JobResultResponseRecord(jobId, status, successCount));
+    }
 }
 
