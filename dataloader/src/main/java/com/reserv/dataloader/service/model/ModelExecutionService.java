@@ -26,6 +26,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Criteria;
+import com.fyntrac.common.enums.CustomTableType;
+import com.fyntrac.common.entity.CustomTableDefinition;
 
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -60,10 +65,14 @@ public class ModelExecutionService {
     private final TransactionActivityRepository transactionActivityRepository;
     private final InstrumentAttributeRepository instrumentAttributeRepository;
     private final GeneralLedgerEnteryStageRepository generalLedgerEnteryStageRepository;
+    private final GeneralLedgerEnteryRepository generalLedgerEnteryRepository;
     private final AttributeLevelBalanceRepository attributeLevelBalanceRepository;
     private final InstrumentLevelLtdRepository instrumentLevelLtdRepository;
     private final MetricLevelLtdRepository metricLevelLtdRepository;
     private final AggregationExecutionService aggregationExecutionService;
+    private final CustomTableDefinitionRepository customTableDefinitionRepository;
+    private final MongoTemplate mongoTemplate;
+    private final com.fyntrac.common.service.AccountingPeriodService accountingPeriodService;
 
     @Value("${fyntrac.chunk.size}")
     private int pageSize;
@@ -126,12 +135,16 @@ public class ModelExecutionService {
     , TransactionActivityRepository transactionActivityRepository
     , InstrumentAttributeRepository instrumentAttributeRepository
     , GeneralLedgerEnteryStageRepository generalLedgerEnteryStageRepository
+    , GeneralLedgerEnteryRepository generalLedgerEnteryRepository
     , AttributeLevelBalanceRepository attributeLevelBalanceRepository
     , InstrumentLevelLtdRepository instrumentLevelLtdRepository
     , MetricLevelLtdRepository metricLevelLtdRepository
     , AggregationExecutionService aggregationExecutionService
     , GeneralLedgerMessageProducer generalLedgerMessageProducer
-    , ObjectMapper objectMapper) {
+    , ObjectMapper objectMapper
+    , CustomTableDefinitionRepository customTableDefinitionRepository
+    , MongoTemplate mongoTemplate
+    , com.fyntrac.common.service.AccountingPeriodService accountingPeriodService) {
         this.instrumentAttributeService = instrumentAttributeService;
         this.memcachedRepository = memcachedRepository;
         this.modelExecutionProducer = modelExecutionProducer;
@@ -147,12 +160,16 @@ public class ModelExecutionService {
         this.transactionActivityRepository = transactionActivityRepository;
         this.instrumentAttributeRepository = instrumentAttributeRepository;
         this.generalLedgerEnteryStageRepository = generalLedgerEnteryStageRepository;
+        this.generalLedgerEnteryRepository = generalLedgerEnteryRepository;
         this.attributeLevelBalanceRepository = attributeLevelBalanceRepository;
         this.instrumentLevelLtdRepository = instrumentLevelLtdRepository;
         this.metricLevelLtdRepository = metricLevelLtdRepository;
         this.aggregationExecutionService = aggregationExecutionService;
-        this .generalLedgerMessageProducer = generalLedgerMessageProducer;
+        this.generalLedgerMessageProducer = generalLedgerMessageProducer;
         this.objectMapper = objectMapper;
+        this.customTableDefinitionRepository = customTableDefinitionRepository;
+        this.mongoTemplate = mongoTemplate;
+        this.accountingPeriodService = accountingPeriodService;
     }
 
     /**
@@ -168,6 +185,71 @@ public class ModelExecutionService {
      * does NOT prevent the remaining collections from being cleaned.
      */
     public void cleanupDataForPostingDate(int postingDate) {
+        log.info("Pre-execution cleanup started for postingDate={} tenant={}", postingDate, TenantContextHolder.getTenant());
+
+        // 1. EventHistory (mapped to Event entity)
+        try {
+            eventRepository.deleteByPostingDate(postingDate);
+            log.debug("Cleanup: EventHistory deleted for postingDate={}", postingDate);
+        } catch (Exception e) {
+            log.error("Cleanup failed for EventHistory postingDate={}: {}", postingDate, e.getMessage());
+        }
+
+        // 2. GeneralLedgerEnteryStage
+        try {
+            generalLedgerEnteryStageRepository.deleteByPostingDate(postingDate);
+            log.debug("Cleanup: GeneralLedgerEnteryStage deleted for postingDate={}", postingDate);
+        } catch (Exception e) {
+            log.error("Cleanup failed for GeneralLedgerEnteryStage postingDate={}: {}", postingDate, e.getMessage());
+        }
+
+        // 3. AttributeLevelLtd
+        try {
+            attributeLevelBalanceRepository.deleteByPostingDate(postingDate);
+            log.debug("Cleanup: AttributeLevelLtd deleted for postingDate={}", postingDate);
+        } catch (Exception e) {
+            log.error("Cleanup failed for AttributeLevelLtd postingDate={}: {}", postingDate, e.getMessage());
+        }
+
+        // 4. InstrumentLevelLtd
+        try {
+            instrumentLevelLtdRepository.deleteByPostingDate(postingDate);
+            log.debug("Cleanup: InstrumentLevelLtd deleted for postingDate={}", postingDate);
+        } catch (Exception e) {
+            log.error("Cleanup failed for InstrumentLevelLtd postingDate={}: {}", postingDate, e.getMessage());
+        }
+
+        // 5. MetricLevelLtd
+        try {
+            metricLevelLtdRepository.deleteByPostingDate(postingDate);
+            log.debug("Cleanup: MetricLevelLtd deleted for postingDate={}", postingDate);
+        } catch (Exception e) {
+            log.error("Cleanup failed for MetricLevelLtd postingDate={}: {}", postingDate, e.getMessage());
+        }
+        // 6. GeneralLedgerEntry
+        try {
+            generalLedgerEnteryRepository.deleteByPostingDate(postingDate);
+            log.debug("Cleanup: GeneralLedgerEntry deleted for postingDate={}", postingDate);
+        } catch (Exception e) {
+            log.error("Cleanup failed for GeneralLedgerEntry postingDate={}: {}", postingDate, e.getMessage());
+        }
+        log.info("Pre-execution cleanup completed for postingDate={} tenant={}", postingDate, TenantContextHolder.getTenant());
+    }
+
+
+    /**
+     * Purges all execution-output data for the given posting date across every
+     * derived collection before a fresh model run.
+     *
+     * Collections cleaned:
+     *   TransactionActivity, InstrumentAttribute, EventHistory,
+     *   GeneralLedgerEnteryStage, AttributeLevelLtd,
+     *   InstrumentLevelLtd, MetricLevelLtd
+     *
+     * Each delete is independent; a failure in one collection is logged but
+     * does NOT prevent the remaining collections from being cleaned.
+     */
+    public void cleanupDataForPriorPostingDate(int postingDate) {
         log.info("Pre-execution cleanup started for postingDate={} tenant={}", postingDate, TenantContextHolder.getTenant());
 
         // 1. TransactionActivity
@@ -186,48 +268,121 @@ public class ModelExecutionService {
             log.error("Cleanup failed for InstrumentAttribute postingDate={}: {}", postingDate, e.getMessage());
         }
 
-        // 3. EventHistory (mapped to Event entity)
+        // 3. Operational Custom Tables
         try {
-            eventRepository.deleteByPostingDate(postingDate);
-            log.debug("Cleanup: EventHistory deleted for postingDate={}", postingDate);
+            Optional<List<CustomTableDefinition>> optionalTables = customTableDefinitionRepository.findByTableType(CustomTableType.OPERATIONAL);
+            if (optionalTables.isPresent()) {
+                List<CustomTableDefinition> customTables = optionalTables.get();
+                for (CustomTableDefinition tableDef : customTables) {
+                    try {
+                        String collectionName = tableDef.getTableName();
+                        Query query = new Query(Criteria.where("postingDate").is(postingDate));
+                        mongoTemplate.remove(query, collectionName);
+                        log.debug("Cleanup: Custom table {} deleted for postingDate={}", collectionName, postingDate);
+                    } catch (Exception ex) {
+                        log.error("Cleanup failed for Custom Table {} postingDate={}: {}", tableDef.getTableName(), postingDate, ex.getMessage());
+                    }
+                }
+            }
         } catch (Exception e) {
-            log.error("Cleanup failed for EventHistory postingDate={}: {}", postingDate, e.getMessage());
+            log.error("Cleanup failed while querying operational CustomTableDefinitions: {}", e.getMessage());
         }
 
-        // 4. GeneralLedgerEnteryStage
-        try {
-            generalLedgerEnteryStageRepository.deleteByPostingDate(postingDate);
-            log.debug("Cleanup: GeneralLedgerEnteryStage deleted for postingDate={}", postingDate);
-        } catch (Exception e) {
-            log.error("Cleanup failed for GeneralLedgerEnteryStage postingDate={}: {}", postingDate, e.getMessage());
-        }
-
-        // 5. AttributeLevelLtd
-        try {
-            attributeLevelBalanceRepository.deleteByPostingDate(postingDate);
-            log.debug("Cleanup: AttributeLevelLtd deleted for postingDate={}", postingDate);
-        } catch (Exception e) {
-            log.error("Cleanup failed for AttributeLevelLtd postingDate={}: {}", postingDate, e.getMessage());
-        }
-
-        // 6. InstrumentLevelLtd
-        try {
-            instrumentLevelLtdRepository.deleteByPostingDate(postingDate);
-            log.debug("Cleanup: InstrumentLevelLtd deleted for postingDate={}", postingDate);
-        } catch (Exception e) {
-            log.error("Cleanup failed for InstrumentLevelLtd postingDate={}: {}", postingDate, e.getMessage());
-        }
-
-        // 7. MetricLevelLtd
-        try {
-            metricLevelLtdRepository.deleteByPostingDate(postingDate);
-            log.debug("Cleanup: MetricLevelLtd deleted for postingDate={}", postingDate);
-        } catch (Exception e) {
-            log.error("Cleanup failed for MetricLevelLtd postingDate={}: {}", postingDate, e.getMessage());
-        }
-
+        cleanupDataForPostingDate(postingDate);
         log.info("Pre-execution cleanup completed for postingDate={} tenant={}", postingDate, TenantContextHolder.getTenant());
     }
+
+    public void purgeDataGreaterOrEqual(int postingDate) {
+        log.info("Purging data for postingDate >= {} for tenant={}", postingDate, TenantContextHolder.getTenant());
+        Query query = new Query(Criteria.where("postingDate").gte(postingDate));
+
+        try { mongoTemplate.remove(query, com.fyntrac.common.entity.TransactionActivity.class); } catch(Exception e) { log.error("Purge error TA: {}", e.getMessage()); }
+        try { mongoTemplate.remove(query, com.fyntrac.common.entity.InstrumentAttribute.class); } catch(Exception e) { log.error("Purge error IA: {}", e.getMessage()); }
+        try { mongoTemplate.remove(query, com.fyntrac.common.entity.Event.class); } catch(Exception e) { log.error("Purge error Event: {}", e.getMessage()); }
+        try { mongoTemplate.remove(query, com.fyntrac.common.entity.GeneralLedgerEnteryStage.class); } catch(Exception e) { log.error("Purge error GLE Stage: {}", e.getMessage()); }
+        try { mongoTemplate.remove(query, com.fyntrac.common.entity.AttributeLevelLtd.class); } catch(Exception e) { log.error("Purge error Attr Ltd: {}", e.getMessage()); }
+        try { mongoTemplate.remove(query, com.fyntrac.common.entity.InstrumentLevelLtd.class); } catch(Exception e) { log.error("Purge error Inst Ltd: {}", e.getMessage()); }
+        try { mongoTemplate.remove(query, com.fyntrac.common.entity.MetricLevelLtd.class); } catch(Exception e) { log.error("Purge error Met Ltd: {}", e.getMessage()); }
+        try { mongoTemplate.remove(query, com.fyntrac.common.entity.GeneralLedgerEntery.class); } catch(Exception e) { log.error("Purge error GLE: {}", e.getMessage()); }
+        
+        try {
+            Optional<List<CustomTableDefinition>> optionalTables = customTableDefinitionRepository.findByTableType(CustomTableType.OPERATIONAL);
+            if (optionalTables.isPresent()) {
+                for (CustomTableDefinition tableDef : optionalTables.get()) {
+                    try {
+                        mongoTemplate.remove(query, tableDef.getTableName());
+                    } catch (Exception ex) {
+                        log.error("Purge error Custom Table {}: {}", tableDef.getTableName(), ex.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Purge error querying CustomTableDefinitions: {}", e.getMessage());
+        }
+
+        log.info("Purge completed for postingDate >= {} tenant={}", postingDate, TenantContextHolder.getTenant());
+    }
+
+    public boolean enforcePreProcessRules(String tenant, int postingDate) throws Exception {
+        int periodId = DateUtil.getAccountingPeriodId(postingDate);
+        com.fyntrac.common.entity.AccountingPeriod ap = accountingPeriodService.getAccountingPeriod(periodId, tenant);
+        if (ap != null && ap.getStatus() == 1) {
+            throw new RuntimeException("ClosedAccountingPeriodException: Accounting period " + periodId + " is closed.");
+        }
+
+        ExecutionState state = executionStateService.getExecutionState();
+        if (state != null) {
+            if (postingDate == state.getExecutionDate()) {
+
+                
+                List<Object> distinctBatches = mongoTemplate.findDistinct(
+                    new Query(Criteria.where("postingDate").is(postingDate)),
+                    "batchId",
+                    com.fyntrac.common.entity.TransactionActivity.class,
+                    Object.class
+                );
+                
+                if (!distinctBatches.isEmpty()) {
+                    try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+                        cleanupDataForPostingDate(postingDate);
+                        for(Object batchObj : distinctBatches) {
+                            if (batchObj != null) {
+                                executor.submit(() -> {
+                                    TenantContextHolder.runWithTenant(tenant, () -> {
+                                        try {
+                                            long batchId = Long.parseLong(batchObj.toString());
+                                            com.fyntrac.common.dto.record.Records.ExecuteAggregationMessageRecord aggRec = 
+                                                com.fyntrac.common.dto.record.RecordFactory.createExecutionAggregationRecord(tenant, batchId, (long)postingDate);
+                                            aggregationExecutionService.execute(aggRec, state);
+                                            
+                                            com.fyntrac.common.dto.record.Records.GeneralLedgerMessageRecord glRec = 
+                                                com.fyntrac.common.dto.record.RecordFactory.createGeneralLedgerMessageRecord(tenant, batchId);
+                                            generalLedgerMessageProducer.bookTempGL(glRec);
+                                        } catch(Exception e) {
+                                            log.warn("Invalid batchId format or dispatch error: {}", e.getMessage());
+                                        }
+                                        return null;
+                                    });
+                                });
+                            }
+                        }
+
+                    }
+                    com.fyntrac.common.dto.record.Records.ExecuteAggregationMessageRecord postAggRec =
+                            com.fyntrac.common.dto.record.RecordFactory.createExecutionAggregationRecord(tenant, 0, (long)postingDate);
+                    aggregationExecutionService.executePostAggregation(postAggRec, state);
+                }
+
+                return true;
+            } else if (postingDate < state.getExecutionDate()) {
+                cleanupDataForPriorPostingDate(postingDate);
+                purgeDataGreaterOrEqual(postingDate);
+                return false;
+            }
+        }
+        return true;
+    }
+
 
     public void sendModelExecutionMessage(String date) throws Throwable {
         // Page request for chunk size
@@ -287,8 +442,11 @@ public class ModelExecutionService {
     private final    java.util.concurrent.CopyOnWriteArrayList<BatchResult> pythonBatchResults   = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     /** Called once before generateEventAndDispatch() for the Excel path. */
-    public void prepareExcelExecution(String date, int postingDate) {
+    public boolean prepareExcelExecution(int postingDate) throws Exception {
         streamTenant       = TenantContextHolder.getTenant();
+        boolean shouldContinue = enforcePreProcessRules(streamTenant, postingDate);
+        if (!shouldContinue) return false;
+
         streamJobId        = String.valueOf(System.currentTimeMillis());
         streamPostingDate  = postingDate;
         streamOverallStart = System.currentTimeMillis();
@@ -297,6 +455,7 @@ public class ModelExecutionService {
         excelInstrumentCounts.clear();
         instrumentCountCache.remove(streamTenant + ":" + postingDate);
         log.info("Excel streaming execution prepared: jobId={} tenant={} postingDate={}", streamJobId, streamTenant, postingDate);
+        return true;
     }
 
     /** Dispatches one page of instrument IDs synchronously. Called from the callback. */
@@ -372,8 +531,12 @@ public class ModelExecutionService {
     }
 
     /** Called once before generateEventAndDispatch() for the Python path. */
-    public void preparePythonExecution(String date, int postingDate) {
+    public boolean preparePythonExecution(int postingDate) throws Exception {
         streamTenant       = TenantContextHolder.getTenant();
+        boolean shouldContinue = enforcePreProcessRules(streamTenant, postingDate);
+       // boolean shouldContinue = Boolean.TRUE;
+        if (!shouldContinue) return false;
+
         streamJobId        = String.valueOf(System.currentTimeMillis());
         streamPostingDate  = postingDate;
         streamOverallStart = System.currentTimeMillis();
@@ -381,6 +544,7 @@ public class ModelExecutionService {
         pythonBatchResults.clear();
         instrumentCountCache.remove(streamTenant + ":" + postingDate);
         log.info("Python streaming execution prepared: jobId={} tenant={} postingDate={}", streamJobId, streamTenant, postingDate);
+        return true;
     }
 
     /** Dispatches one page of instrument IDs synchronously. Called from the callback. */
@@ -446,7 +610,7 @@ public class ModelExecutionService {
             instance.setStatus("GENERATING_EVENTS");
             executionInstanceRepository.save(instance);
 
-            this.preparePythonExecution(date, postingDate);
+            this.preparePythonExecution(postingDate);
 
             // Local variables for the callback
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");

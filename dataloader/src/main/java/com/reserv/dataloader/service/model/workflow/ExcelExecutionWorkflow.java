@@ -58,14 +58,14 @@ public class ExcelExecutionWorkflow extends AbstractExecutionWorkflow {
     }
 
     @Override
-    protected void preProcess(String tenant, String date, int postingDate) {
-        modelExecutionService.prepareExcelExecution(date, postingDate);
+    protected boolean preProcess(String tenant, int postingDate) throws Throwable {
+        return modelExecutionService.prepareExcelExecution(postingDate);
     }
 
     @Override
-    protected void generateAndProcessEvents(ExecutionInstance instance, String tenant, String date, int postingDate) throws Throwable {
+    protected void generateAndProcessEvents(ExecutionInstance instance, String tenant, int postingDate) throws Throwable {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
-        Date executionDate = DateUtil.parseDate(date, formatter);
+        Date executionDate = DateUtil.convertToDateFromYYYYMMDD(postingDate);
 
         AtomicInteger batchCounter = new AtomicInteger(0);
 

@@ -189,7 +189,8 @@ public class InstrumentLevelLtdFlatteningWriter implements ItemWriter<List<Recor
     }
     private InstrumentLevelLtd getFromMemcached(String key) {
         try {
-            return memcachedRepository.getFromCache(key, InstrumentLevelLtd.class);
+            // return memcachedRepository.getFromCache(key, InstrumentLevelLtd.class);
+            return null;
         } catch (Exception e) {
             return null; // fallback to DB
         }

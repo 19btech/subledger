@@ -189,7 +189,8 @@ public class MetricLevelLtdFlatteningWriter implements ItemWriter<List<Records.M
 
     private MetricLevelLtd getFromMemcached(String key) {
         try {
-            return memcachedRepository.getFromCache(key, MetricLevelLtd.class);
+            // return memcachedRepository.getFromCache(key, MetricLevelLtd.class);
+            return null;
         } catch (Exception e) {
             return null; // fallback to DB
         }

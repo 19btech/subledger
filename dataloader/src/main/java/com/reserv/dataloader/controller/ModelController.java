@@ -261,7 +261,7 @@ public class ModelController {
 
             // Streaming pipeline: generate events page-by-page and dispatch each batch
             // immediately. Only one page of instrument IDs lives in heap at a time.
-            workflowExecutionFactory.execute("EXCEL", tenant, dateRequestRecord.date(), postingDate);
+            workflowExecutionFactory.execute("EXCEL", tenant, postingDate);
 
             return ResponseEntity.ok("Model executed successfully, for : " + dateRequestRecord.date());
         } catch (IllegalArgumentException e) {
@@ -297,7 +297,7 @@ public class ModelController {
             // Streaming pipeline: generate events page-by-page and dispatch each batch
             // immediately. Only one page of instrument IDs lives in heap at a time.
             // Trigger the Orchestrated Workflow
-            workflowExecutionFactory.execute("DSL", tenant, dateRequestRecord.date(), postingDate);
+            workflowExecutionFactory.execute("DSL", tenant, postingDate);
 
             return ResponseEntity.ok("dsl model execution initiated and completed for: " + dateRequestRecord.date());
         } catch (Exception e) {

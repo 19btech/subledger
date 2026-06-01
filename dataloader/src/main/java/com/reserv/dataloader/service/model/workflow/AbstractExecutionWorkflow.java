@@ -20,18 +20,24 @@ public abstract class AbstractExecutionWorkflow {
     /**
      * The Template Method governing the execution flow.
      */
-    public final void executeWorkflow(String tenant, String date, int postingDate) throws Throwable {
+    public final void executeWorkflow(String tenant, int postingDate) throws Throwable {
         ExecutionInstance instance = initializeInstance(tenant, postingDate);
         log.info("Starting execution workflow: instanceId={} tenant={} postingDate={}", instance.getId(), tenant, postingDate);
 
         try {
             // 1. Pre-Processing
             updateStatus(instance, "PRE_PROCESSING");
-            preProcess(tenant, date, postingDate);
+            boolean shouldContinue = preProcess(tenant, postingDate);
+            if (!shouldContinue) {
+                instance.setEndTime(new Date());
+                updateStatus(instance, "COMPLETED");
+                log.info("Workflow execution halted gracefully by pre-process rules.");
+                return;
+            }
 
             // 2. Event Generation and Processing
             updateStatus(instance, "GENERATING_EVENTS");
-            generateAndProcessEvents(instance, tenant, date, postingDate);
+            generateAndProcessEvents(instance, tenant, postingDate);
 
             // 3. Post Processing
             updateStatus(instance, "POST_PROCESSING");
@@ -81,8 +87,8 @@ public abstract class AbstractExecutionWorkflow {
     }
 
     protected abstract String getModelType();
-    protected abstract void preProcess(String tenant, String date, int postingDate);
-    protected abstract void generateAndProcessEvents(ExecutionInstance instance, String tenant, String date, int postingDate) throws Throwable;
+    protected abstract boolean preProcess(String tenant, int postingDate) throws Throwable;
+    protected abstract void generateAndProcessEvents(ExecutionInstance instance, String tenant, int postingDate) throws Throwable;
     protected abstract void postProcess(ExecutionInstance instance, String tenant, int postingDate);
     protected abstract void performEOD(ExecutionInstance instance);
 }

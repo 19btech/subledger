@@ -14,11 +14,11 @@ public class WorkflowExecutionFactory {
         this.excelExecutionWorkflow = excelExecutionWorkflow;
     }
 
-    public void execute(String modelType, String tenant, String date, int postingDate) throws Throwable {
+    public void execute(String modelType, String tenant, int postingDate) throws Throwable {
         if ("DSL".equalsIgnoreCase(modelType)) {
-            dslExecutionWorkflow.executeWorkflow(tenant, date, postingDate);
+            dslExecutionWorkflow.executeWorkflow(tenant, postingDate);
         } else if ("EXCEL".equalsIgnoreCase(modelType)) {
-            excelExecutionWorkflow.executeWorkflow(tenant, date, postingDate);
+            excelExecutionWorkflow.executeWorkflow(tenant, postingDate);
         } else {
             throw new UnsupportedOperationException("Workflow for modelType " + modelType + " is not yet implemented in the new architecture.");
         }

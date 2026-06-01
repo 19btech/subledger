@@ -64,14 +64,14 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
     }
 
     @Override
-    protected void preProcess(String tenant, String date, int postingDate) {
-        modelExecutionService.preparePythonExecution(date, postingDate);
+    protected boolean preProcess(String tenant, int postingDate) throws Throwable {
+        return modelExecutionService.preparePythonExecution(postingDate);
     }
 
     @Override
-    protected void generateAndProcessEvents(ExecutionInstance instance, String tenant, String date, int postingDate) throws Throwable {
+    protected void generateAndProcessEvents(ExecutionInstance instance, String tenant, int postingDate) throws Throwable {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
-        Date executionDate = DateUtil.parseDate(date, formatter);
+        Date executionDate = DateUtil.convertToDateFromYYYYMMDD(postingDate);
         AtomicInteger batchCounter = new AtomicInteger(0);
 
         excelModelService.generateEventAndDispatch(postingDate, batch -> {
