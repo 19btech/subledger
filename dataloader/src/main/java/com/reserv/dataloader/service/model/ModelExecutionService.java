@@ -289,6 +289,18 @@ public class ModelExecutionService {
         }
 
         cleanupDataForPostingDate(postingDate);
+
+        // 4. Rollback ExecutionState history:
+        //    - Delete all ExecutionState records with executionDate >= postingDate
+        //    - Re-open the latest surviving record (executionDate < postingDate)
+        //    so getExecutionState() returns the correct prior state after cleanup.
+        try {
+            executionStateService.rollbackToBeforeDate(postingDate);
+            log.info("Cleanup: ExecutionState rolled back to before postingDate={}", postingDate);
+        } catch (Exception e) {
+            log.error("Cleanup failed rolling back ExecutionState for postingDate={}: {}", postingDate, e.getMessage());
+        }
+
         log.info("Pre-execution cleanup completed for postingDate={} tenant={}", postingDate, TenantContextHolder.getTenant());
     }
 

@@ -8,6 +8,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.Date;
 import java.util.Objects;
 
 @Data
@@ -27,6 +28,12 @@ public class ExecutionState implements Serializable {
     private Integer lastActivityPostingDate;
     private Integer lastActivityEffectiveDate;
 
+    /**
+     * Null means this is the currently active ExecutionState record.
+     * Non-null means this record has been superseded (closed) by a newer version.
+     */
+    private Date endDate;
+
     @Override
     public String toString() {
         return "{" +
@@ -35,6 +42,7 @@ public class ExecutionState implements Serializable {
                 "\"activityPostingDate\":" + (activityPostingDate != null ? "\"" + activityPostingDate + "\"" : null) +
                 "\"lastActivityPostingDate\":" + (lastActivityPostingDate != null ? "\"" + lastActivityPostingDate + "\"" : null) +
                 "\"lastActivityEffectiveDate\":" + (lastActivityEffectiveDate != null ? "\"" + lastActivityEffectiveDate + "\"" : null) +
+                "\"endDate\":" + (endDate != null ? "\"" + endDate + "\"" : null) +
                 "}";
     }
 
@@ -46,11 +54,12 @@ public class ExecutionState implements Serializable {
         return Objects.equals(executionDate, that.executionDate) &&
                 Objects.equals(lastExecutionDate, that.lastExecutionDate) &&
                 Objects.equals(lastActivityPostingDate, that.lastActivityPostingDate) &&
-                Objects.equals(activityPostingDate, that.activityPostingDate);
+                Objects.equals(activityPostingDate, that.activityPostingDate) &&
+                Objects.equals(endDate, that.endDate);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(executionDate, lastExecutionDate, lastActivityPostingDate, activityPostingDate);
+        return Objects.hash(executionDate, lastExecutionDate, lastActivityPostingDate, activityPostingDate, endDate);
     }
 }

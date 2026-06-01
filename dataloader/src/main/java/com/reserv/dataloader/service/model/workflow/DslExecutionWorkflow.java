@@ -70,7 +70,6 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
 
     @Override
     protected void generateAndProcessEvents(ExecutionInstance instance, String tenant, int postingDate) throws Throwable {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
         Date executionDate = DateUtil.convertToDateFromYYYYMMDD(postingDate);
         AtomicInteger batchCounter = new AtomicInteger(0);
 
