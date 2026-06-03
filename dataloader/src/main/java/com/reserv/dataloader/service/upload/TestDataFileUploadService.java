@@ -10,11 +10,14 @@ import com.fyntrac.common.repository.CustomTableDefinitionRepository;
 import com.fyntrac.common.service.*;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.ExcelUtil;
+import com.fyntrac.common.service.ExecutionStateService;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import com.reserv.dataloader.service.model.ModelExecutionService;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
@@ -47,8 +50,12 @@ public class TestDataFileUploadService extends FileUploadService {
                               SettingsService settingsService,
                               AccountingPeriodDataUploadService accountingPeriodDataUploadService,
                               DataFileService dataFileService,
-                              CustomTableDefinitionRepository customTableDefinitionRepository) {
-        super(tenantContextHolder, activityUploadService , transactionsUploadService, customTableDefinitionRepository);
+                              CustomTableDefinitionRepository customTableDefinitionRepository,
+                              ExecutionStateService executionStateService,
+                              MongoTemplate mongoTemplate,
+                              ModelExecutionService modelExecutionService) {
+        super(tenantContextHolder, activityUploadService, transactionsUploadService,
+                customTableDefinitionRepository, executionStateService, accountingPeriodService, mongoTemplate, modelExecutionService);
         this.dataService = dataService;
         this.settingsService = settingsService;
         this.accountingPeriodDataUploadService = accountingPeriodDataUploadService;
@@ -87,7 +94,7 @@ public class TestDataFileUploadService extends FileUploadService {
     }
 
     @Override
-    public void uploadFiles(MultipartFile... files) throws Throwable {
+    public void uploadFiles(boolean isOverwrite, MultipartFile... files) throws Throwable {
         log.info("Starting upload process for {} file(s)", files.length);
 
         Collection<AccountingPeriod> accountingPeriods = accountingPeriodService.getAccountingPeriods();
@@ -159,7 +166,7 @@ public class TestDataFileUploadService extends FileUploadService {
                 inputFiles.addAll(tmpFileList);
 
             }
-            super.uploadFiles(files);
+            super.uploadFiles(Boolean.FALSE, files);
 
             this.saveDataFiles(inputFiles);
 

@@ -11,6 +11,7 @@ import com.fyntrac.common.entity.Event;
 import com.fyntrac.common.entity.ExecutionState;
 import com.fyntrac.common.entity.InstrumentAttribute;
 import com.fyntrac.common.entity.ModelExecutionBatchLog;
+import com.fyntrac.common.enums.Source;
 import com.fyntrac.common.repository.*;
 import com.fyntrac.common.service.ExcelModelService;
 import com.fyntrac.common.service.InstrumentAttributeService;
@@ -184,18 +185,33 @@ public class ModelExecutionService {
      * Each delete is independent; a failure in one collection is logged but
      * does NOT prevent the remaining collections from being cleaned.
      */
-    public void cleanupDataForPostingDate(int postingDate) {
+    public void cleanupDataForPostingDate(int postingDate, boolean isPurgeEventHistory, boolean isOverwriteActivities) {
         log.info("Pre-execution cleanup started for postingDate={} tenant={}", postingDate, TenantContextHolder.getTenant());
 
-        // 1. EventHistory (mapped to Event entity)
+        // 1. TransactionActivity
         try {
-            eventRepository.deleteByPostingDate(postingDate);
-            log.debug("Cleanup: EventHistory deleted for postingDate={}", postingDate);
+            if(isOverwriteActivities) {
+                transactionActivityRepository.deleteByPostingDate(postingDate);
+            }else {
+                transactionActivityRepository.deleteByPostingDateAndSource(postingDate, Source.MODEL);
+            }
+
+            log.debug("Cleanup: TransactionActivity deleted for postingDate={}", postingDate);
         } catch (Exception e) {
-            log.error("Cleanup failed for EventHistory postingDate={}: {}", postingDate, e.getMessage());
+            log.error("Cleanup failed for TransactionActivity postingDate={}: {}", postingDate, e.getMessage());
         }
 
-        // 2. GeneralLedgerEnteryStage
+        // 2. EventHistory (mapped to Event entity)
+        if(isPurgeEventHistory) {
+            try {
+                eventRepository.deleteByPostingDate(postingDate);
+                log.debug("Cleanup: EventHistory deleted for postingDate={}", postingDate);
+            } catch (Exception e) {
+                log.error("Cleanup failed for EventHistory postingDate={}: {}", postingDate, e.getMessage());
+            }
+        }
+
+        // 3. GeneralLedgerEnteryStage
         try {
             generalLedgerEnteryStageRepository.deleteByPostingDate(postingDate);
             log.debug("Cleanup: GeneralLedgerEnteryStage deleted for postingDate={}", postingDate);
@@ -203,7 +219,7 @@ public class ModelExecutionService {
             log.error("Cleanup failed for GeneralLedgerEnteryStage postingDate={}: {}", postingDate, e.getMessage());
         }
 
-        // 3. AttributeLevelLtd
+        // 4. AttributeLevelLtd
         try {
             attributeLevelBalanceRepository.deleteByPostingDate(postingDate);
             log.debug("Cleanup: AttributeLevelLtd deleted for postingDate={}", postingDate);
@@ -211,7 +227,7 @@ public class ModelExecutionService {
             log.error("Cleanup failed for AttributeLevelLtd postingDate={}: {}", postingDate, e.getMessage());
         }
 
-        // 4. InstrumentLevelLtd
+        // 5. InstrumentLevelLtd
         try {
             instrumentLevelLtdRepository.deleteByPostingDate(postingDate);
             log.debug("Cleanup: InstrumentLevelLtd deleted for postingDate={}", postingDate);
@@ -219,14 +235,14 @@ public class ModelExecutionService {
             log.error("Cleanup failed for InstrumentLevelLtd postingDate={}: {}", postingDate, e.getMessage());
         }
 
-        // 5. MetricLevelLtd
+        // 6. MetricLevelLtd
         try {
             metricLevelLtdRepository.deleteByPostingDate(postingDate);
             log.debug("Cleanup: MetricLevelLtd deleted for postingDate={}", postingDate);
         } catch (Exception e) {
             log.error("Cleanup failed for MetricLevelLtd postingDate={}: {}", postingDate, e.getMessage());
         }
-        // 6. GeneralLedgerEntry
+        // 7. GeneralLedgerEntry
         try {
             generalLedgerEnteryRepository.deleteByPostingDate(postingDate);
             log.debug("Cleanup: GeneralLedgerEntry deleted for postingDate={}", postingDate);
@@ -288,7 +304,7 @@ public class ModelExecutionService {
             log.error("Cleanup failed while querying operational CustomTableDefinitions: {}", e.getMessage());
         }
 
-        cleanupDataForPostingDate(postingDate);
+        cleanupDataForPostingDate(postingDate, Boolean.TRUE, Boolean.TRUE);
 
         // 4. Rollback ExecutionState history:
         //    - Delete all ExecutionState records with executionDate >= postingDate
@@ -356,7 +372,7 @@ public class ModelExecutionService {
                 
                 if (!distinctBatches.isEmpty()) {
                     try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
-                        cleanupDataForPostingDate(postingDate);
+                        cleanupDataForPostingDate(postingDate, Boolean.TRUE, Boolean.FALSE);
                         for(Object batchObj : distinctBatches) {
                             if (batchObj != null) {
                                 executor.submit(() -> {

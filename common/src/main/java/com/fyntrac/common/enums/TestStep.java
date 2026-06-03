@@ -3,6 +3,7 @@ package com.fyntrac.common.enums;
 public enum TestStep {
     LOAD_REF_DATA,
     ACTIVITY_UPLOAD,
+    ACTIVITY_UPLOAD_OVERWRITE,
     MODEL_UPLOAD,
     MODEL_CONFIGURATION,
     MODEL_EXECUTION,

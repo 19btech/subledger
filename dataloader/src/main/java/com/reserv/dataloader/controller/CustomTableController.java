@@ -8,6 +8,7 @@ import com.fyntrac.common.entity.Option;
 import com.fyntrac.common.enums.CustomTableType;
 import com.fyntrac.common.service.CustomTableDefinitionService;
 import com.fyntrac.common.service.DataService;
+import com.reserv.dataloader.exception.AccountingPeriodClosedException;
 import com.reserv.dataloader.exception.CustomTableNotFoundException;
 import com.reserv.dataloader.service.upload.FileUploadService;
 import lombok.extern.slf4j.Slf4j;
@@ -280,6 +281,7 @@ public class CustomTableController {
 
     @Autowired
     FileUploadService fileUploadService;
+
     @PostMapping("/data-upload")
     public ResponseEntity<String> handleFileUpload(@RequestParam("files") MultipartFile[] files) {
         try {
@@ -288,13 +290,57 @@ public class CustomTableController {
             for (MultipartFile file : files) {
                 // Save the file or perform any other operations
                 System.out.println("Received file: " + file.getOriginalFilename());
-                fileUploadService.uploadCustomTableDataFiles(file);
+                fileUploadService.uploadCustomTableDataFiles(Boolean.FALSE,file);
             }
             return ResponseEntity.ok("Files uploaded successfully");
-        } catch (Exception  e) {
+        } catch (AccountingPeriodClosedException e) {
+            // Validation check 1: executionDate falls in a closed accounting period
+            log.warn("Custom table upload rejected – accounting period is closed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("Upload rejected: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            // Validation check 2: postingDate in an OPERATIONAL file is earlier than executionDate
+            log.warn("Custom table upload rejected – postingDate validation failed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body("Upload rejected: " + e.getMessage());
+        } catch (Exception e) {
             String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
             log.error(stackTrace);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload files: cause:" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to upload files: cause:" + e.getMessage());
+        } catch (Throwable e) {
+            log.error(e.getLocalizedMessage());
+            throw new RuntimeException(e);
+        }
+    }
+
+
+    @PostMapping("/data-upload-overwrite")
+    public ResponseEntity<String> handleFileUploadOverwrite(@RequestParam("files") MultipartFile[] files) {
+        try {
+            // Process the uploaded files
+            log.info("Tesing log");
+            for (MultipartFile file : files) {
+                // Save the file or perform any other operations
+                System.out.println("Received file: " + file.getOriginalFilename());
+                fileUploadService.uploadCustomTableDataFiles(Boolean.TRUE,file);
+            }
+            return ResponseEntity.ok("Files uploaded successfully");
+        } catch (AccountingPeriodClosedException e) {
+            // Validation check 1: executionDate falls in a closed accounting period
+            log.warn("Custom table upload rejected – accounting period is closed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("Upload rejected: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            // Validation check 2: postingDate in an OPERATIONAL file is earlier than executionDate
+            log.warn("Custom table upload rejected – postingDate validation failed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body("Upload rejected: " + e.getMessage());
+        } catch (Exception e) {
+            String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
+            log.error(stackTrace);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to upload files: cause:" + e.getMessage());
         } catch (Throwable e) {
             log.error(e.getLocalizedMessage());
             throw new RuntimeException(e);
