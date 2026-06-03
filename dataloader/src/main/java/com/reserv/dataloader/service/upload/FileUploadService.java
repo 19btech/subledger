@@ -140,7 +140,7 @@ public class FileUploadService {
                     if (!activityMap.isEmpty()) {
                         log.info("Validating activity files before upload.");
                         validateActivityFiles(activityMap);
-                        if (isOverwrite) {
+                        if (isOverwrite  && rule == AccountingRules.TRANSACTIONACTIVITY) {
                             ExecutionState executionState = executionStateService.getExecutionState();
                             if (executionState != null && executionState.getExecutionDate() != null && executionState.getExecutionDate() > 0) {
                                 modelExecutionService.cleanupDataForPostingDate(executionState.getExecutionDate(), Boolean.FALSE, Boolean.TRUE);
