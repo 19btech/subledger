@@ -245,7 +245,7 @@ public class ModelController {
     }
 
     @PostMapping("/execute")
-    public ResponseEntity<String> executeModel(@RequestBody Records.DateRequestRecord dateRequestRecord) {
+    public ResponseEntity<String> executeModel(@RequestBody Records.DateRequestRecord dateRequestRecord) throws Exception {
         String tenant = TenantContextHolder.getTenant();
         if (!modelExecutionService.tryAcquireExecutionLock(tenant)) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
@@ -256,11 +256,6 @@ public class ModelController {
             Date executionDate = DateUtil.parseDate(dateRequestRecord.date(), formatter);
             int postingDate = DateUtil.dateInNumber(executionDate);
 
-            // Clean up all derived data for this posting date before re-execution
-           // this.modelExecutionService.cleanupDataForPostingDate(postingDate);
-
-            // Streaming pipeline: generate events page-by-page and dispatch each batch
-            // immediately. Only one page of instrument IDs lives in heap at a time.
             workflowExecutionFactory.execute("EXCEL", tenant, postingDate);
 
             return ResponseEntity.ok("Model executed successfully, for : " + dateRequestRecord.date());
@@ -269,7 +264,8 @@ public class ModelController {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (Exception e) {
             log.error(StringUtil.getStackTrace(e));
-            return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
+            // Let custom extensions like AccountingPeriodClosedException bubble up natively
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (Throwable e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } finally {
@@ -278,33 +274,28 @@ public class ModelController {
     }
 
     @PostMapping("/execute/dsl")
-    public ResponseEntity<String> executeDslModel(@RequestBody Records.DateRequestRecord dateRequestRecord) {
+    public ResponseEntity<String> executeDslModel(@RequestBody Records.DateRequestRecord dateRequestRecord) throws Exception {
         String tenant = TenantContextHolder.getTenant();
         if (!modelExecutionService.tryAcquireExecutionLock(tenant)) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body("A model execution is already running for tenant [" + tenant + "]. Please wait for it to complete.");
         }
         try {
-            // Trigger the Orchestrated Workflow
-            // modelExecutionService.executeDslOrchestrated(dateRequestRecord.date(), postingDate);
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
             Date executionDate = DateUtil.parseDate(dateRequestRecord.date(), formatter);
             int postingDate = DateUtil.dateInNumber(executionDate);
 
-            // Clean up all derived data for this posting date before re-execution
-            // this.modelExecutionService.cleanupDataForPostingDate(postingDate);
-
-            // Streaming pipeline: generate events page-by-page and dispatch each batch
-            // immediately. Only one page of instrument IDs lives in heap at a time.
-            // Trigger the Orchestrated Workflow
             workflowExecutionFactory.execute("DSL", tenant, postingDate);
 
             return ResponseEntity.ok("dsl model execution initiated and completed for: " + dateRequestRecord.date());
+        } catch (IllegalArgumentException e) {
+            log.error(StringUtil.getStackTrace(e));
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (Exception e) {
             log.error(StringUtil.getStackTrace(e));
-            return ResponseEntity.internalServerError().body("An error occurred: " + e.getMessage());
+            // Let custom extensions like AccountingPeriodClosedException bubble up natively
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (Throwable e) {
-            log.error("dsl model execution error: {}", e.getMessage());
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } finally {
             modelExecutionService.releaseExecutionLock(tenant);

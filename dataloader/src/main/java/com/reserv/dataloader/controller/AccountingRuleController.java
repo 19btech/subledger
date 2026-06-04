@@ -64,12 +64,12 @@ public class AccountingRuleController {
             // Validation check 1: executionDate falls in a closed accounting period
             log.warn("Upload rejected – accounting period is closed: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body("Upload rejected: " + e.getMessage());
+                    .body(e.getMessage());
         } catch (IllegalArgumentException e) {
             // Validation check 2: postingDate in uploaded file is earlier than executionDate
             log.warn("Upload rejected – postingDate validation failed: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                    .body("Upload rejected: " + e.getMessage());
+                    .body(e.getMessage());
         } catch (Exception e) {
             String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
             log.error(stackTrace);

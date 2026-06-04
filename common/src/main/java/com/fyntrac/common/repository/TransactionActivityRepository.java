@@ -7,6 +7,7 @@ import org.springframework.data.mongodb.repository.Aggregation;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -65,7 +66,20 @@ public interface TransactionActivityRepository extends MongoRepository<Transacti
             String instrumentId, String attributeId, Integer postingDate, List<String> transactions);
 
     // Delete all TransactionActivity records for a given posting date
+    @Transactional
     void deleteByPostingDate(Integer postingDate);
 
+    @Transactional
+    void deleteByPostingDateGreaterThan(Integer postingDate);
+
+    @Transactional
     void deleteByPostingDateAndSource(Integer postingDate, Source source);
+
+    // Deletes rows where postingDate >= supplied date
+    @Transactional
+    void deleteByPostingDateGreaterThanEqual(Integer postingDate);
+
+    // Deletes rows where postingDate >= supplied date AND source matches exactly
+    @Transactional
+    void deleteByPostingDateGreaterThanEqualAndSource(Integer postingDate, Source source);
 }

@@ -8,6 +8,7 @@ import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import org.springframework.data.mongodb.repository.Aggregation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -74,10 +75,15 @@ public interface EventRepository extends MongoRepository<Event, String> {
     Long countDistinctInstrumentsByPostingDate(Integer postingDate);
 
     // Delete events by instrumentId
+    @Transactional
     void deleteByInstrumentId(String instrumentId);
 
     // Delete events by postingDate
+    @Transactional
     void deleteByPostingDate(Integer postingDate);
+
+    @Transactional
+    void deleteByPostingDateGreaterThanEqual(Integer postingDate);
 
     // Check if event exists by instrumentId and postingDate and eventId
     boolean existsByInstrumentIdAndPostingDateAndEventId(String instrumentId, Integer postingDate, String eventId);

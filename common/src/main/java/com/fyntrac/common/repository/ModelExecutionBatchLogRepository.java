@@ -3,6 +3,7 @@ package com.fyntrac.common.repository;
 import com.fyntrac.common.entity.ModelExecutionBatchLog;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -30,4 +31,10 @@ public interface ModelExecutionBatchLogRepository extends MongoRepository<ModelE
 
     /** Legacy / backwards-compat (no tenant filter). */
     List<ModelExecutionBatchLog> findByPostingDateAndLogType(Integer postingDate, String logType);
+
+    @Transactional
+    void deleteByPostingDate(Integer postingDate);
+
+    @Transactional
+    void deleteByPostingDateGreaterThanEqual(Integer postingDate);
 }

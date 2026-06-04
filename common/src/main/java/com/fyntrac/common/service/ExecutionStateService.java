@@ -1,7 +1,9 @@
 package com.fyntrac.common.service;
 
 import com.fyntrac.common.entity.ExecutionState;
+import com.fyntrac.common.repository.ExecutionStateRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -13,18 +15,21 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.ExecutionException;
 
 @Service
+@Slf4j
 public class ExecutionStateService extends CacheBasedService<ExecutionState> {
 
     private final String key;
+    private final ExecutionStateRepository executionStateRepository;
 
-    public ExecutionStateService(DataService<ExecutionState> dataService, MemcachedRepository memcachedRepository) {
+    public ExecutionStateService(ExecutionStateRepository executionStateRepository, DataService<ExecutionState> dataService, MemcachedRepository memcachedRepository) {
         super(dataService, memcachedRepository);
+        this.executionStateRepository = executionStateRepository;
         this.key = String.format("%s-%s", this.getDataService().getTenantId(), "EXECUTION-STATE");
     }
 
     @Override
     public ExecutionState save(ExecutionState state) {
-        return null;
+        return executionStateRepository.save(state);
     }
 
     /**
@@ -143,5 +148,81 @@ public class ExecutionStateService extends CacheBasedService<ExecutionState> {
     @Override
     public void loadIntoCache() throws ExecutionException, InterruptedException {
         // no-op
+    }
+
+    /**
+     * Retrieves the single execution state matching a specific business posting date.
+     *
+     * @param executionDate The YYYYMMDD formatted integer sequence.
+     * @return The active ExecutionState document metadata.
+     */
+    public ExecutionState getExecutionStateByDate(Integer executionDate) {
+        log.debug("Fetching execution state profile for date context: [{}]", executionDate);
+        return executionStateRepository.findByExecutionDate(executionDate)
+                .orElseThrow(() -> new NoSuchElementException(
+                        "No execution tracking instance found for the specified date: " + executionDate));
+    }
+
+    /**
+     * Retrieves the execution state associated with a previous system runtime date milestone.
+     *
+     * @param lastExecutionDate The historical YYYYMMDD formatted integer boundary.
+     * @return The matching ExecutionState record.
+     */
+    public ExecutionState getExecutionStateByLastDate(Integer lastExecutionDate) {
+        log.debug("Fetching historical execution profile matching prior checkpoint: [{}]", lastExecutionDate);
+        return executionStateRepository.findByLastExecutionDate(lastExecutionDate)
+                .orElseThrow(() -> new NoSuchElementException(
+                        "No execution tracking instance found matching prior checkpoint date: " + lastExecutionDate));
+    }
+
+    /**
+     * Custom JSON query abstraction execution route bypassing standard derived query evaluation pipelines.
+     * Useful for performance critical isolation checks or targeted validation routines.
+     *
+     * @param executionDate The target date configuration.
+     * @return The specific tracking state entity document.
+     */
+    public ExecutionState getCustomExecutionStateByDate(Integer executionDate) {
+        log.debug("Executing optimized custom query mapping for execution target: [{}]", executionDate);
+        return executionStateRepository.findCustomByExecutionDate(executionDate)
+                .orElseThrow(() -> new NoSuchElementException(
+                        "Custom query returned zero matches for execution date constraint: " + executionDate));
+    }
+
+    /**
+     * Deletes a single execution state document matching an exact date configuration.
+     * Typically used for resetting a specific day's batch run configuration.
+     *
+     * @param postingDate The target YYYYMMDD formatted integer.
+     */
+    public void deleteStateByExactDate(Integer postingDate) {
+        log.warn("Initiating targeted deletion of execution state metadata for date: [{}]", postingDate);
+        executionStateRepository.deleteByExecutionDate(postingDate);
+        log.info("Successfully dropped execution state record for date: [{}]", postingDate);
+    }
+
+    /**
+     * Purges the target date AND all future processing timelines from the system (Date >= target).
+     * This is used to roll back the system state during historical reprocessing routines.
+     *
+     * @param postingDate The starting boundary date integer (inclusive).
+     */
+    public void purgeStateFromDateOnwards(Integer postingDate) {
+        log.warn("CRITICAL: Executing rolling purge of all future execution states starting from date (INCLUSIVE): [{}]", postingDate);
+        executionStateRepository.deleteByExecutionDateGreaterThanEqual(postingDate);
+        log.info("Rolling state purge completed successfully for timelines equal to or following: [{}]", postingDate);
+    }
+
+    /**
+     * Purges only strict future processing timelines, preserving the passed date intact (Date > target).
+     * Useful when you want to clear out accidental trailing runs but keep the current day's active state safe.
+     *
+     * @param postingDate The anchor date integer (exclusive boundary).
+     */
+    public void purgeStateStrictlyAfterDate(Integer postingDate) {
+        log.warn("Executing data cleanup for all trailing execution states following date (EXCLUSIVE): [{}]", postingDate);
+        executionStateRepository.deleteByExecutionDateGreaterThan(postingDate);
+        log.info("Strictly post-date state cleanups finalized for timelines ahead of: [{}]", postingDate);
     }
 }
