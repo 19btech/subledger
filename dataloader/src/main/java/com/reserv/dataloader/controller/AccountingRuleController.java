@@ -1,6 +1,7 @@
 package com.reserv.dataloader.controller;
 
 import com.reserv.dataloader.exception.AccountingPeriodClosedException;
+import com.reserv.dataloader.exception.MultiplePostingDatesException;
 import com.reserv.dataloader.service.upload.FileUploadService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +34,10 @@ public class AccountingRuleController {
             log.warn("Upload rejected – accounting period is closed: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body("Upload rejected: " + e.getMessage());
+        } catch (MultiplePostingDatesException e) {
+            log.warn("Upload rejected – multiple posting dates: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("Upload rejected: " + e.getMessage());
         } catch (IllegalArgumentException e) {
             // Validation check 2: postingDate in uploaded file is earlier than executionDate
             log.warn("Upload rejected – postingDate validation failed: {}", e.getMessage());
@@ -63,6 +68,10 @@ public class AccountingRuleController {
         } catch (AccountingPeriodClosedException e) {
             // Validation check 1: executionDate falls in a closed accounting period
             log.warn("Upload rejected – accounting period is closed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(e.getMessage());
+        } catch (MultiplePostingDatesException e) {
+            log.warn("Upload rejected – multiple posting dates: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(e.getMessage());
         } catch (IllegalArgumentException e) {

@@ -24,7 +24,7 @@ public class WorkflowExecutionFactory {
 
     public void execute(String modelType, String tenant, int postingDate) throws Throwable {
         Integer accountingPeriodId = DateUtil.getAccountingPeriodId(postingDate);
-        AccountingPeriod accountingPeriod =  accountingPeriodService.getAccountingPeriod( accountingPeriodId, tenant);
+        AccountingPeriod accountingPeriod =  accountingPeriodService.getAccountingPeriod( accountingPeriodId, tenant, Boolean.TRUE);
         if(accountingPeriod.getStatus() == 1) {
             throw new AccountingPeriodClosedException("Acconting Period [" + accountingPeriod.getPeriod() + "] is closed , you can not execute model on a closed accounting period.");
         }

@@ -12,6 +12,7 @@ import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.FileUtil;
 import com.reserv.dataloader.exception.AccountingPeriodClosedException;
 import com.reserv.dataloader.exception.CustomTableNotFoundException;
+import com.reserv.dataloader.exception.MultiplePostingDatesException;
 import com.reserv.dataloader.utils.ExcelFileUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
@@ -143,13 +144,13 @@ public class FileUploadService {
                 if (!activityProcessed) {
                     if (!activityMap.isEmpty()) {
                         log.info("Validating activity files before upload.");
-                        validateActivityFiles(activityMap);
-                        if (isOverwrite && rule == AccountingRules.TRANSACTIONACTIVITY) {
+                        Integer uploadPostingDate = validateActivityFiles(activityMap);
+                        if (isOverwrite) {
                             ExecutionState executionState = executionStateService.getExecutionState();
                             if (executionState != null && executionState.getExecutionDate() != null
-                                    && executionState.getExecutionDate() > 0) {
+                                    && Objects.equals(executionState.getExecutionDate(), uploadPostingDate)) {
                                 modelExecutionService.cleanupDataForPostingDate(executionState.getExecutionDate(),
-                                        Boolean.FALSE, Boolean.TRUE, Boolean.FALSE);
+                                        Boolean.TRUE, Boolean.TRUE, Boolean.FALSE);
                             }
                         }
                         log.info("Executing sequential activity upload at priority position.");
@@ -193,12 +194,12 @@ public class FileUploadService {
      *                                         &lt; executionDate
      * @throws Exception                       on I/O or service errors
      */
-    private void validateActivityFiles(Map<AccountingRules, String> activityMap)
-            throws AccountingPeriodClosedException, Exception {
+    protected Integer validateActivityFiles(Map<AccountingRules, String> activityMap)
+            throws AccountingPeriodClosedException, MultiplePostingDatesException, Exception {
 
         // ── Fetch active ExecutionState (endDate == null) ────────────────────────
         ExecutionState executionState = executionStateService.getExecutionState();
-        Integer executionDate = executionState.getExecutionDate();
+        Integer executionDate = executionState != null ? executionState.getExecutionDate() : null;
 
         // ── Check 1: executionDate must not fall in a closed AccountingPeriod ────
         if (executionDate != null && executionDate > 0) {
@@ -213,30 +214,39 @@ public class FileUploadService {
         }
 
         // ── Check 2: every postingDate in the uploaded files must be >= executionDate
-        // ──
-        // Skip the scan entirely when no executionDate is set yet (system bootstrap).
-        if (executionDate != null && executionDate > 0) {
-            for (Map.Entry<AccountingRules, String> entry : activityMap.entrySet()) {
-                AccountingRules rule = entry.getKey();
-                String filePath = entry.getValue();
+        // ── Check 3: only one postingDate should exist within and across files
+        Integer finalPostingDate = null;
+        for (Map.Entry<AccountingRules, String> entry : activityMap.entrySet()) {
+            AccountingRules rule = entry.getKey();
+            String filePath = entry.getValue();
 
-                if (filePath == null || filePath.isBlank()) {
-                    continue;
+            if (filePath == null || filePath.isBlank()) {
+                continue;
+            }
+
+            log.info("Validating postingDate in file [{}] for rule [{}]", filePath, rule);
+            Integer filePostingDate = validatePostingDateInFile(filePath, rule.name(), executionDate);
+            if (filePostingDate != null) {
+                if (finalPostingDate == null) {
+                    finalPostingDate = filePostingDate;
+                } else if (!finalPostingDate.equals(filePostingDate)) {
+                    throw new MultiplePostingDatesException(
+                            "Upload rejected: Multiple different posting dates detected across activity files: [" +
+                                    finalPostingDate + "] and [" + filePostingDate + "]. Only a single postingDate is allowed.");
                 }
-
-                log.info("Validating postingDate in file [{}] for rule [{}]", filePath, rule);
-                // Throws IllegalArgumentException on first offending row (early-exit)
-                assertNoPostingDateBeforeExecutionDate(filePath, rule.name(), executionDate);
             }
         }
 
-        log.info("Activity file validation passed (executionDate={}).", executionDate);
+        log.info("Activity file validation passed (executionDate={}, postingDate={}).", executionDate, finalPostingDate);
+        return finalPostingDate;
     }
 
     /**
      * Streams through a CSV file using a large {@link BufferedReader} and throws
      * {@link IllegalArgumentException} as soon as the first row whose POSTINGDATE
-     * column is earlier than {@code executionDate} is encountered.
+     * column is earlier than {@code executionDate} is encountered, and throws
+     * {@link MultiplePostingDatesException} if there is more than one unique
+     * POSTINGDATE value in the file.
      *
      * <p>
      * <strong>Performance notes for large files (millions of rows):</strong>
@@ -252,15 +262,17 @@ public class FileUploadService {
      * @param filePath      absolute path to the CSV file on disk
      * @param fileLabel     human-readable label for this file (rule name or table
      *                      name), used in error messages
-     * @param executionDate the active executionDate in YYYYMMDD integer format
-     * @throws IllegalArgumentException if any row has postingDate &lt;
-     *                                  executionDate
+     * @param executionDate the active executionDate in YYYYMMDD integer format, can be null or <= 0
+     * @return the unique postingDate found in the file, or {@code null} if none
+     * @throws IllegalArgumentException if any row has postingDate < executionDate
+     * @throws MultiplePostingDatesException if multiple postingDates are found
      */
-    private void assertNoPostingDateBeforeExecutionDate(String filePath,
+    private Integer validatePostingDateInFile(String filePath,
             String fileLabel,
-            int executionDate) {
+            Integer executionDate) {
         // 8 MB read buffer — reduces OS read() calls dramatically for large files
         final int BUFFER_SIZE = 8 * 1024 * 1024;
+        Integer singlePostingDate = null;
 
         try (InputStream fis = Files.newInputStream(Path.of(filePath));
                 InputStream bis = new BufferedInputStream(fis, BUFFER_SIZE);
@@ -271,13 +283,13 @@ public class FileUploadService {
             String headerLine = reader.readLine();
             if (headerLine == null) {
                 log.warn("File [{}] is empty; skipping postingDate validation.", filePath);
-                return;
+                return null;
             }
 
             int postingDateColIndex = findColumnIndex(headerLine, "POSTINGDATE");
             if (postingDateColIndex < 0) {
                 log.warn("No POSTINGDATE column found in [{}]; skipping postingDate validation.", filePath);
-                return;
+                return null;
             }
 
             // ── Stream through data rows — early-exit on first violation ─────────
@@ -295,32 +307,47 @@ public class FileUploadService {
                 }
 
                 Date postingDate = DateUtil.parseAnyFormat(rawValue);
-                // 1. Instantiate the formatter inline with the required pattern
-                java.text.SimpleDateFormat msgDateFormat = new java.text.SimpleDateFormat("MM/dd/yyyy");
-
-                // 2. Format your Java Date object
-                String formattedPostingDate = msgDateFormat.format(postingDate);
-                Date execDate = DateUtil.convertToDateFromYYYYMMDD(executionDate);
-                String formattedExecutionDate = msgDateFormat.format(execDate);
+                int intPostingDate;
                 try {
-                    int intPostingDate = DateUtil.convertToIntYYYYMMDDFromJavaDate(postingDate);
+                    intPostingDate = DateUtil.convertToIntYYYYMMDDFromJavaDate(postingDate);
+                } catch (Exception nfe) {
+                    log.warn("Non-numeric/invalid POSTINGDATE value [{}] at line {} in [{}]; skipping row.",
+                            rawValue, lineNumber, filePath);
+                    continue;
+                }
+
+                // Check 2: postingDate >= executionDate
+                if (executionDate != null && executionDate > 0) {
                     if (intPostingDate < executionDate) {
+                        java.text.SimpleDateFormat msgDateFormat = new java.text.SimpleDateFormat("MM/dd/yyyy");
+                        String formattedPostingDate = msgDateFormat.format(postingDate);
+                        Date execDate = DateUtil.convertToDateFromYYYYMMDD(executionDate);
+                        String formattedExecutionDate = msgDateFormat.format(execDate);
                         // Fail fast — no need to read the rest of the file
                         throw new IllegalArgumentException(
                                 "Upload rejected for [" + fileLabel + "]: row " + lineNumber +
                                         " has postingDate [" + formattedPostingDate + "] which is earlier than" +
                                         " the current executionDate [" + formattedExecutionDate + "]. ");
                     }
-                } catch (NumberFormatException nfe) {
-                    log.warn("Non-numeric POSTINGDATE value [{}] at line {} in [{}]; skipping row.",
-                            rawValue, lineNumber, filePath);
+                }
+
+                // Check 3: single postingDate in file
+                if (singlePostingDate == null) {
+                    singlePostingDate = intPostingDate;
+                } else if (!singlePostingDate.equals(intPostingDate)) {
+                    throw new MultiplePostingDatesException(
+                            "Upload rejected for [" + fileLabel + "]: row " + lineNumber +
+                                    " has postingDate [" + intPostingDate + "] which differs from the initial" +
+                                    " postingDate [" + singlePostingDate + "] found in the same file. " +
+                                    "Multiple posting dates are not allowed.");
                 }
             }
 
-            log.info("postingDate validation passed for [{}] ({} data lines scanned).",
-                    filePath, lineNumber - 1);
+            log.info("postingDate validation passed for [{}] ({} data lines scanned, single postingDate = {}).",
+                    filePath, lineNumber - 1, singlePostingDate);
+            return singlePostingDate;
 
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException  e) {
             throw e; // re-throw validation failures as-is
         } catch (Exception e) {
             log.error("Failed to validate POSTINGDATE in [{}]: {}", filePath, e.getMessage(), e);
@@ -527,7 +554,7 @@ public class FileUploadService {
             log.info("Validating postingDate in OPERATIONAL custom table file [{}] for table [{}]",
                     filePath, tableDef.getTableName());
             // Reuse the same fast early-exit scanner from activity validation
-            assertNoPostingDateBeforeExecutionDate(filePath, tableDef.getTableName(), executionDate);
+            validatePostingDateInFile(filePath, tableDef.getTableName(), executionDate);
         }
 
         log.info("Custom table file validation passed (executionDate={}).", executionDate);
