@@ -580,13 +580,13 @@ public class RecordFactory {
         return createRecord(() -> new Records.CustomTableColumnsRecord(tableName, columns));
     }
 
-    public static Records.ActivityLogDetailRecord createActivityLogDetailRecord(String tableName, Long recordsRead,
+    public static Records.ActivityLogDetailRecord createActivityLogDetailRecord(String tableName, String fileName, Long recordsRead,
                                                                                 Long recordsWritten,
                                                                                 Long recordsSkipped,
                                                                                 LocalDateTime startTime,
                                                                                 LocalDateTime endTime,
                                                                                 String errorMessage) {
-        return createRecord(() -> new Records.ActivityLogDetailRecord(tableName, recordsRead, recordsWritten,
+        return createRecord(() -> new Records.ActivityLogDetailRecord(tableName, fileName, recordsRead, recordsWritten,
                 recordsSkipped, startTime, endTime, errorMessage));
     }
 

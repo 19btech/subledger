@@ -556,7 +556,7 @@ public class Records {
         private static final long serialVersionUID = -7350503432076490961L;
     }
 
-    public record ActivityLogDetailRecord(String tableName, Long recordsRead,
+    public record ActivityLogDetailRecord(String tableName,String fileName, Long recordsRead,
                                           Long recordsWritten,
                                           Long recordsSkipped,
                                           LocalDateTime starting,

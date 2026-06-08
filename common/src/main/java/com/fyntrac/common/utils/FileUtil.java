@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 
 public class FileUtil {
 
@@ -48,5 +49,18 @@ public class FileUtil {
         int lastDot = name.lastIndexOf('.');
 
         return lastDot == -1 ? name : name.substring(0, lastDot);
+    }
+
+    /**
+     * get File name from path
+     * @param fullPath
+     * @return
+     */
+    public static String getFileNameFromPath(String fullPath) {
+        if (fullPath == null || fullPath.isBlank()) {
+            return "";
+        }
+        // Converts to a Path object and gets the last node element
+        return Paths.get(fullPath).getFileName().toString();
     }
 }

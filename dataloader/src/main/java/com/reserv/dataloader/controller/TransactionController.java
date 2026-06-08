@@ -109,4 +109,32 @@ public class TransactionController {
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+
+    @DeleteMapping("/delete/{id}")
+    public ResponseEntity<Void> deleteTransactionById(@PathVariable String id) {
+        try {
+            transactionService.removeTransactionById(id);
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        } catch (Exception e) {
+            log.error("Error deleting transaction by ID [{}]: {}", id, e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @DeleteMapping("/delete/name/{name}")
+    public ResponseEntity<Void> deleteTransactionByName(@PathVariable String name) {
+        try {
+            transactionService.removeTransactionByName(name);
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        } catch (java.util.NoSuchElementException e) {
+            log.warn("Transaction not found for deletion by name [{}]: {}", name, e.getMessage());
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid name argument for deletion: {}", e.getMessage());
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+        } catch (Exception e) {
+            log.error("Error deleting transaction by name [{}]: {}", name, e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
 }

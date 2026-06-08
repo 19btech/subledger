@@ -32,7 +32,7 @@ public abstract class UploadService {
     @Autowired
     private ExecutionStateService executionStateService;
 
-    public abstract void uploadData(long uploadId, String filePath) throws JobInstanceAlreadyCompleteException,
+    public abstract void uploadData(boolean isOverwrite,long uploadId, String filePath) throws JobInstanceAlreadyCompleteException,
             JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException;
 
     public void uploadData(long uploadId,JobLauncher jobLauncher, Job job, String filePath, FileUploadActivityType activityType) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {

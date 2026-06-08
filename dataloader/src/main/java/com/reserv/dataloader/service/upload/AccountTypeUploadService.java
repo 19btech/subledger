@@ -22,7 +22,7 @@ public class AccountTypeUploadService extends UploadService {
     @Autowired
     protected JobLauncher jobLauncher;
 
-    public void uploadData(long uploadId, String filePath) throws JobInstanceAlreadyCompleteException,
+    public void uploadData(boolean isOverwrite,long uploadId, String filePath) throws JobInstanceAlreadyCompleteException,
             JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
         super.uploadData(uploadId,jobLauncher, accountTypeUploadJob, filePath, FileUploadActivityType.ACCOUNT_TYPE);
     }
