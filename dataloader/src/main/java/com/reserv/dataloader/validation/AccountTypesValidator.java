@@ -37,6 +37,11 @@ public class AccountTypesValidator {
         if (subType == null || subType.trim().isEmpty()) {
             errors.add(createError("accountSubType", subType, ErrorCode.ERR_REQ_01, "Account Sub Type is required and cannot be empty."));
         } else {
+            // Double-space check (single internal spaces are allowed, e.g. "Accrued Interest")
+            if (subType.contains("  ")) {
+                errors.add(createError("accountSubType", subType, ErrorCode.ERR_SPC_01, "Account Sub Type contains double spaces."));
+            }
+
             // Trim check
             if (!subType.equals(subType.trim())) {
                 errors.add(createError("accountSubType", subType, ErrorCode.ERR_SPC_02, "Account Sub Type has leading or trailing spaces."));
@@ -44,9 +49,10 @@ public class AccountTypesValidator {
 
             String trimmedSubType = subType.trim().toUpperCase();
 
-            // Duplicate in file check
+            // Duplicate check - seenSubTypes is preloaded with existing DB records plus
+            // anything already seen in this file, so this catches both cases.
             if (seenSubTypes.contains(trimmedSubType)) {
-                errors.add(createError("accountSubType", subType, ErrorCode.ERR_DUP_01, "Duplicate value: Account Sub Type '" + subType + "' already exists in the same file."));
+                errors.add(createError("accountSubType", subType, ErrorCode.ERR_DUP_01, "Duplicate value: Account Sub Type '" + subType + "' already exists."));
             }
         }
 

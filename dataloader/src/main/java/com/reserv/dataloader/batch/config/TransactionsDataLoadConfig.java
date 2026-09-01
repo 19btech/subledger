@@ -88,13 +88,21 @@ public class TransactionsDataLoadConfig {
                 .build();
     }
 
+    // Declared to return the concrete TransactionsItemProcessor type, not the ItemProcessor
+    // interface: with @StepScope's TARGET_CLASS proxy mode, Spring needs the factory method's
+    // return type to be a concrete class to CGLIB-subclass it. Returning the bare interface here
+    // made Spring silently fall back to a JDK interface-only proxy that exposes nothing but
+    // process(Object) — beforeStep() never existed on that proxy, so it never fired, and the
+    // duplicate-name preload never ran. (Compare AggregationDataLoadConfig's aggregateItemProcessor
+    // / accountTypesItemProcessor, which already return their concrete class and work correctly.)
     @Bean
     @StepScope
-    public ItemProcessor<Transactions, Transactions> transactionsItemProcessor(
+    public TransactionsItemProcessor transactionsItemProcessor(
             com.reserv.dataloader.validation.TransactionValidator validator,
             com.fyntrac.common.repository.RefDataValidationLogRepository validationLogRepository,
-            com.fyntrac.common.repository.MemcachedRepository memcachedRepository) {
-        return new TransactionsItemProcessor(validator, validationLogRepository, memcachedRepository);
+            com.fyntrac.common.repository.MemcachedRepository memcachedRepository,
+            com.fyntrac.common.repository.TransactionsRepository transactionsRepository) {
+        return new TransactionsItemProcessor(validator, validationLogRepository, memcachedRepository, transactionsRepository);
     }
 
     @Bean()
@@ -121,7 +129,7 @@ public class TransactionsDataLoadConfig {
             public Transactions mapFieldSet(FieldSet fieldSet) throws BindException {
                 Transactions transaction = new Transactions();
                 transaction.setName(readStringSafe(fieldSet, "NAME"));
-                transaction.setExclusive(parseExclusive(readStringSafe(fieldSet, "EXCLUSIVE", "REPORTABLE")));
+                transaction.setExclusive(parseBooleanFlag(readStringSafe(fieldSet, "EXCLUSIVE", "REPORTABLE")));
                 transaction.setIsGL(parseBooleanFlag(readStringSafe(fieldSet, "ISGL", "JOURNAL")));
                 transaction.setIsReplayable(parseBooleanFlag(readStringSafe(fieldSet, "ISREPLAYABLE", "REPLAYABLE")));
                 return transaction;
@@ -147,16 +155,6 @@ public class TransactionsDataLoadConfig {
                 if (val.equals("false") || val.equals("0") || val.equals("0.0"))
                     return 0;
                 return -1; // invalid
-            }
-
-            private int parseExclusive(String val) {
-                if (val == null || val.trim().isEmpty())
-                    return 0;
-                try {
-                    return (int) Double.parseDouble(val.trim());
-                } catch (NumberFormatException e) {
-                    return -1;
-                }
             }
         });
 

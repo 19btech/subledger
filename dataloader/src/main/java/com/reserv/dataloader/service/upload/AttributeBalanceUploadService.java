@@ -1,6 +1,7 @@
 package com.reserv.dataloader.service.upload;
 
 import com.fyntrac.common.enums.FileUploadActivityType;
+import com.fyntrac.common.repository.AttributesRepository;
 import com.fyntrac.common.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
@@ -26,7 +27,7 @@ public class AttributeBalanceUploadService extends UploadService {
     @Autowired
     protected JobLauncher jobLauncher;
 
-    public void uploadData(long uploadId,String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException {
+    public void uploadData(boolean isOverwrite,long uploadId, String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException {
         LocalDateTime startingTime = DateUtil.getDateTime();
         long runid = System.currentTimeMillis();
         StringBuilder columnNames = new StringBuilder();

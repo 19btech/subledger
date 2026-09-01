@@ -89,9 +89,15 @@ public class AttributesDataLoadConfig {
                 .build();
     }
 
+    // Declared to return the concrete AttributesItemProcessor type, not the ItemProcessor
+    // interface: with @StepScope's TARGET_CLASS proxy mode, Spring needs the factory method's
+    // return type to be a concrete class to CGLIB-subclass it. Returning the bare interface here
+    // made Spring silently fall back to a JDK interface-only proxy that exposes nothing but
+    // process(Object) — beforeStep() never existed on that proxy, so it never fired, and the
+    // duplicate-name preload never ran (see TransactionsDataLoadConfig for the same bug).
     @Bean
     @StepScope
-    public ItemProcessor<Attributes, Attributes> attributeItemProcessor(
+    public AttributesItemProcessor attributeItemProcessor(
             com.reserv.dataloader.validation.AttributesValidator validator,
             @org.springframework.beans.factory.annotation.Autowired(required = false) com.fyntrac.common.repository.AttributesRepository attributesRepository,
             @org.springframework.beans.factory.annotation.Autowired(required = false) com.fyntrac.common.repository.RefDataValidationLogRepository validationLogRepository) {

@@ -94,7 +94,7 @@ public class TestDataFileUploadService extends FileUploadService {
     }
 
     @Override
-    public void uploadFiles(boolean isOverwrite, MultipartFile... files) throws Throwable {
+    public long uploadFiles(boolean isOverwrite, MultipartFile... files) throws Throwable {
         log.info("Starting upload process for {} file(s)", files.length);
 
         Collection<AccountingPeriod> accountingPeriods = accountingPeriodService.getAccountingPeriods();
@@ -166,11 +166,12 @@ public class TestDataFileUploadService extends FileUploadService {
                 inputFiles.addAll(tmpFileList);
 
             }
-            super.uploadFiles(Boolean.FALSE, files);
+            long uploadId = super.uploadFiles(Boolean.FALSE, files);
 
             this.saveDataFiles(inputFiles);
 
             log.info("File upload process completed successfully");
+            return uploadId;
         } catch (Throwable t) {
             log.error("Error in superclass file upload handling", t);
             throw t;

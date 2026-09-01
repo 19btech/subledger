@@ -72,7 +72,7 @@ public class FileUploadService {
         this.modelExecutionService = modelExecutionService;
     }
 
-    public void uploadFiles(boolean isOverwrite, MultipartFile... files) throws Throwable {
+    public long uploadFiles(boolean isOverwrite, MultipartFile... files) throws Throwable {
 
         String FOLDER_PATH = System.getProperty("user.home") + File.separator + "tenants" + File.separator
                 + tenantContextHolder.getTenant() + File.separator;
@@ -161,10 +161,11 @@ public class FileUploadService {
             } else {
                 log.info("Executing sequential file upload for rule: {} (Priority: {})", rule, rule.getPriority());
                 UploadService uploadService = UploadServiceFactory.getFileUploader(rule);
-                uploadService.uploadData(uploadId, file);
+                uploadService.uploadData(isOverwrite, uploadId, file);
             }
         }
 
+        return uploadId;
     }
 
     /**

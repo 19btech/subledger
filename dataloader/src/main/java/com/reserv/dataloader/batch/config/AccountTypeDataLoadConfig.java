@@ -17,6 +17,7 @@ import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.batch.item.data.builder.MongoItemWriterBuilder;
@@ -65,19 +66,43 @@ public class AccountTypeDataLoadConfig {
     }
 
     @Bean
-    public Step accountTypeImportStep() {
+    public Step accountTypeImportStep(
+            ItemProcessor<AccountTypes, AccountTypes> accountTypeItemProcessor,
+            ItemReader<AccountTypes> accountTypeFileReader,
+            ItemWriter<AccountTypes> accountTypeItemWriter,
+            com.reserv.dataloader.batch.listener.ValidationLoggingListener validationLoggingListener) {
         return new StepBuilder("accountTypeImportStep", jobRepository)
                 .<AccountTypes, AccountTypes>chunk(10, new ResourcelessTransactionManager())
-                .reader(accountTypeFileReader(""))
-                .processor(accountTypeItemProcessor())
-                .writer(accountTypeItemWriter(dataSourceProvider,
-                        tenantContextHolder))
+                .reader(accountTypeFileReader)
+                .processor(accountTypeItemProcessor)
+                .faultTolerant()
+                .skip(com.reserv.dataloader.batch.exception.ItemValidationException.class)
+                .skipLimit(Integer.MAX_VALUE)
+                .listener((org.springframework.batch.core.StepExecutionListener) validationLoggingListener)
+                .listener((org.springframework.batch.core.ItemProcessListener) validationLoggingListener)
+                // Registering the processor itself as a listener too: .processor(...) alone does not
+                // wire up its StepExecutionListener callbacks — without this, beforeStep() never ran
+                // regardless of the @Bean return-type fix above, and the DB preload never happened.
+                .listener(accountTypeItemProcessor)
+                .writer(accountTypeItemWriter)
                 .build();
     }
 
+    // Declared to return the concrete AccountTypeItemProcessor type, not the ItemProcessor
+    // interface: with @StepScope's TARGET_CLASS proxy mode, Spring needs the factory method's
+    // return type to be a concrete class to CGLIB-subclass it. Returning the bare interface here
+    // made Spring silently fall back to a JDK interface-only proxy that exposes nothing but
+    // process(Object) — beforeStep() never existed on that proxy, so it never fired, the DB
+    // preload of existing account subtypes never ran, and duplicate account types slipped
+    // through undetected (same bug as TransactionsDataLoadConfig/AttributesDataLoadConfig, and
+    // this is the one that's actually wired up — see AccountTypeUploadService).
     @Bean
-    public ItemProcessor<AccountTypes, AccountTypes> accountTypeItemProcessor() {
-        return new AccountTypeItemProcessor();
+    @StepScope
+    public AccountTypeItemProcessor accountTypeItemProcessor(
+            com.reserv.dataloader.validation.AccountTypesValidator validator,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) com.fyntrac.common.repository.AccountTypesRepository accountTypesRepository,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) com.fyntrac.common.repository.RefDataValidationLogRepository validationLogRepository) {
+        return new AccountTypeItemProcessor(validator, accountTypesRepository, validationLogRepository);
     }
 
     @Bean()

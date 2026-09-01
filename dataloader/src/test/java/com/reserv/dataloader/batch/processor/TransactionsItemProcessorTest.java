@@ -12,10 +12,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import com.reserv.dataloader.batch.exception.ItemValidationException;
 import org.springframework.batch.core.JobExecution;
+import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.StepExecution;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class TransactionsItemProcessorTest {
@@ -29,14 +32,17 @@ class TransactionsItemProcessorTest {
     @Mock
     private com.fyntrac.common.repository.MemcachedRepository memcachedRepository;
 
+    @Mock
+    private com.fyntrac.common.repository.TransactionsRepository transactionsRepository;
+
     private com.reserv.dataloader.validation.TransactionValidator validator;
     private TransactionsItemProcessor processor;
 
     @BeforeEach
     void setUp() {
         validator = new com.reserv.dataloader.validation.TransactionValidator(transactionService);
-        processor = new TransactionsItemProcessor(validator, validationLogRepository, memcachedRepository);
-        
+        processor = new TransactionsItemProcessor(validator, validationLogRepository, memcachedRepository, transactionsRepository);
+
         JobExecution jobExecution = new JobExecution(101L);
         StepExecution stepExecution = new StepExecution("transactionImportStep", jobExecution);
         processor.beforeStep(stepExecution);
@@ -73,9 +79,32 @@ class TransactionsItemProcessorTest {
     }
 
     @Test
-    void testSpacesInNameReturnsNull() throws Exception {
+    void testDoubleSpacesInNameReturnsNull() throws Exception {
         Transactions item = new Transactions();
-        item.setName("Invalid Name"); 
+        item.setName("Invalid  Name"); // Double space
+        item.setIsGL(1);
+        item.setIsReplayable(1);
+
+        Transactions result = processor.process(item);
+        assertNull(result);
+    }
+
+    @Test
+    void testSingleInternalSpaceInNameIsAccepted() throws Exception {
+        Transactions item = new Transactions();
+        item.setName("Loan Payment"); // Single internal space is allowed
+        item.setIsGL(1);
+        item.setIsReplayable(1);
+
+        Transactions result = processor.process(item);
+        assertNotNull(result);
+        assertEquals("Loan Payment", result.getName());
+    }
+
+    @Test
+    void testLeadingTrailingSpaceReturnsNull() throws Exception {
+        Transactions item = new Transactions();
+        item.setName(" Loan Payment");
         item.setIsGL(1);
         item.setIsReplayable(1);
 
@@ -111,6 +140,33 @@ class TransactionsItemProcessorTest {
 
         Transactions result2 = processor.process(item2);
         assertNull(result2, "Should return null to filter out file-level duplicates silently");
+    }
+
+    @Test
+    void testDuplicateAlreadyInDbIsCaughtOnReUpload() throws Exception {
+        // Simulate the exact bug scenario: same file uploaded a second time, so the
+        // transaction name is already persisted in the DB from a prior job run.
+        Transactions existingRecord = new Transactions();
+        existingRecord.setName("DB_TXN_NAME");
+
+        when(transactionsRepository.findAll()).thenReturn(Collections.singletonList(existingRecord));
+
+        org.springframework.batch.core.JobParameters jobParams = new JobParametersBuilder()
+                .addString("tenantId", "tenant123")
+                .toJobParameters();
+        JobExecution jobExecution = new JobExecution(103L, jobParams);
+        StepExecution stepExecution = new StepExecution("transactionImportStep", jobExecution);
+        processor.beforeStep(stepExecution);
+
+        Transactions item = new Transactions();
+        item.setName("DB_TXN_NAME"); // Matches preloaded DB record
+        item.setIsGL(1);
+        item.setIsReplayable(1);
+
+        Transactions result = processor.process(item);
+
+        assertNull(result, "Should filter out item whose name already exists in the database");
+        verify(validationLogRepository, times(1)).saveAll(anyList());
     }
 
     @Test

@@ -176,7 +176,32 @@ class SubledgerMappingValidatorTest {
     }
 
     @Test
-    void validate_EntryTypeConflict_ThrowsLogicEntryConflict() {
+    void validate_DebitCreditShareSameSubtype_ThrowsLogicSubtypeClash() {
+        SubledgerMapping item1 = new SubledgerMapping();
+        item1.setTransactionName("TX1");
+        item1.setSign(Sign.POSITIVE);
+        item1.setEntryType(EntryType.DEBIT);
+        item1.setAccountSubType("ACC1");
+
+        SubledgerMapping item2 = new SubledgerMapping();
+        item2.setTransactionName("TX1");
+        item2.setSign(Sign.POSITIVE);
+        item2.setEntryType(EntryType.CREDIT);
+        item2.setAccountSubType("ACC1"); // same subtype as item1's Debit entry
+
+        validator.validate(item1, validTxNames, validAccSubTypes);
+
+        ItemValidationException ex = assertThrows(ItemValidationException.class, () -> validator.validate(item2, validTxNames, validAccSubTypes));
+        assertTrue(ex.getValidationErrors().stream().anyMatch(e -> e.getErrorCode().equals(ErrorCode.ERR_LOGIC_06.getCode())));
+    }
+
+    @Test
+    void validate_DebitCreditPairWithDifferentSubtypes_BothPass() {
+        // This is the normal, expected shape of a subledger mapping: the same
+        // transactionName+sign has one DEBIT leg and one CREDIT leg, posting to two
+        // different account subtypes (e.g. Debit Principal / Credit Cash Receivable).
+        // A prior version of this rule rejected every such pair (see the removed
+        // ERR_LOGIC_05 "Entry Type Conflict" check) — this asserts that regression stays fixed.
         SubledgerMapping item1 = new SubledgerMapping();
         item1.setTransactionName("TX1");
         item1.setSign(Sign.POSITIVE);
@@ -189,9 +214,7 @@ class SubledgerMappingValidatorTest {
         item2.setEntryType(EntryType.CREDIT);
         item2.setAccountSubType("ACC2");
 
-        validator.validate(item1, validTxNames, validAccSubTypes);
-
-        ItemValidationException ex = assertThrows(ItemValidationException.class, () -> validator.validate(item2, validTxNames, validAccSubTypes));
-        assertTrue(ex.getValidationErrors().stream().anyMatch(e -> e.getErrorCode().equals(ErrorCode.ERR_LOGIC_05.getCode())));
+        assertDoesNotThrow(() -> validator.validate(item1, validTxNames, validAccSubTypes));
+        assertDoesNotThrow(() -> validator.validate(item2, validTxNames, validAccSubTypes));
     }
 }

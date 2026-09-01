@@ -111,8 +111,9 @@ public class SubledgerMappingDataLoadConfig {
             SubledgerMappingValidator validator,
             TransactionsRepository transactionsRepository,
             AccountTypesRepository accountTypesRepository,
+            com.fyntrac.common.repository.SubledgerMappingRepository subledgerMappingRepository,
             RefDataValidationLogRepository validationLogRepository) {
-        return new SubledgerMappingItemProcessor(validator, transactionsRepository, accountTypesRepository, validationLogRepository);
+        return new SubledgerMappingItemProcessor(validator, transactionsRepository, accountTypesRepository, subledgerMappingRepository, validationLogRepository);
     }
 
     @Bean()

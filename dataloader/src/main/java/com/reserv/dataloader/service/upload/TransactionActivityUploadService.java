@@ -45,7 +45,7 @@ public class TransactionActivityUploadService extends UploadService {
         this.transactionActivityService = transactionActivityService;
         this.cacheService = cacheService;
     }
-    public void uploadData(long uploadId,String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+    public void uploadData(boolean isOverwrite,long uploadId, String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
         this.uploadData(uploadId,jobLauncher, transactionActivityUploadJob, filePath,
                 FileUploadActivityType.TRANSACTION_ACTIVITY);
     }

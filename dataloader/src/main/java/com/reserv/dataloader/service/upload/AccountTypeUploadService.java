@@ -1,6 +1,7 @@
 package com.reserv.dataloader.service.upload;
 
 import  com.fyntrac.common.enums.FileUploadActivityType;
+import com.fyntrac.common.repository.AccountTypesRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParametersInvalidException;
@@ -22,8 +23,15 @@ public class AccountTypeUploadService extends UploadService {
     @Autowired
     protected JobLauncher jobLauncher;
 
+    @Autowired
+    AccountTypesRepository accountTypesRepository;
+
     public void uploadData(boolean isOverwrite,long uploadId, String filePath) throws JobInstanceAlreadyCompleteException,
             JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+        if (isOverwrite) {
+            log.info("Overwrite requested: purging existing AccountTypes before reload.");
+            accountTypesRepository.deleteAll();
+        }
         super.uploadData(uploadId,jobLauncher, accountTypeUploadJob, filePath, FileUploadActivityType.ACCOUNT_TYPE);
     }
 }

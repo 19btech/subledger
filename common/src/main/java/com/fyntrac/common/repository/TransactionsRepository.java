@@ -58,4 +58,7 @@ public interface TransactionsRepository extends MongoRepository<Transactions, St
     @Query("{ '$or': [ { 'isDeleted': false }, { 'isDeleted': { '$exists': false } } ] }")
     List<Transactions> findByIsDeletedFalse();
 
+    void deleteById(String id);
+    void delete(Transactions entity);
+    void deleteAll();
 }

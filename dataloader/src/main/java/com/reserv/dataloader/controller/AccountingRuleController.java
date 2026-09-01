@@ -23,12 +23,13 @@ public class AccountingRuleController {
         try {
             // Process the uploaded files
             log.info("Tesing log");
+            long uploadId = 0;
             for (MultipartFile file : files) {
                 // Save the file or perform any other operations
                 System.out.println("Received file: " + file.getOriginalFilename());
-                fileUploadService.uploadFiles(Boolean.FALSE, file);
+                uploadId = fileUploadService.uploadFiles(Boolean.FALSE, file);
             }
-            return ResponseEntity.ok("Files uploaded successfully");
+            return ResponseEntity.ok("Files uploaded successfully. uploadId=" + uploadId);
         } catch (AccountingPeriodClosedException e) {
             // Validation check 1: executionDate falls in a closed accounting period
             log.warn("Upload rejected – accounting period is closed: {}", e.getMessage());
@@ -59,12 +60,13 @@ public class AccountingRuleController {
         try {
             // Process the uploaded files
             log.info("Tesing log");
+            long uploadId = 0;
             for (MultipartFile file : files) {
                 // Save the file or perform any other operations
                 System.out.println("Received file: " + file.getOriginalFilename());
-                fileUploadService.uploadFiles(Boolean.TRUE, file);
+                uploadId = fileUploadService.uploadFiles(Boolean.TRUE, file);
             }
-            return ResponseEntity.ok("Files uploaded successfully");
+            return ResponseEntity.ok("Files uploaded successfully. uploadId=" + uploadId);
         } catch (AccountingPeriodClosedException e) {
             // Validation check 1: executionDate falls in a closed accounting period
             log.warn("Upload rejected – accounting period is closed: {}", e.getMessage());

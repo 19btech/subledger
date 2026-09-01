@@ -93,7 +93,8 @@ public class InstrumentAttributeDataLoadConfig {
     @Bean
     public Step instrumentAttributeImportStep(
             ItemProcessor<Map<String, Object>, InstrumentAttribute> instrumentAttributeItemProcessor,
-            ValidationLoggingListener validationLoggingListener) throws IOException {
+            ValidationLoggingListener validationLoggingListener,
+            AttributesRepository attributesRepository) throws IOException {
         return new StepBuilder("instrumentAttributeImportStep", jobRepository)
                 .<Map<String, Object>, InstrumentAttribute>chunk(10, new ResourcelessTransactionManager())
                 .reader(this.batchCommonConfig.genericReader(""))
@@ -109,7 +110,8 @@ public class InstrumentAttributeDataLoadConfig {
                         memcachedRepository,
                         instrumentAttributeService,
                         accountingPeriodService,
-                        executionStateService))
+                        executionStateService,
+                        attributesRepository))
                 .build();
     }
 
@@ -136,7 +138,8 @@ public class InstrumentAttributeDataLoadConfig {
             MemcachedRepository memcachedRepository,
             InstrumentAttributeService instrumentAttributeService,
             AccountingPeriodService accountingPeriodService,
-            ExecutionStateService executionStateService) {
+            ExecutionStateService executionStateService,
+            AttributesRepository attributesRepository) {
 
         MongoItemWriter<InstrumentAttribute> delegate = new MongoItemWriterBuilder<InstrumentAttribute>()
                 .template(mongoTemplate)
@@ -144,6 +147,6 @@ public class InstrumentAttributeDataLoadConfig {
                 .build();
 
         return new InstrumentAttributeWriter(delegate, dataSourceProvider, memcachedRepository,
-                instrumentAttributeService, accountingPeriodService, executionStateService);
+                instrumentAttributeService, accountingPeriodService, executionStateService, attributesRepository);
     }
 }

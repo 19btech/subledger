@@ -94,8 +94,11 @@ ChartOfAccountDataLoadConfig {
 
     @Bean
     @StepScope
-    public ChartOfAccountValidator chartOfAccountValidator(com.fyntrac.common.repository.AccountTypesRepository accountTypesRepository) {
-        return new ChartOfAccountValidator(accountTypesRepository);
+    public ChartOfAccountValidator chartOfAccountValidator(
+            com.fyntrac.common.repository.AccountTypesRepository accountTypesRepository,
+            com.fyntrac.common.repository.AttributesRepository attributesRepository,
+            com.fyntrac.common.repository.ChartOfAccountRepository chartOfAccountRepository) {
+        return new ChartOfAccountValidator(accountTypesRepository, attributesRepository, chartOfAccountRepository);
     }
 
     @Bean

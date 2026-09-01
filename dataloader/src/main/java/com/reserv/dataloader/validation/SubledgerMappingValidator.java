@@ -15,8 +15,9 @@ public class SubledgerMappingValidator {
 
     // State for composite validations
     private final Map<String, String> transactionToSignMap = new ConcurrentHashMap<>();
-    private final Map<String, String> transactionSignToEntryTypeMap = new ConcurrentHashMap<>();
-    private final Set<String> transactionSignAccountSubTypeKeys = ConcurrentHashMap.newKeySet();
+    // Keyed by transactionName|sign|accountSubType -> first-seen entryType, so a repeat of the
+    // same entryType can be told apart from the opposite entryType (Rule 2: Debit/Credit clash).
+    private final Map<String, String> transactionSignSubTypeToEntryTypeMap = new ConcurrentHashMap<>();
 
     public SubledgerMappingValidator() {
     }
@@ -97,19 +98,27 @@ public class SubledgerMappingValidator {
                 errors.add(new ItemValidationException.ValidationError("sign", signStr, ErrorCode.ERR_LOGIC_04.getCode(), ErrorCode.ERR_LOGIC_04.getName(), "ERROR"));
             }
 
-            // Rule 3: transactionName + sign + entryType (Entry Type Conflict)
-            // Multiple entryTypes for same transactionName + sign
-            String txSignKey = upperTxName + "|" + signStr;
-            String existingEntryType = transactionSignToEntryTypeMap.putIfAbsent(txSignKey, entryTypeStr);
-            if (existingEntryType != null && !existingEntryType.equals(entryTypeStr)) {
-                errors.add(new ItemValidationException.ValidationError("entryType", entryTypeStr, ErrorCode.ERR_LOGIC_05.getCode(), ErrorCode.ERR_LOGIC_05.getName(), "ERROR"));
-            }
+            // NOTE: a same transactionName+sign pair legitimately has both a DEBIT and a CREDIT
+            // row (that's the normal shape of a double-entry mapping — e.g. Debit Principal /
+            // Credit Cash Receivable for the same transaction). There used to be a blanket
+            // "only one entryType per transactionName+sign, ever" check here; it rejected every
+            // valid two-legged mapping (every credit row, since the debit row always lands first)
+            // and is superseded by the subtype-aware checks below, which correctly distinguish a
+            // legitimate Debit/Credit pair (different accountSubType) from a real conflict (same
+            // entryType+accountSubType repeated, or Debit/Credit sharing one accountSubType).
 
-            // Rule 2: transactionName + sign + accountSubType (Duplicate Rule)
-            // Duplicate combination in file
-            String txSignAccKey = txSignKey + "|" + upperAccSubType;
-            if (!transactionSignAccountSubTypeKeys.add(txSignAccKey)) {
-                errors.add(new ItemValidationException.ValidationError("composite", txSignAccKey, ErrorCode.ERR_DUP_02.getCode(), ErrorCode.ERR_DUP_02.getName(), "ERROR"));
+            // Rule 3: transactionName + sign + entryType + accountSubType (exact duplicate),
+            // and Rule 2: transactionName + sign + accountSubType with the OPPOSITE entryType
+            // (Debit and Credit cannot share the same account subtype).
+            String txSignAccKey = upperTxName + "|" + signStr + "|" + upperAccSubType;
+            String existingEntryTypeForSubType = transactionSignSubTypeToEntryTypeMap.putIfAbsent(txSignAccKey, entryTypeStr);
+            if (existingEntryTypeForSubType != null) {
+                if (existingEntryTypeForSubType.equals(entryTypeStr)) {
+                    errors.add(new ItemValidationException.ValidationError("composite", txSignAccKey, ErrorCode.ERR_DUP_02.getCode(), ErrorCode.ERR_DUP_02.getName(), "ERROR"));
+                } else {
+                    errors.add(new ItemValidationException.ValidationError("accountSubType", accSubType, ErrorCode.ERR_LOGIC_06.getCode(),
+                            "Debit and Credit entries for '" + txName.trim() + "' (" + signStr + ") cannot share the same account subtype.", "ERROR"));
+                }
             }
         }
 
@@ -120,7 +129,34 @@ public class SubledgerMappingValidator {
 
     public void clearState() {
         transactionToSignMap.clear();
-        transactionSignToEntryTypeMap.clear();
-        transactionSignAccountSubTypeKeys.clear();
+        transactionSignSubTypeToEntryTypeMap.clear();
+    }
+
+    /**
+     * Seeds the composite-key duplicate-tracking maps with records already
+     * persisted in the DB, so that re-uploading a file whose mappings were
+     * loaded in a previous job run is flagged as a duplicate instead of being
+     * silently re-inserted. Without this, {@link #clearState()} wipes the maps
+     * at the start of every run and only in-file duplicates are ever caught.
+     */
+    public void preloadExisting(Collection<SubledgerMapping> existingMappings) {
+        if (existingMappings == null) {
+            return;
+        }
+        for (SubledgerMapping existing : existingMappings) {
+            if (existing.getTransactionName() == null || existing.getSign() == null
+                    || existing.getEntryType() == null || existing.getAccountSubType() == null) {
+                continue;
+            }
+            String upperTxName = existing.getTransactionName().trim().toUpperCase();
+            String signStr = existing.getSign().name();
+            String entryTypeStr = existing.getEntryType().name();
+            String upperAccSubType = existing.getAccountSubType().trim().toUpperCase();
+
+            transactionToSignMap.putIfAbsent(upperTxName, signStr);
+
+            String txSignAccKey = upperTxName + "|" + signStr + "|" + upperAccSubType;
+            transactionSignSubTypeToEntryTypeMap.putIfAbsent(txSignAccKey, entryTypeStr);
+        }
     }
 }

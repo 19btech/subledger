@@ -12,4 +12,8 @@ public interface AggregationRepository extends MongoRepository<Aggregation, Stri
     Optional<Aggregation> findByMetricName(String metricName);
 
     boolean existsByMetricName(String metricName);
+
+    void deleteById(String id);
+    void delete(Aggregation entity);
+    void deleteAll();
 }

@@ -6,11 +6,13 @@ import com.fyntrac.common.service.DataService;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
-@Component
+// Not a @Component: this filter is registered explicitly via the FilterRegistrationBean
+// in FilterConfig so its order can be controlled. Adding @Component here as well would
+// make Spring Boot auto-register a *second*, independent instance, causing every request
+// to run tenant-context setup/teardown twice.
 public class TenantFilter implements Filter {
 
     private final DataService dataService;

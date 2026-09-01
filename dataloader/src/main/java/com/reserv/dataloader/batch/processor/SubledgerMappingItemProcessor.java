@@ -4,6 +4,7 @@ import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.entity.RefDataValidationLog;
 import com.fyntrac.common.entity.SubledgerMapping;
 import com.fyntrac.common.repository.AccountTypesRepository;
+import com.fyntrac.common.repository.SubledgerMappingRepository;
 import com.fyntrac.common.repository.TransactionsRepository;
 import com.reserv.dataloader.batch.exception.ItemValidationException;
 import com.reserv.dataloader.validation.SubledgerMappingValidator;
@@ -24,6 +25,7 @@ public class SubledgerMappingItemProcessor implements ItemProcessor<SubledgerMap
     private final SubledgerMappingValidator validator;
     private final TransactionsRepository transactionsRepository;
     private final AccountTypesRepository accountTypesRepository;
+    private final SubledgerMappingRepository subledgerMappingRepository;
     private final RefDataValidationLogRepository validationLogRepository;
 
     private Long jobId;
@@ -36,10 +38,12 @@ public class SubledgerMappingItemProcessor implements ItemProcessor<SubledgerMap
             SubledgerMappingValidator validator,
             TransactionsRepository transactionsRepository,
             AccountTypesRepository accountTypesRepository,
+            SubledgerMappingRepository subledgerMappingRepository,
             RefDataValidationLogRepository validationLogRepository) {
         this.validator = validator;
         this.transactionsRepository = transactionsRepository;
         this.accountTypesRepository = accountTypesRepository;
+        this.subledgerMappingRepository = subledgerMappingRepository;
         this.validationLogRepository = validationLogRepository;
     }
 
@@ -84,6 +88,19 @@ public class SubledgerMappingItemProcessor implements ItemProcessor<SubledgerMap
                 log.info("Preloaded {} valid account sub types.", validAccountSubTypes.size());
             } catch (Exception e) {
                 log.error("Failed to preload account sub types", e);
+            }
+
+            try {
+                // Preload existing SubledgerMapping records so a repeat upload of already-loaded
+                // mappings is flagged as a duplicate instead of silently passing through (clearState()
+                // above wipes the validator's composite-key maps at the start of every run).
+                if (subledgerMappingRepository != null) {
+                    java.util.List<SubledgerMapping> existingMappings = subledgerMappingRepository.findAll();
+                    validator.preloadExisting(existingMappings);
+                    log.info("Preloaded {} existing subledger mapping records for duplicate validation.", existingMappings.size());
+                }
+            } catch (Exception e) {
+                log.error("Failed to preload existing subledger mappings", e);
             }
         });
     }

@@ -144,8 +144,9 @@ public class AggregationDataLoadConfig {
     @StepScope
     public AccountTypesItemProcessor accountTypesItemProcessor(
             AccountTypesValidator validator,
+            com.fyntrac.common.repository.AccountTypesRepository accountTypesRepository,
             RefDataValidationLogRepository validationLogRepository) {
-        return new AccountTypesItemProcessor(validator, validationLogRepository);
+        return new AccountTypesItemProcessor(validator, accountTypesRepository, validationLogRepository);
     }
 
     @Bean()

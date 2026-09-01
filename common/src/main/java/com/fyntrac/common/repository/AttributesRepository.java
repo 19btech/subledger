@@ -9,4 +9,7 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public interface AttributesRepository extends MongoRepository<Attributes, String> {
+    void deleteById(String id);
+    void delete(Attributes entity);
+    void deleteAll();
 }

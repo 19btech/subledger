@@ -11,7 +11,7 @@ import com.reserv.dataloader.validation.AttributesValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.StepExecution;
-import org.springframework.batch.core.annotation.BeforeStep;
+import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.item.ItemProcessor;
 
 import java.util.HashSet;
@@ -20,7 +20,14 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-public class AttributesItemProcessor implements ItemProcessor<Attributes, Attributes> {
+// Implements StepExecutionListener directly rather than relying on the @BeforeStep annotation,
+// matching the pattern already used by SubledgerMappingItemProcessor. The actual bug that made
+// beforeStep() never fire was the attributeItemProcessor() @Bean method in
+// AttributesDataLoadConfig being declared to return the ItemProcessor interface instead of this
+// concrete class — see the comment there (and TransactionsDataLoadConfig) for the full
+// explanation. Implementing the listener interface directly is kept as well so this doesn't
+// regress the same way again.
+public class AttributesItemProcessor implements ItemProcessor<Attributes, Attributes>, StepExecutionListener {
 
     private static final Logger log = LoggerFactory.getLogger(AttributesItemProcessor.class);
 
@@ -42,11 +49,14 @@ public class AttributesItemProcessor implements ItemProcessor<Attributes, Attrib
         this.validationLogRepository = validationLogRepository;
     }
 
-    @BeforeStep
+    @Override
     public void beforeStep(StepExecution stepExecution) {
         this.seenAttributeNames.clear();
         this.existingAttributeNames.clear();
-        this.jobId = stepExecution.getJobExecutionId();
+        // Use the app-level "run.id" job parameter (not Spring Batch's internal
+        // JobExecutionId) so RefDataValidationLog.jobId matches ActivityLog.jobId,
+        // which is what callers/UI actually have on hand to correlate an upload.
+        this.jobId = stepExecution.getJobParameters().getLong("run.id");
         this.tenantId = stepExecution.getJobParameters().getString("tenantId");
 
         log.info("Initializing preloaded caches for AttributesItemProcessor for tenant: {}", this.tenantId);
@@ -62,9 +72,19 @@ public class AttributesItemProcessor implements ItemProcessor<Attributes, Attrib
                     });
                     log.info("Preloaded {} existing attribute definitions for validation.", existingAttributeNames.size());
                 } catch (Exception e) {
+                    // Fail loud rather than silently continuing with an empty set: swallowing this
+                    // would leave DB-level duplicate detection quietly disabled for the whole step,
+                    // allowing a duplicate attribute name (and its downstream columnName fallout on
+                    // Chart of Account uploads) through undetected.
                     log.error("Failed to preload existing attributes for tenant {} in setup stage", this.tenantId, e);
+                    throw new IllegalStateException(
+                            "Aborting attributeImportStep: failed to preload existing attribute names for tenant "
+                                    + this.tenantId + "; cannot safely validate duplicates.", e);
                 }
             });
+        } else {
+            log.warn("No tenantId provided in JobParameters for AttributesItemProcessor step setup; " +
+                    "DB-level duplicate-name validation will be skipped for this run.");
         }
     }
 

@@ -31,8 +31,6 @@ public class TransactionValidator {
         List<ItemValidationException.ValidationError> itemLogs = new ArrayList<>();
 
         String name = item.getName();
-        int isGL = item.getIsGL();
-        int isReplayable = item.getIsReplayable();
         boolean hasError = false;
 
         // Validate transactionName
@@ -40,11 +38,12 @@ public class TransactionValidator {
             itemLogs.add(createError("NAME", name, ErrorCode.ERR_REQ_01, "Transaction name cannot be empty.", "ERROR"));
             hasError = true;
         } else {
-            if (name.contains(" ")) {
-                if (name.trim().equals(name) && !name.contains("  ")) {
-                    itemLogs.add(createError("NAME", name, ErrorCode.ERR_SPC_01, "Transaction name contains spaces.", "ERROR"));
-                    hasError = true;
-                }
+            // A single internal space is allowed (e.g. "Loan Payment"); only double spaces
+            // and leading/trailing spaces are rejected, matching the frontend's independent
+            // hasDoubleSpace / hasEdgeSpaces checks (add-transaction.jsx).
+            if (name.contains("  ")) {
+                itemLogs.add(createError("NAME", name, ErrorCode.ERR_SPC_01, "Transaction name contains double spaces.", "ERROR"));
+                hasError = true;
             }
             if (!name.trim().equals(name)) {
                 itemLogs.add(createError("NAME", name, ErrorCode.ERR_SPC_02, "Transaction name has leading/trailing spaces.", "ERROR"));
@@ -74,6 +73,7 @@ public class TransactionValidator {
         }
 
         // Validate journal (isGL)
+        int isGL = item.getIsGL();
         if (isGL == -2) {
             itemLogs.add(createError("ISGL", String.valueOf(isGL), ErrorCode.WRN_DEF_01, "Empty journal flag. Defaulting to true (1).", "WARNING"));
             item.setIsGL(1);
@@ -82,23 +82,33 @@ public class TransactionValidator {
             hasError = true;
         }
 
-        // Validate reportable (isReplayable)
-        if (isReplayable == -2) {
-            itemLogs.add(createError("ISREPLAYABLE", String.valueOf(isReplayable), ErrorCode.WRN_DEF_01, "Empty reportable flag. Defaulting to true (1).", "WARNING"));
-            item.setIsReplayable(1);
-        } else if (isReplayable == -1) {
-            itemLogs.add(createError("ISREPLAYABLE", String.valueOf(isReplayable), ErrorCode.ERR_BOOL_01, "Invalid boolean value for reportable.", "ERROR"));
+        // Validate reportable (exclusive) — "exclusive" is the field the legacy/CSV header
+        // alias "REPORTABLE" maps to (see TransactionsDataLoadConfig), i.e. this is the real
+        // "Reportable" flag shown in the UI.
+        int exclusive = item.getExclusive();
+        if (exclusive == -2) {
+            itemLogs.add(createError("EXCLUSIVE", String.valueOf(exclusive), ErrorCode.WRN_DEF_01, "Empty reportable flag. Defaulting to true (1).", "WARNING"));
+            item.setExclusive(1);
+        } else if (exclusive == -1) {
+            itemLogs.add(createError("EXCLUSIVE", String.valueOf(exclusive), ErrorCode.ERR_BOOL_01, "Invalid boolean value for reportable.", "ERROR"));
+            item.setExclusive(0);
             hasError = true;
         }
 
-        // Validate Logic Warning
-        if (item.getIsGL() == 0 && item.getIsReplayable() == 0) {
-            itemLogs.add(createError("ISGL/ISREPLAYABLE", "GL=0, REP=0", ErrorCode.WRN_LOGIC_01, "Both journal and reportable are false.", "WARNING"));
+        // Validate replayable (isReplayable) — governs whether this transaction's activity can
+        // be replayed/reversed (see TransactionActivityReversalService); distinct from "reportable".
+        int isReplayable = item.getIsReplayable();
+        if (isReplayable == -2) {
+            itemLogs.add(createError("ISREPLAYABLE", String.valueOf(isReplayable), ErrorCode.WRN_DEF_01, "Empty replayable flag. Defaulting to true (1).", "WARNING"));
+            item.setIsReplayable(1);
+        } else if (isReplayable == -1) {
+            itemLogs.add(createError("ISREPLAYABLE", String.valueOf(isReplayable), ErrorCode.ERR_BOOL_01, "Invalid boolean value for replayable.", "ERROR"));
+            hasError = true;
         }
 
-        // Validate exclusive
-        if (item.getExclusive() == -1) {
-            item.setExclusive(0);
+        // Validate Logic Warning: both reportable (exclusive) and journal false
+        if (item.getIsGL() == 0 && item.getExclusive() == 0) {
+            itemLogs.add(createError("ISGL/EXCLUSIVE", "GL=0, REPORTABLE=0", ErrorCode.WRN_LOGIC_01, "Both journal and reportable are false.", "WARNING"));
         }
 
         if (name != null && !hasError) {
@@ -112,8 +122,6 @@ public class TransactionValidator {
         List<ItemValidationException.ValidationError> itemLogs = new ArrayList<>();
 
         String name = item.getName();
-        int isGL = item.getIsGL();
-        int isReplayable = item.getIsReplayable();
         boolean hasError = false;
 
         // Validate transactionName
@@ -121,11 +129,12 @@ public class TransactionValidator {
             itemLogs.add(createError("NAME", name, ErrorCode.ERR_REQ_01, "Transaction name cannot be empty.", "ERROR"));
             hasError = true;
         } else {
-            if (name.contains(" ")) {
-                if (name.trim().equals(name) && !name.contains("  ")) {
-                    itemLogs.add(createError("NAME", name, ErrorCode.ERR_SPC_01, "Transaction name contains spaces.", "ERROR"));
-                    hasError = true;
-                }
+            // A single internal space is allowed (e.g. "Loan Payment"); only double spaces
+            // and leading/trailing spaces are rejected, matching the frontend's independent
+            // hasDoubleSpace / hasEdgeSpaces checks (add-transaction.jsx).
+            if (name.contains("  ")) {
+                itemLogs.add(createError("NAME", name, ErrorCode.ERR_SPC_01, "Transaction name contains double spaces.", "ERROR"));
+                hasError = true;
             }
             if (!name.trim().equals(name)) {
                 itemLogs.add(createError("NAME", name, ErrorCode.ERR_SPC_02, "Transaction name has leading/trailing spaces.", "ERROR"));
@@ -146,6 +155,7 @@ public class TransactionValidator {
         }
 
         // Validate journal (isGL)
+        int isGL = item.getIsGL();
         if (isGL == -2) {
             itemLogs.add(createError("ISGL", String.valueOf(isGL), ErrorCode.WRN_DEF_01, "Empty journal flag. Defaulting to true (1).", "WARNING"));
             item.setIsGL(1);
@@ -154,23 +164,33 @@ public class TransactionValidator {
             hasError = true;
         }
 
-        // Validate reportable (isReplayable)
-        if (isReplayable == -2) {
-            itemLogs.add(createError("ISREPLAYABLE", String.valueOf(isReplayable), ErrorCode.WRN_DEF_01, "Empty reportable flag. Defaulting to true (1).", "WARNING"));
-            item.setIsReplayable(1);
-        } else if (isReplayable == -1) {
-            itemLogs.add(createError("ISREPLAYABLE", String.valueOf(isReplayable), ErrorCode.ERR_BOOL_01, "Invalid boolean value for reportable.", "ERROR"));
+        // Validate reportable (exclusive) — "exclusive" is the field the legacy/CSV header
+        // alias "REPORTABLE" maps to (see TransactionsDataLoadConfig), i.e. this is the real
+        // "Reportable" flag shown in the UI.
+        int exclusive = item.getExclusive();
+        if (exclusive == -2) {
+            itemLogs.add(createError("EXCLUSIVE", String.valueOf(exclusive), ErrorCode.WRN_DEF_01, "Empty reportable flag. Defaulting to true (1).", "WARNING"));
+            item.setExclusive(1);
+        } else if (exclusive == -1) {
+            itemLogs.add(createError("EXCLUSIVE", String.valueOf(exclusive), ErrorCode.ERR_BOOL_01, "Invalid boolean value for reportable.", "ERROR"));
+            item.setExclusive(0);
             hasError = true;
         }
 
-        // Validate Logic Warning
-        if (item.getIsGL() == 0 && item.getIsReplayable() == 0) {
-            itemLogs.add(createError("ISGL/ISREPLAYABLE", "GL=0, REP=0", ErrorCode.WRN_LOGIC_01, "Both journal and reportable are false.", "WARNING"));
+        // Validate replayable (isReplayable) — governs whether this transaction's activity can
+        // be replayed/reversed (see TransactionActivityReversalService); distinct from "reportable".
+        int isReplayable = item.getIsReplayable();
+        if (isReplayable == -2) {
+            itemLogs.add(createError("ISREPLAYABLE", String.valueOf(isReplayable), ErrorCode.WRN_DEF_01, "Empty replayable flag. Defaulting to true (1).", "WARNING"));
+            item.setIsReplayable(1);
+        } else if (isReplayable == -1) {
+            itemLogs.add(createError("ISREPLAYABLE", String.valueOf(isReplayable), ErrorCode.ERR_BOOL_01, "Invalid boolean value for replayable.", "ERROR"));
+            hasError = true;
         }
 
-        // Validate exclusive
-        if (item.getExclusive() == -1) {
-            item.setExclusive(0);
+        // Validate Logic Warning: both reportable (exclusive) and journal false
+        if (item.getIsGL() == 0 && item.getExclusive() == 0) {
+            itemLogs.add(createError("ISGL/EXCLUSIVE", "GL=0, REPORTABLE=0", ErrorCode.WRN_LOGIC_01, "Both journal and reportable are false.", "WARNING"));
         }
 
         if (name != null && !hasError) {

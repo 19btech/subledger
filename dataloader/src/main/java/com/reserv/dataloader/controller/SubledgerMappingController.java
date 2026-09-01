@@ -72,8 +72,10 @@ public class SubledgerMappingController {
             return ResponseEntity.badRequest().body(e.getValidationErrors());
         }
 
-        // 4. Check composite duplicate against DB (Rule 2: transactionName + sign + accountSubType)
-        // Excluding own record on update (if t.getId() is provided)
+        // 4. Check composite conflicts against DB for the same transactionName + sign + accountSubType,
+        //    excluding own record on update (if t.getId() is provided):
+        //      - same entryType too       -> Rule 3, exact duplicate (ERR_DUP_02)
+        //      - opposite entryType       -> Rule 2, Debit/Credit sharing a subtype (ERR_LOGIC_06)
         try {
             Collection<SubledgerMapping> existingList = dataService.fetchAllData(SubledgerMapping.class);
             if (existingList != null && t.getTransactionName() != null && t.getSign() != null && t.getAccountSubType() != null) {
@@ -81,20 +83,33 @@ public class SubledgerMappingController {
                 String sign = t.getSign().name().toUpperCase();
                 String subType = t.getAccountSubType().trim().toUpperCase();
                 for (SubledgerMapping existing : existingList) {
-                    if (existing.getTransactionName() != null && existing.getSign() != null && existing.getAccountSubType() != null) {
+                    if (existing.getTransactionName() != null && existing.getSign() != null
+                            && existing.getAccountSubType() != null && existing.getEntryType() != null) {
                         if (existing.getTransactionName().trim().equalsIgnoreCase(txName)
                                 && existing.getSign().name().equalsIgnoreCase(sign)
                                 && existing.getAccountSubType().trim().equalsIgnoreCase(subType)) {
                             // Exclude self on update
                             if (t.getId() == null || !existing.getId().equals(t.getId())) {
                                 List<ItemValidationException.ValidationError> errors = new ArrayList<>();
-                                errors.add(new ItemValidationException.ValidationError(
-                                        "composite",
-                                        t.getTransactionName() + "|" + t.getSign() + "|" + t.getAccountSubType(),
-                                        ErrorCode.ERR_DUP_02.getCode(),
-                                        "Duplicate rule: Subledger mapping with this Transaction Name, Sign, and Account Subtype already exists in database.",
-                                        "ERROR"
-                                ));
+                                boolean sameEntryType = t.getEntryType() != null
+                                        && existing.getEntryType().name().equalsIgnoreCase(t.getEntryType().name());
+                                if (sameEntryType) {
+                                    errors.add(new ItemValidationException.ValidationError(
+                                            "composite",
+                                            t.getTransactionName() + "|" + t.getSign() + "|" + t.getEntryType() + "|" + t.getAccountSubType(),
+                                            ErrorCode.ERR_DUP_02.getCode(),
+                                            "Duplicate rule: Subledger mapping with this Transaction Name, Sign, Entry Type, and Account Subtype already exists in database.",
+                                            "ERROR"
+                                    ));
+                                } else {
+                                    errors.add(new ItemValidationException.ValidationError(
+                                            "accountSubType",
+                                            t.getTransactionName() + "|" + t.getSign() + "|" + t.getAccountSubType(),
+                                            ErrorCode.ERR_LOGIC_06.getCode(),
+                                            "Debit and Credit entries for '" + t.getTransactionName() + "' (" + t.getSign() + ") cannot share the same account subtype.",
+                                            "ERROR"
+                                    ));
+                                }
                                 return ResponseEntity.badRequest().body(errors);
                             }
                         }

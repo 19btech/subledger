@@ -3,11 +3,13 @@ package com.reserv.dataloader.batch.writer;
 import com.fyntrac.common.cache.collection.CacheList;
 import com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.config.ReferenceData;
+import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.ExecutionState;
 import com.fyntrac.common.entity.InstrumentAttribute;
+import com.fyntrac.common.repository.AttributesRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.ExecutionStateService;
@@ -35,8 +37,9 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     private final MongoItemWriter<InstrumentAttribute> delegate;
     private final MemcachedRepository memcachedRepository;
     private final InstrumentAttributeService instrumentAttributeService;
+    private final AttributesRepository attributesRepository;
 
-    private String tenantId;
+    String tenantId; // package-private: settable directly by unit tests
     private long runId;
     private AccountingPeriodService accountingPeriodService;
     private long batchId;
@@ -48,6 +51,12 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     // OPTIMIZATION: Store ReferenceData as a field
     private ReferenceData referenceData;
 
+    // Attribute definition's isVersionable flag, keyed by attributeId (normalised upper-case),
+    // preloaded once per step so write() doesn't need a repository round-trip per row.
+    // Package-private (not private) so unit tests can populate it directly without going through
+    // the full beforeStep()/TenantContextHolder/repository plumbing.
+    final Map<String, Boolean> attributeVersionableMap = new HashMap<>();
+
     private static final int LOCK_TIMEOUT_SECONDS = 10;
     private static final int MAX_RETRIES = 10;
     private static final long RETRY_DELAY_MS = 100;
@@ -57,7 +66,8 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                                      MemcachedRepository memcachedRepository,
                                      InstrumentAttributeService instrumentAttributeService,
                                      AccountingPeriodService accountingPeriodService,
-                                     ExecutionStateService executionStateService) {
+                                     ExecutionStateService executionStateService,
+                                     AttributesRepository attributesRepository) {
         this.delegate = delegate;
         this.dataSourceProvider = dataSourceProvider;
         this.memcachedRepository = memcachedRepository;
@@ -65,6 +75,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.runId = 0;
         this.accountingPeriodService = accountingPeriodService;
         this.executionStateService = executionStateService;
+        this.attributesRepository = attributesRepository;
     }
 
     @BeforeStep
@@ -92,6 +103,38 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
             log.error("Failed to fetch ReferenceData during BeforeStep", e);
             throw new RuntimeException("Could not initialize writer due to Cache Error", e);
         }
+
+        // Preload each attribute definition's isVersionable flag so write() can decide, per row,
+        // whether a value change should open a new version or just overwrite the existing record.
+        this.attributeVersionableMap.clear();
+        if (this.tenantId != null && !this.tenantId.isEmpty() && this.attributesRepository != null) {
+            TenantContextHolder.runWithTenant(this.tenantId, () -> {
+                try {
+                    attributesRepository.findAll().forEach(attr -> {
+                        if (attr.getId() != null) {
+                            attributeVersionableMap.put(attr.getId().trim().toUpperCase(), attr.getIsVersionable() != 0);
+                        }
+                    });
+                    log.info("Preloaded {} attribute versionable flags.", attributeVersionableMap.size());
+                } catch (Exception e) {
+                    log.error("Failed to preload attribute versionable flags for tenant {}", this.tenantId, e);
+                }
+            });
+        }
+    }
+
+    /**
+     * Whether the attribute definition identified by attributeId is marked versionable
+     * (Attributes.isVersionable != 0). Defaults to {@code true} (preserve today's versioning
+     * behavior) if the attribute isn't found in the preloaded map — e.g. reference data wasn't
+     * loaded yet, or the tenant context was unavailable in beforeStep.
+     */
+    boolean isAttributeVersionable(String attributeId) {
+        if (attributeId == null) {
+            return true;
+        }
+        Boolean versionable = attributeVersionableMap.get(attributeId.trim().toUpperCase());
+        return versionable == null || versionable;
     }
 
     @Override
@@ -203,11 +246,23 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         }
     }
 
-    private Chunk<InstrumentAttribute> setEndDate(long batchId, List<InstrumentAttribute> attributesList, CacheList<Records.InstrumentAttributeReclassMessageRecord> localMessages) throws ParseException {
+    /**
+     * Builds the version chain for the incoming chunk, grouped by (attributeId, instrumentId).
+     *
+     * <p>A new version is only opened when the attribute is versionable AND its value actually
+     * changed relative to what's already open in the DB:
+     * <ul>
+     *   <li><b>Not versionable</b> ({@code Attributes.isVersionable == 0}): the existing open
+     *       record (if any) is updated in place — same document, no chain, no reclass message.</li>
+     *   <li><b>Versionable, value unchanged</b>: the existing open record's window is extended
+     *       (postingDate/periodId brought forward) rather than opening a new version.</li>
+     *   <li><b>Versionable, value changed</b> (or no existing open record): existing
+     *       open/close/reclass-message chaining behavior, unchanged.</li>
+     * </ul>
+     */
+    Chunk<InstrumentAttribute> setEndDate(long batchId, List<InstrumentAttribute> attributesList, CacheList<Records.InstrumentAttributeReclassMessageRecord> localMessages) throws ParseException {
 
         Map<String, List<InstrumentAttribute>> groupedAttributes = new HashMap<>();
-        List<InstrumentAttribute> openVersion = new ArrayList<>(0);
-
         for (InstrumentAttribute attribute : attributesList) {
             String key = attribute.getAttributeId() + "_" + attribute.getInstrumentId();
             groupedAttributes
@@ -215,54 +270,128 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                     .add(attribute);
         }
 
-        for (List<InstrumentAttribute> subChunk : groupedAttributes.values()) {
-            List<InstrumentAttribute> sortedSubChunk = subChunk.stream()
+        List<InstrumentAttribute> toWrite = new ArrayList<>();
+
+        for (List<InstrumentAttribute> rawSubChunk : groupedAttributes.values()) {
+            List<InstrumentAttribute> sortedSubChunk = rawSubChunk.stream()
                     .sorted(Comparator.comparingInt(InstrumentAttribute::getPeriodId))
                     .collect(Collectors.toList());
 
+            String attributeId = sortedSubChunk.get(0).getAttributeId();
+            String instrumentId = sortedSubChunk.get(0).getInstrumentId();
+
             if (sortedSubChunk.size() == 1) {
-                log.info("Processing SINGLE item (Retry Mode) for Instrument: {}", sortedSubChunk.get(0).getInstrumentId());
+                log.info("Processing SINGLE item (Retry Mode) for Instrument: {}", instrumentId);
             }
 
-            for (int i = 0; i < sortedSubChunk.size(); i++) {
-                InstrumentAttribute currentAttribute = sortedSubChunk.get(i);
+            List<InstrumentAttribute> openInstrumentAttributes =
+                    this.instrumentAttributeService.getOpenInstrumentAttributes(attributeId, instrumentId, this.tenantId);
 
-                if (sortedSubChunk.size() > i + 1) {
-                    InstrumentAttribute nextAttribute = sortedSubChunk.get(i + 1);
+            if (!isAttributeVersionable(attributeId)) {
+                toWrite.addAll(applyNonVersionableUpdate(batchId, sortedSubChunk, openInstrumentAttributes));
+                continue;
+            }
+
+            // Collapse consecutive rows within this same upload whose value is unchanged, so an
+            // unchanged value never opens a spurious new version within the file itself.
+            List<InstrumentAttribute> chain = collapseUnchanged(batchId, sortedSubChunk);
+
+            // Resolve the first entry against what's already open in the DB *before* wiring up
+            // next-version links below, so any later entry's previousVersionId points at whichever
+            // record actually ends up "current" (the new first entry, or the extended existing one).
+            InstrumentAttribute first = chain.get(0);
+            boolean firstIsNewVersion = true;
+
+            if (sortedSubChunk.size() == 1) {
+                log.info("Retry Mode: Found {} open attributes for linking", openInstrumentAttributes.size());
+            }
+
+            for (InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
+                if (Objects.equals(openInstrumentAttribute.getVersionId(), first.getVersionId())) {
+                    continue;
+                }
+
+                if (Objects.equals(openInstrumentAttribute.getAttributes(), first.getAttributes())) {
+                    // Value unchanged from what's already open — extend that version's window
+                    // instead of opening a new one.
+                    openInstrumentAttribute.setPostingDate(first.getPostingDate());
+                    openInstrumentAttribute.setPeriodId(first.getPeriodId());
+                    openInstrumentAttribute.setBatchId(batchId);
+                    toWrite.add(openInstrumentAttribute);
+                    chain.set(0, openInstrumentAttribute); // later links point at the survivor
+                    first = openInstrumentAttribute;
+                    firstIsNewVersion = false;
+                } else {
+                    openInstrumentAttribute.setEndDate(first.getEffectiveDate());
+                    openInstrumentAttribute.setCloseDate(DateUtil.convertIntDateToUtc(first.getPostingDate()));
+                    first.setPreviousVersionId(openInstrumentAttribute.getVersionId());
+                    toWrite.add(openInstrumentAttribute);
+                    this.addReclassMessage(batchId, openInstrumentAttribute, first, localMessages);
+                }
+            }
+
+            for (int i = 0; i < chain.size(); i++) {
+                InstrumentAttribute currentAttribute = chain.get(i);
+
+                if (chain.size() > i + 1) {
+                    InstrumentAttribute nextAttribute = chain.get(i + 1);
                     currentAttribute.setEndDate(nextAttribute.getEffectiveDate());
                     currentAttribute.setCloseDate(DateUtil.convertIntDateToUtc(nextAttribute.getPostingDate()));
                     nextAttribute.setPreviousVersionId(currentAttribute.getVersionId());
                     this.addReclassMessage(batchId, currentAttribute, nextAttribute, localMessages);
                 }
 
-                if (i == 0) {
-                    List<InstrumentAttribute> openInstrumentAttributes =
-                            this.instrumentAttributeService.getOpenInstrumentAttributes(currentAttribute.getAttributeId(), currentAttribute.getInstrumentId(), this.tenantId);
-
-                    if (sortedSubChunk.size() == 1) {
-                        log.info("Retry Mode: Found {} open attributes for linking", openInstrumentAttributes.size());
-                    }
-
-                    for (InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
-                        if (Objects.equals(openInstrumentAttribute.getVersionId(), currentAttribute.getVersionId())) {
-                            continue;
-                        }
-                        openInstrumentAttribute.setEndDate(currentAttribute.getEffectiveDate());
-                        openInstrumentAttribute.setCloseDate(DateUtil.convertIntDateToUtc(currentAttribute.getPostingDate()));
-                        currentAttribute.setPreviousVersionId(openInstrumentAttribute.getVersionId());
-                        openVersion.add(openInstrumentAttribute);
-                        this.addReclassMessage(batchId, openInstrumentAttribute, currentAttribute, localMessages);
-                    }
+                if (i > 0 || firstIsNewVersion) {
+                    toWrite.add(currentAttribute);
                 }
             }
         }
 
-        List<InstrumentAttribute> flattenedList = groupedAttributes.values().stream()
-                .flatMap(List::stream)
-                .collect(Collectors.toList());
+        return new Chunk<>(toWrite);
+    }
 
-        flattenedList.addAll(openVersion);
-        return new Chunk<>(flattenedList);
+    /**
+     * Collapses consecutive rows in the same upload (for one attributeId+instrumentId group)
+     * whose attribute values are identical into a single entry, so an unchanged value between two
+     * rows in the same file doesn't open a version for the second one — it just extends the
+     * first's window (postingDate/periodId brought forward).
+     */
+    private List<InstrumentAttribute> collapseUnchanged(long batchId, List<InstrumentAttribute> sortedSubChunk) {
+        List<InstrumentAttribute> chain = new ArrayList<>();
+        for (InstrumentAttribute candidate : sortedSubChunk) {
+            if (!chain.isEmpty()) {
+                InstrumentAttribute last = chain.get(chain.size() - 1);
+                if (Objects.equals(last.getAttributes(), candidate.getAttributes())) {
+                    last.setPostingDate(candidate.getPostingDate());
+                    last.setPeriodId(candidate.getPeriodId());
+                    last.setBatchId(batchId);
+                    continue;
+                }
+            }
+            chain.add(candidate);
+        }
+        return chain;
+    }
+
+    /**
+     * Non-versionable attribute: no version chain ever — the existing record (if any) is updated
+     * in place with the latest incoming row's value; otherwise a single fresh record is created.
+     */
+    private List<InstrumentAttribute> applyNonVersionableUpdate(long batchId, List<InstrumentAttribute> sortedSubChunk,
+                                                                  List<InstrumentAttribute> openInstrumentAttributes) {
+        InstrumentAttribute latestIncoming = sortedSubChunk.get(sortedSubChunk.size() - 1);
+        if (!openInstrumentAttributes.isEmpty()) {
+            InstrumentAttribute existing = openInstrumentAttributes.get(0);
+            existing.setAttributes(latestIncoming.getAttributes());
+            existing.setEffectiveDate(latestIncoming.getEffectiveDate());
+            existing.setPostingDate(latestIncoming.getPostingDate());
+            existing.setPeriodId(latestIncoming.getPeriodId());
+            existing.setBatchId(batchId);
+            log.info("Non-versionable attribute {} for instrument {}: updated existing record in place (no new version).",
+                    existing.getAttributeId(), existing.getInstrumentId());
+            return List.of(existing);
+        }
+        return List.of(latestIncoming);
     }
 
     private void addReclassMessage(long batchId, InstrumentAttribute openInstrumentAttribute, InstrumentAttribute currentAttribute, CacheList<Records.InstrumentAttributeReclassMessageRecord> localMessages) {

@@ -52,6 +52,29 @@ class AccountTypesValidatorTest {
     }
 
     @Test
+    void testAccountSubTypeDoubleSpaces() {
+        AccountTypes item = AccountTypes.builder()
+                .accountSubType("Cash  Value")
+                .accountType(AccountType.BALANCESHEET)
+                .build();
+
+        List<ItemValidationException.ValidationError> errors = validator.validate(item, seenSubTypes, subTypeToTypeMap);
+        assertFalse(errors.isEmpty());
+        assertEquals("ERR_SPC_01", errors.get(0).getErrorCode());
+    }
+
+    @Test
+    void testAccountSubTypeSingleInternalSpaceIsValid() {
+        AccountTypes item = AccountTypes.builder()
+                .accountSubType("Accrued Interest")
+                .accountType(AccountType.BALANCESHEET)
+                .build();
+
+        List<ItemValidationException.ValidationError> errors = validator.validate(item, seenSubTypes, subTypeToTypeMap);
+        assertTrue(errors.isEmpty(), "A single internal space should be valid");
+    }
+
+    @Test
     void testAccountSubTypeTrailingSpaces() {
         AccountTypes item = AccountTypes.builder()
                 .accountSubType("Cash ")

@@ -1,12 +1,12 @@
 package com.fyntrac.common.repository;
 
-import com.fyntrac.common.entity.AccountTypes;
+import com.fyntrac.common.entity.ChartOfAccount;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface AccountTypesRepository extends MongoRepository<AccountTypes, String> {
+public interface ChartOfAccountRepository extends MongoRepository<ChartOfAccount, String> {
     void deleteById(String id);
-    void delete(AccountTypes entity);
+    void delete(ChartOfAccount entity);
     void deleteAll();
 }

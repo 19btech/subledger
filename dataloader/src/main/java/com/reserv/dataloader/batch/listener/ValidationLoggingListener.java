@@ -30,7 +30,10 @@ public class ValidationLoggingListener implements ItemProcessListener<Object, Ob
     @Override
     public void beforeStep(StepExecution stepExecution) {
         log.info("V-L-L: beforeStep invoked. JobID: {}, Params: {}", stepExecution.getJobExecutionId(), stepExecution.getJobParameters());
-        this.jobId = stepExecution.getJobExecutionId();
+        // Use the app-level "run.id" job parameter (not Spring Batch's internal
+        // JobExecutionId) so RefDataValidationLog.jobId matches ActivityLog.jobId,
+        // which is what callers/UI actually have on hand to correlate an upload.
+        this.jobId = stepExecution.getJobParameters().getLong("run.id");
         this.tenantId = stepExecution.getJobParameters().getString("tenantId");
         log.info("V-L-L: Initialized jobId={} and tenantId={}", this.jobId, this.tenantId);
     }
@@ -55,7 +58,13 @@ public class ValidationLoggingListener implements ItemProcessListener<Object, Ob
             ItemValidationException ex = (ItemValidationException) e;
             List<ItemValidationException.ValidationError> errors = ex.getValidationErrors();
             if (errors != null && !errors.isEmpty()) {
-                String sourceTable = item != null ? item.getClass().getSimpleName() : "Unknown";
+                // ChartOfAccountItemProcessor's raw input row is a Map<String,Object> (its columns
+                // are dynamic per-tenant custom attributes, not a fixed entity shape), so item's
+                // runtime class here is a plain HashMap/LinkedHashMap rather than an entity type —
+                // fall back to a hardcoded, human-meaningful table name instead of logging the
+                // Java collection class name.
+                String sourceTable = item instanceof java.util.Map ? "ChartOfAccount"
+                        : (item != null ? item.getClass().getSimpleName() : "Unknown");
                 List<RefDataValidationLog> logs = errors.stream().map(err -> {
                     RefDataValidationLog dbLog = new RefDataValidationLog();
                     dbLog.setSourceTable(sourceTable);
@@ -86,6 +95,20 @@ public class ValidationLoggingListener implements ItemProcessListener<Object, Ob
 
     private String getFieldValue(Object item, String columnName) {
         if (item == null || columnName == null) {
+            return null;
+        }
+
+        // Special case for ChartOfAccount: its raw input row is a Map<String,Object>, so the
+        // column value has to be looked up by key instead of via field/getter reflection (which
+        // would otherwise inspect HashMap's own internal fields and always return null).
+        if (item instanceof java.util.Map) {
+            java.util.Map<?, ?> rawMap = (java.util.Map<?, ?>) item;
+            for (java.util.Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                if (entry.getKey() != null && entry.getKey().toString().equalsIgnoreCase(columnName.trim())) {
+                    Object val = entry.getValue();
+                    return val != null ? val.toString() : null;
+                }
+            }
             return null;
         }
 

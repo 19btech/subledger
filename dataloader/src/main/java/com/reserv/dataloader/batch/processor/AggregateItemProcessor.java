@@ -45,7 +45,10 @@ public class AggregateItemProcessor implements ItemProcessor<Aggregation, Aggreg
     @BeforeStep
     public void beforeStep(StepExecution stepExecution) {
         this.tenantId = stepExecution.getJobParameters().getString("tenantId");
-        this.jobId = stepExecution.getJobExecutionId();
+        // Use the app-level "run.id" job parameter (not Spring Batch's internal
+        // JobExecutionId) so RefDataValidationLog.jobId matches ActivityLog.jobId,
+        // which is what callers/UI actually have on hand to correlate an upload.
+        this.jobId = stepExecution.getJobParameters().getLong("run.id");
         log.info("Initializing preloaded caches for AggregateItemProcessor for tenant: {}", this.tenantId);
 
         validTransactionNames.clear();
