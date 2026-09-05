@@ -17,6 +17,7 @@ import org.springframework.data.mongodb.core.aggregation.MatchOperation;
 import org.springframework.data.mongodb.core.aggregation.ProjectionOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -49,12 +50,34 @@ public class AggregationService  extends CacheBasedService<Aggregation> {
 
     @Override
     public Collection<Aggregation> fetchAll() {
-        return dataService.fetchAllData(Aggregation.class);
+        Query query = new Query(new Criteria().orOperator(
+                Criteria.where("isDeleted").is(false),
+                Criteria.where("isDeleted").exists(false)));
+        return dataService.fetchData(query, Aggregation.class);
     }
 
     public boolean existsByMetricName(String metricName) {
         Query query = new Query(Criteria.where("metricName").is(metricName));
         return this.dataService.getMongoTemplate().exists(query, Aggregation.class);
+    }
+
+    /**
+     * Soft-deletes every aggregation entry (across all transactions) sharing the given metric
+     * name, rather than physically removing the documents.
+     *
+     * @param metricName the metric to soft-delete.
+     * @return the number of documents flagged as isDeleted=true.
+     */
+    public long softDeleteByMetricName(String metricName) {
+        Query query = new Query(Criteria.where("metricName").is(metricName));
+        Update update = new Update().set("isDeleted", true);
+        long modifiedCount = this.dataService.update(query, update, Aggregation.class).getModifiedCount();
+        if (modifiedCount > 0) {
+            log.info("Soft-deleted {} aggregation record(s) for metric [{}].", modifiedCount, metricName);
+        } else {
+            log.warn("Soft-delete executed but zero aggregation records were updated for metric [{}].", metricName);
+        }
+        return modifiedCount;
     }
 
     public Collection<Records.MetricNameRecord> fetchMetricNames() {

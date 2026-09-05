@@ -2,6 +2,7 @@ package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.entity.Attributes;
 import com.fyntrac.common.entity.Option;
+import com.fyntrac.common.repository.AttributesRepository;
 import com.fyntrac.common.service.AttributeService;
 import com.fyntrac.common.service.DataService;
 import lombok.extern.slf4j.Slf4j;
@@ -19,15 +20,18 @@ public class AttributeController {
 
     private final DataService dataService;
     private final AttributeService attributeService;
+    private final AttributesRepository attributesRepository;
     private final com.reserv.dataloader.validation.AttributesValidator validator;
 
     @Autowired
     public AttributeController(
-            DataService dataService, 
+            DataService dataService,
             AttributeService attributeService,
+            AttributesRepository attributesRepository,
             com.reserv.dataloader.validation.AttributesValidator validator) {
         this.dataService = dataService;
         this.attributeService = attributeService;
+        this.attributesRepository = attributesRepository;
         this.validator = validator;
     }
 
@@ -97,11 +101,25 @@ public class AttributeController {
     @GetMapping("/get/all")
     public ResponseEntity<Collection<Attributes>> getAllAttributes() {
         try {
-            Collection<Attributes> attributes = dataService.fetchAllData(Attributes.class);
+            Collection<Attributes> attributes = attributesRepository.findByIsDeletedFalse();
             return new ResponseEntity<>(attributes, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes
             log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @DeleteMapping("/delete/{id}")
+    public ResponseEntity<Void> deleteAttributeById(@PathVariable String id) {
+        try {
+            long modifiedCount = attributesRepository.softDeleteById(id);
+            if (modifiedCount == 0) {
+                return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            }
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        } catch (Exception e) {
+            log.error("Error deleting attribute by ID [{}]: {}", id, e.getLocalizedMessage());
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

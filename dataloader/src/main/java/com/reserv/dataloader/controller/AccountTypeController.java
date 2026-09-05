@@ -1,6 +1,7 @@
 package com.reserv.dataloader.controller;
 
 import com.fyntrac.common.entity.AccountTypes;
+import com.fyntrac.common.repository.AccountTypesRepository;
 import com.fyntrac.common.service.DataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,11 +16,13 @@ import java.util.Collection;
 @Slf4j
 public class AccountTypeController {
     private final DataService dataService;
+    private final AccountTypesRepository accountTypesRepository;
     private final com.reserv.dataloader.validation.AccountTypesValidator validator;
 
     @Autowired
-    public AccountTypeController(DataService dataService, com.reserv.dataloader.validation.AccountTypesValidator validator) {
+    public AccountTypeController(DataService dataService, AccountTypesRepository accountTypesRepository, com.reserv.dataloader.validation.AccountTypesValidator validator) {
         this.dataService = dataService;
+        this.accountTypesRepository = accountTypesRepository;
         this.validator = validator;
     }
 
@@ -74,11 +77,25 @@ public class AccountTypeController {
     @GetMapping("/get/all")
     public ResponseEntity<Collection<AccountTypes>> getAllAggregates() {
         try {
-            Collection<AccountTypes> transactions = dataService.fetchAllData(AccountTypes.class);
+            Collection<AccountTypes> transactions = accountTypesRepository.findByIsDeletedFalse();
             return new ResponseEntity<>(transactions, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes
             log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @DeleteMapping("/delete/{id}")
+    public ResponseEntity<Void> deleteAccountTypeById(@PathVariable String id) {
+        try {
+            long modifiedCount = accountTypesRepository.softDeleteById(id);
+            if (modifiedCount == 0) {
+                return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            }
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        } catch (Exception e) {
+            log.error("Error deleting account type by ID [{}]: {}", id, e.getLocalizedMessage());
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

@@ -119,4 +119,18 @@ public class AggregationController {
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+
+    @DeleteMapping("/delete/{metricName}")
+    public ResponseEntity<Void> deleteAggregationByMetricName(@PathVariable String metricName) {
+        try {
+            long modifiedCount = aggregationService.softDeleteByMetricName(metricName);
+            if (modifiedCount == 0) {
+                return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            }
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        } catch (Exception e) {
+            log.error("Error deleting aggregation by metric name [{}]: {}", metricName, e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
 }

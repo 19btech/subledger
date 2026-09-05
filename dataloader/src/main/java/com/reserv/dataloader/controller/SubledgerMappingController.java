@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import com.fyntrac.common.repository.TransactionsRepository;
 import com.fyntrac.common.repository.AccountTypesRepository;
+import com.fyntrac.common.repository.SubledgerMappingRepository;
 import com.reserv.dataloader.validation.SubledgerMappingValidator;
 import com.reserv.dataloader.batch.exception.ItemValidationException;
 import com.fyntrac.common.enums.ErrorCode;
@@ -28,17 +29,20 @@ public class SubledgerMappingController {
     private final SubledgerMappingValidator subledgerMappingValidator;
     private final TransactionsRepository transactionsRepository;
     private final AccountTypesRepository accountTypesRepository;
+    private final SubledgerMappingRepository subledgerMappingRepository;
 
     @Autowired
     public SubledgerMappingController(
             DataService dataService,
             SubledgerMappingValidator subledgerMappingValidator,
             TransactionsRepository transactionsRepository,
-            AccountTypesRepository accountTypesRepository) {
+            AccountTypesRepository accountTypesRepository,
+            SubledgerMappingRepository subledgerMappingRepository) {
         this.dataService = dataService;
         this.subledgerMappingValidator = subledgerMappingValidator;
         this.transactionsRepository = transactionsRepository;
         this.accountTypesRepository = accountTypesRepository;
+        this.subledgerMappingRepository = subledgerMappingRepository;
     }
 
 
@@ -127,11 +131,25 @@ public class SubledgerMappingController {
     @GetMapping("/get/all")
     public ResponseEntity<Collection<SubledgerMapping>> getAllAggregates() {
         try {
-            Collection<SubledgerMapping> collection = dataService.fetchAllData(SubledgerMapping.class);
+            Collection<SubledgerMapping> collection = subledgerMappingRepository.findByIsDeletedFalse();
             return new ResponseEntity<>(collection, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes
             log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @DeleteMapping("/delete/{id}")
+    public ResponseEntity<Void> deleteSubledgerMappingById(@PathVariable String id) {
+        try {
+            long modifiedCount = subledgerMappingRepository.softDeleteById(id);
+            if (modifiedCount == 0) {
+                return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            }
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        } catch (Exception e) {
+            log.error("Error deleting subledger mapping by ID [{}]: {}", id, e.getLocalizedMessage());
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

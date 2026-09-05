@@ -5,6 +5,7 @@ import com.fyntrac.common.entity.ChartOfAccount;
 import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.repository.AccountTypesRepository;
 import com.fyntrac.common.repository.AttributesRepository;
+import com.fyntrac.common.repository.ChartOfAccountRepository;
 import com.reserv.dataloader.validation.ChartOfAccountValidator;
 import com.reserv.dataloader.batch.exception.ItemValidationException;
 import com.fyntrac.common.enums.ErrorCode;
@@ -29,12 +30,14 @@ public class ChartOfAccountController {
     private final DataService dataService;
     private final AccountTypesRepository accountTypesRepository;
     private final AttributesRepository attributesRepository;
+    private final ChartOfAccountRepository chartOfAccountRepository;
 
     @Autowired
-    public ChartOfAccountController(DataService dataService, AccountTypesRepository accountTypesRepository, AttributesRepository attributesRepository) {
+    public ChartOfAccountController(DataService dataService, AccountTypesRepository accountTypesRepository, AttributesRepository attributesRepository, ChartOfAccountRepository chartOfAccountRepository) {
         this.dataService = dataService;
         this.accountTypesRepository = accountTypesRepository;
         this.attributesRepository = attributesRepository;
+        this.chartOfAccountRepository = chartOfAccountRepository;
     }
 
 
@@ -150,11 +153,25 @@ public class ChartOfAccountController {
     @GetMapping("/get/all")
     public ResponseEntity<Collection<ChartOfAccount>> getAll() {
         try {
-            Collection<ChartOfAccount> collection = dataService.fetchAllData(ChartOfAccount.class);
+            Collection<ChartOfAccount> collection = chartOfAccountRepository.findByIsDeletedFalse();
             return new ResponseEntity<>(collection, HttpStatus.OK);
         } catch (Exception e) {
             // Log the exception for debugging purposes
             log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @DeleteMapping("/delete/{id}")
+    public ResponseEntity<Void> deleteChartOfAccountById(@PathVariable String id) {
+        try {
+            long modifiedCount = chartOfAccountRepository.softDeleteById(id);
+            if (modifiedCount == 0) {
+                return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            }
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        } catch (Exception e) {
+            log.error("Error deleting chart of account by ID [{}]: {}", id, e.getLocalizedMessage());
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

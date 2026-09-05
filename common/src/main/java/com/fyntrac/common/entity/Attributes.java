@@ -29,6 +29,7 @@ public class Attributes implements Serializable {
     private DataType dataType;
     private int isNullable;
     private long sequenceId;
+    private boolean isDeleted;
 
     private transient String rawDataType;
     private transient String rawNullable;
