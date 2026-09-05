@@ -37,4 +37,31 @@ public class NumberUtil {
     public static BigDecimal getNumber(BigDecimal value) {
         return value != null ? value.setScale(SCALE, RoundingMode.HALF_UP) : null;
     }
+
+    /**
+     * Strips a redundant trailing ".0" from whole-number strings, e.g. "1000.0" -> "1000".
+     * <p>
+     * Numeric spreadsheet cells (see ExcelUtil#getNumericValue) are read as Doubles, so a value
+     * typed as "1000" in a sheet arrives downstream as "1000.0". This normalizes that back for
+     * fields such as account numbers, while leaving genuinely alphanumeric values
+     * (e.g. "AC-1000") and true decimals (e.g. "1000.5") untouched.
+     *
+     * @param value The input value (nullable)
+     * @return the normalized string, or the trimmed original if it isn't a plain whole number
+     */
+    public static String normalizeWholeNumberString(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        try {
+            double parsed = Double.parseDouble(trimmed);
+            if (!Double.isInfinite(parsed) && !Double.isNaN(parsed) && parsed == Math.floor(parsed)) {
+                return String.valueOf((long) parsed);
+            }
+        } catch (NumberFormatException e) {
+            // Not a plain number (e.g. alphanumeric account number) - leave as-is.
+        }
+        return trimmed;
+    }
 }

@@ -6,6 +6,7 @@ import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.repository.AccountTypesRepository;
 import com.fyntrac.common.repository.AttributesRepository;
 import com.fyntrac.common.repository.ChartOfAccountRepository;
+import com.fyntrac.common.utils.NumberUtil;
 import com.reserv.dataloader.validation.ChartOfAccountValidator;
 import com.reserv.dataloader.batch.exception.ItemValidationException;
 import com.fyntrac.common.enums.ErrorCode;
@@ -46,6 +47,9 @@ public class ChartOfAccountController {
         if (t == null) {
             return ResponseEntity.badRequest().body("Request body is required.");
         }
+
+        // Normalize before validating/saving so a pasted-in "1000.0" is stored as "1000".
+        t.setAccountNumber(NumberUtil.normalizeWholeNumberString(t.getAccountNumber()));
 
         try {
             // Instantiate validator dynamically to avoid StepScope lookup issues in HTTP threads

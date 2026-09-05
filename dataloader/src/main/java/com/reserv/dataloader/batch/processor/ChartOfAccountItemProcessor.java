@@ -2,6 +2,7 @@ package com.reserv.dataloader.batch.processor;
 
 
 import com.fyntrac.common.entity.ChartOfAccount;
+import com.fyntrac.common.utils.NumberUtil;
 import com.reserv.dataloader.validation.ChartOfAccountValidator;
 import org.springframework.batch.item.ItemProcessor;
 
@@ -25,7 +26,7 @@ public class ChartOfAccountItemProcessor implements ItemProcessor<Map<String,Obj
             if(key.equalsIgnoreCase("ACTIVITYUPLOADID")){
                 continue;
             } else if (key.equalsIgnoreCase("ACCOUNTNUMBER")) {
-                chartOfAccount.setAccountNumber((String) value);
+                chartOfAccount.setAccountNumber(NumberUtil.normalizeWholeNumberString((String) value));
             } else if (key.equalsIgnoreCase("ACCOUNTNAME")) {
                 chartOfAccount.setAccountName((String) value);
             } else if (key.equalsIgnoreCase("ACCOUNTSUBTYPE")) {
