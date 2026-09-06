@@ -41,7 +41,7 @@ public interface InstrumentAttributeRepository extends MongoRepository<Instrumen
     Page<InstrumentAttribute> findAllByEndDateIsNull(Pageable pageable);
 
     // Delete all InstrumentAttribute records for a given posting date
-    void deleteByPostingDate(Integer postingDate);
+    long deleteByPostingDate(Integer postingDate);
 
     boolean existsByInstrumentId(String instrumentId);
     boolean existsByAttributeId(String attributeId);

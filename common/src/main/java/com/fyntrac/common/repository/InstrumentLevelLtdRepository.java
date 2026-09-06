@@ -10,7 +10,7 @@ public interface InstrumentLevelLtdRepository extends MongoRepository<Instrument
 
     // Delete all InstrumentLevelLtd records for a given posting date
     @Transactional
-    void deleteByPostingDate(Integer postingDate);
+    long deleteByPostingDate(Integer postingDate);
 
     @Transactional
     void deleteByPostingDateGreaterThanEqual(Integer postingDate);

@@ -58,7 +58,7 @@ public interface AttributeLevelBalanceRepository extends MongoRepository<Attribu
 
     // Delete all AttributeLevelLtd records for a given posting date
     @Transactional
-    void deleteByPostingDate(Integer postingDate);
+    long deleteByPostingDate(Integer postingDate);
 
     @Transactional
     void deleteByPostingDateGreaterThanEqual(Integer postingDate);

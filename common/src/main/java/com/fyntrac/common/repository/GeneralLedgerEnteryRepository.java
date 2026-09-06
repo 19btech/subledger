@@ -10,7 +10,7 @@ public interface GeneralLedgerEnteryRepository extends MongoRepository<GeneralLe
 
     // Delete all GeneralLedgerEntery records for a given posting date
     @Transactional
-    void deleteByPostingDate(Integer postingDate);
+    long deleteByPostingDate(Integer postingDate);
 
     @Transactional
     void deleteByPostingDateGreaterThanEqual(Integer postingDate);

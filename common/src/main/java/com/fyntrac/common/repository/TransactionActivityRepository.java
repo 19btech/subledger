@@ -67,7 +67,7 @@ public interface TransactionActivityRepository extends MongoRepository<Transacti
 
     // Delete all TransactionActivity records for a given posting date
     @Transactional
-    void deleteByPostingDate(Integer postingDate);
+    long deleteByPostingDate(Integer postingDate);
 
     @Transactional
     void deleteByPostingDateGreaterThan(Integer postingDate);

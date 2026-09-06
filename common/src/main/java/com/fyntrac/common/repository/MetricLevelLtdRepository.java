@@ -10,7 +10,7 @@ public interface MetricLevelLtdRepository extends MongoRepository<MetricLevelLtd
 
     // Delete all MetricLevelLtd records for a given posting date
     @Transactional
-    void deleteByPostingDate(Integer postingDate);
+    long deleteByPostingDate(Integer postingDate);
 
     @Transactional
     void deleteByPostingDateGreaterThanEqual(Integer postingDate);

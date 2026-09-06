@@ -295,7 +295,10 @@ public class ModelExecutionService {
                         .lastExecutionDate(executionState.getLastExecutionDate())
                         .build();
                 executionStateService.purgeStateFromDateOnwards(postingDate);
-                executionStateService.save(newExecutionState);
+                // Route through update() rather than a raw save() - update() closes out any
+                // still-open record before inserting this one, so this cleanup can't leave a
+                // second "endDate == null" record behind for getExecutionState() to trip over.
+                executionStateService.update(newExecutionState);
                 log.debug("Cleanup: ExecutionState deleted for postingDate={}", postingDate);
             } catch (Exception e) {
                 log.error("Cleanup failed for ExecutionState postingDate={}: {}", postingDate, e.getMessage());

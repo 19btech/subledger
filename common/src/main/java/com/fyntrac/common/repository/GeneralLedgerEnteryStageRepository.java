@@ -10,7 +10,7 @@ public interface GeneralLedgerEnteryStageRepository extends MongoRepository<Gene
 
     // Delete all GeneralLedgerEnteryStage records for a given posting date
     @Transactional
-    void deleteByPostingDate(Integer postingDate);
+    long deleteByPostingDate(Integer postingDate);
 
     @Transactional
     void deleteByPostingDateGreaterThanEqual(Integer postingDate);

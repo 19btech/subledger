@@ -162,6 +162,7 @@ public interface ErrorsRepository extends MongoRepository<Errors, String> {
     void deleteByJobId(String jobId);
     void deleteByModelId(String modelId);
     void deleteByExecutionDateBefore(Date date);
+    long deleteByPostingDate(Date postingDate);
 
     // ───────────────────────────────────────────────
     // Update operations

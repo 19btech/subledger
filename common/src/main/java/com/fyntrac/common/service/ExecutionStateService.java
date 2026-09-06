@@ -34,19 +34,22 @@ public class ExecutionStateService extends CacheBasedService<ExecutionState> {
 
     /**
      * Versions the ExecutionState:
-     * 1. Closes the current active record (sets endDate = now) if it has an id.
+     * 1. Closes EVERY currently-open record (sets endDate = now on all docs with endDate == null),
+     *    not just the one referenced by state.getId(). This is deliberately belt-and-suspenders:
+     *    a raw save() elsewhere (bypassing this method) or a race between two concurrent job
+     *    completions can otherwise leave more than one "open" record behind, and
+     *    getExecutionState()/fetchLatest() would then have no reliable way to tell which is
+     *    truly the latest.
      * 2. Inserts a brand new document (id = null) with the new values and endDate = null.
      *
      * This is triggered at every point in the codebase where setLastExecutionDate is called,
      * meaning a state transition has occurred (old executionDate → lastExecutionDate, new date set).
      */
     public ExecutionState update(ExecutionState state) {
-        // 1. Close the existing active record
-        if (state.getId() != null) {
-            Query closeQuery = new Query(Criteria.where("_id").is(state.getId()));
-            Update closeUpdate = new Update().set("endDate", new Date());
-            this.dataService.updateFirst(closeQuery, closeUpdate, ExecutionState.class);
-        }
+        // 1. Close every currently-open record, not just state's own id
+        Query closeQuery = new Query(Criteria.where("endDate").isNull());
+        Update closeUpdate = new Update().set("endDate", new Date());
+        this.dataService.update(closeQuery, closeUpdate, ExecutionState.class);
 
         // 2. Insert a fresh document — null id forces a MongoDB insert
         state.setId(null);
@@ -59,11 +62,20 @@ public class ExecutionStateService extends CacheBasedService<ExecutionState> {
     }
 
     /**
-     * Returns the currently active ExecutionState (the one with endDate == null).
+     * Returns the currently active ExecutionState.
+     * <p>
+     * "Active" is nominally "the one with endDate == null", but that isn't guaranteed to be a
+     * single document — a stray raw save() or a completion-listener race can leave more than one
+     * open record behind. To stay correct even then, this always picks the open record with the
+     * highest executionDate, so a UI showing "latest loaded posting date" can never regress to an
+     * older value just because an older record was never closed out.
      * Falls back to a zeroed-out default if no active record exists.
      */
     public ExecutionState getExecutionState() {
-        Query query = new Query(Criteria.where("endDate").isNull());
+        Query query = new Query(Criteria.where("endDate").isNull())
+                .with(org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "executionDate"))
+                .limit(1);
         ExecutionState active = this.dataService.findOne(query, ExecutionState.class);
 
         if (active != null) {
@@ -89,11 +101,15 @@ public class ExecutionStateService extends CacheBasedService<ExecutionState> {
     }
 
     /**
-     * Returns the currently active (latest) ExecutionState.
-     * Throws if no active record exists.
+     * Returns the currently active (latest) ExecutionState — see {@link #getExecutionState()} for
+     * why "latest" is resolved by highest executionDate rather than trusting there is only one
+     * open record. Throws if no active record exists.
      */
     public ExecutionState fetchLatest() {
-        Query query = new Query(Criteria.where("endDate").isNull());
+        Query query = new Query(Criteria.where("endDate").isNull())
+                .with(org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "executionDate"))
+                .limit(1);
         ExecutionState active = this.dataService.findOne(query, ExecutionState.class);
         if (active == null) {
             throw new NoSuchElementException("No active ExecutionState found");

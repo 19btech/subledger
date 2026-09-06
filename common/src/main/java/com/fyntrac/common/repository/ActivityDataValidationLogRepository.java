@@ -24,4 +24,6 @@ public interface ActivityDataValidationLogRepository
     List<ActivityDataValidationLog> findByInstrumentId(String instrumentId);
 
     List<ActivityDataValidationLog> findByJobIdAndInstrumentId(Long jobId, String instrumentId);
+
+    long deleteByPostingDate(Integer postingDate);
 }
