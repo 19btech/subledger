@@ -50,6 +50,8 @@ public class CustomTableDefinition {
 
     private LocalDateTime updatedAt;
 
+    private boolean isDeleted;
+
     // Constructors
     public CustomTableDefinition() {
         this.createdAt = LocalDateTime.now();
@@ -100,6 +102,11 @@ public class CustomTableDefinition {
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    public void setIsDeleted(boolean isDeleted) {
+        this.isDeleted = isDeleted;
+        this.updatedAt = LocalDateTime.now();
     }
 
     // Helper methods

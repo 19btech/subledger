@@ -88,6 +88,25 @@ public class CustomTableController {
         }
     }
 
+    /**
+     * Soft-deletes a table definition (isDeleted = true) rather than dropping its physical
+     * collection or data - see {@link CustomTableDefinitionService#softDeleteById} for the
+     * REFERENCE/OPERATIONAL cascade rules.
+     */
+    @DeleteMapping("/delete/{id}")
+    public ResponseEntity<Records.ApiResponseRecord<List<String>>> softDeleteCustomTable(@PathVariable String id) {
+        try {
+            List<String> deletedIds = tableDefinitionService.softDeleteById(id);
+            return ResponseEntity.ok(Records.ApiResponseRecord.success("Custom table deleted successfully", deletedIds));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Records.ApiResponseRecord.error(e.getMessage()));
+        } catch (Exception e) {
+            log.error("Error deleting custom table by ID [{}]: {}", id, e.getLocalizedMessage());
+            return ResponseEntity.internalServerError()
+                    .body(Records.ApiResponseRecord.error("Failed to delete custom table: " + e.getMessage()));
+        }
+    }
+
     @DeleteMapping("/{id}/physical")
     public ResponseEntity<Records.ApiResponseRecord<Boolean>> dropPhysicalCollection(@PathVariable String id) {
         try {
