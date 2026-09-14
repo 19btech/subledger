@@ -189,6 +189,18 @@ public class DataService<T> {
         return mongoTemplate.updateMulti(query, update, documentClass);
     }
 
+    public UpdateResult updateFirst(Query query, Update update, Class<T> documentClass) {
+        String tenant = tenantContextHolder.getTenant();
+        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
+        return mongoTemplate.updateFirst(query, update, documentClass);
+    }
+
+    public void deleteByQuery(Query query, Class<T> documentClass) {
+        String tenant = tenantContextHolder.getTenant();
+        MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
+        mongoTemplate.remove(query, documentClass);
+    }
+
     public void truncateDatabase() {
         String tenant = tenantContextHolder.getTenant();
         this.truncateDatabase(tenant);

@@ -106,9 +106,14 @@ public class AccountingPeriodService extends CacheBasedService<AccountingPeriod>
 
     public AccountingPeriod getAccountingPeriod(int periodId, String tenantId) {
 
+        return getAccountingPeriod(periodId, tenantId, false);
+    }
+
+    public AccountingPeriod getAccountingPeriod(int periodId, String tenantId, boolean byPassCache) {
+
         String key = Key.accountingPeriodKey(tenantId);
         CacheMap<AccountingPeriod> accountingPeriodCacheMap = this.memcachedRepository.getFromCache(key, CacheMap.class);
-        if(accountingPeriodCacheMap == null) {
+        if(accountingPeriodCacheMap == null || byPassCache) {
             accountingPeriodCacheMap = new CacheMap<>();
             AccountingPeriod accountingPeriod = this.getPeriod(periodId, tenantId);
             accountingPeriodCacheMap.put(String.valueOf(accountingPeriod.getPeriodId()), accountingPeriod);

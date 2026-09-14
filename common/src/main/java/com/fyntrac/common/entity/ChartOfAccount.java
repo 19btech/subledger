@@ -26,6 +26,7 @@ public class ChartOfAccount implements Serializable {
     private String accountNumber;
     private String accountName;
     private String accountSubtype;
+    private boolean isDeleted;
 
     @Field("attributes")
     private Map<String,Object> attributes;

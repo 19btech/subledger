@@ -1,6 +1,8 @@
 package com.fyntrac.common.entity;
 
+import com.fyntrac.common.enums.ErrorCategory;
 import com.fyntrac.common.enums.ErrorCode;
+import com.fyntrac.common.enums.ErrorType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -23,6 +25,7 @@ public class Errors implements Serializable {
 
     @Id
     private String id;
+    private String errorId;
     private ErrorCode code;
     private Date executionDate;
     private String instrumentId;
@@ -30,7 +33,13 @@ public class Errors implements Serializable {
     private String modelId;
     private String stacktrace;
     private boolean isWarning;
-
-
+    private String sourceTable;
+    private String sourceColumn;
+    private Long rowNum;
+    private ErrorCategory errorCategory;
+    private ErrorType errorType;
+    private String message;
+    private String jobId;
+    private Date createdTimestamp;
+    private Date postingDate;
 }
-

@@ -44,6 +44,11 @@ public class GeneralLedgerAccountService extends CacheBasedService<GeneralLedger
         this.dataService.saveAll(gleAccountsBalance, this.tenantId, GeneralLedgerAccountBalanceStage.class);
     }
 
+    public void syncBatch(String payload, String tenantId) {
+        log.info("Syncing batch to GL for tenant {}. Payload size: {}", tenantId, payload != null ? payload.length() : 0);
+        // TODO: Implement GL sync logic
+    }
+
     @Override
     public Collection<GeneralLedgerAccountBalanceStage> fetchAll() {
         return this.dataService.fetchAllData(GeneralLedgerAccountBalanceStage.class);

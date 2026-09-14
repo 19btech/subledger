@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import java.io.Serial;
@@ -40,7 +41,8 @@ public class GeneralLedgerEntery implements Serializable {
     private BigDecimal debitAmount;
     private BigDecimal creditAmount;
     private int isReclass;
-
+    @Indexed
+    private Integer postingDate;
     @Field("attributes")
     private Map<String, Object> attributes;
 

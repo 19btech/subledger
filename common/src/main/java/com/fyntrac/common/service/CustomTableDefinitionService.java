@@ -4,15 +4,18 @@ import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.CustomTableDefinition;
 import com.fyntrac.common.enums.CustomTableType;
 import com.fyntrac.common.repository.CustomTableDefinitionRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 @Service
+@Slf4j
 public class CustomTableDefinitionService {
 
     private final CustomTableDefinitionRepository tableDefinitionRepository;
@@ -174,8 +177,72 @@ public class CustomTableDefinitionService {
         return stats;
     }
 
+    /**
+     * Lists the still-active (non soft-deleted) tables of the given type. Backs the
+     * reference-tables/operational-tables listing endpoints, so a soft-deleted definition drops
+     * out of both grids without its physical collection or data ever being touched.
+     */
     public Optional<List<CustomTableDefinition>> getCustomTables(CustomTableType customTableType) {
-        return this.tableDefinitionRepository.findByTableType(customTableType);
+        return Optional.of(this.tableDefinitionRepository.findByTableTypeAndIsDeletedFalse(customTableType));
+    }
+
+    /**
+     * Soft-deletes a custom table definition and cascades across a REFERENCE/OPERATIONAL pair
+     * so the two never end up half-deleted relative to each other:
+     * <ul>
+     *   <li>Deleting a REFERENCE table also soft-deletes every still-active OPERATIONAL table
+     *       that points at it via referenceTable - that operational data has no meaningful
+     *       lookup table left otherwise.</li>
+     *   <li>Deleting an OPERATIONAL table also soft-deletes the REFERENCE table it points at,
+     *       but only if no other still-active OPERATIONAL table depends on that same reference
+     *       table - it may still be needed elsewhere.</li>
+     * </ul>
+     * This never touches the underlying physical Mongo collections or their data - only the
+     * table definitions are flagged, so the delete is fully reversible by clearing isDeleted.
+     *
+     * @param id the database id of the table definition to delete.
+     * @return the ids of every table definition that was soft-deleted as a result (the
+     *         requested one plus any cascaded), in the order they were deleted.
+     */
+    @Transactional
+    public List<String> softDeleteById(String id) {
+        CustomTableDefinition table = tableDefinitionRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Table definition not found for id: " + id));
+
+        List<String> deletedIds = new ArrayList<>();
+        if (tableDefinitionRepository.softDeleteById(id) > 0) {
+            deletedIds.add(id);
+        }
+
+        if (table.getTableType() == CustomTableType.REFERENCE) {
+            List<CustomTableDefinition> dependents = tableDefinitionRepository
+                    .findByTableTypeAndReferenceTableAndIsDeletedFalse(CustomTableType.OPERATIONAL, table.getTableName());
+            for (CustomTableDefinition dependent : dependents) {
+                if (tableDefinitionRepository.softDeleteById(dependent.getId()) > 0) {
+                    deletedIds.add(dependent.getId());
+                    log.info("Cascaded soft-delete: OPERATIONAL table [{}] soft-deleted with its REFERENCE table [{}].",
+                            dependent.getTableName(), table.getTableName());
+                }
+            }
+        } else if (table.getTableType() == CustomTableType.OPERATIONAL
+                && table.getReferenceTable() != null && !table.getReferenceTable().isBlank()) {
+            List<CustomTableDefinition> remainingDependents = tableDefinitionRepository
+                    .findByTableTypeAndReferenceTableAndIsDeletedFalse(CustomTableType.OPERATIONAL, table.getReferenceTable());
+            if (remainingDependents.isEmpty()) {
+                tableDefinitionRepository.findByTableName(table.getReferenceTable())
+                        .filter(ref -> !ref.isDeleted())
+                        .ifPresent(ref -> {
+                            if (tableDefinitionRepository.softDeleteById(ref.getId()) > 0) {
+                                deletedIds.add(ref.getId());
+                                log.info("Cascaded soft-delete: REFERENCE table [{}] soft-deleted - no remaining " +
+                                        "OPERATIONAL table depends on it after [{}] was deleted.",
+                                        ref.getTableName(), table.getTableName());
+                            }
+                        });
+            }
+        }
+
+        return deletedIds;
     }
 
 }

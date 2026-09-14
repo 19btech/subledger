@@ -165,6 +165,20 @@ public class Records {
         private static final long serialVersionUID = 8087138613941001670L;
     }
 
+    public record EventHistoryQueryRecord(String tenantId, String[] instrumentIds, Long jobId, Integer postingDate) implements Serializable {
+        private static final long serialVersionUID = -245789123847921831L;
+    }
+
+    public record EventHistoryResultRecord(String tenantId, Long jobId, boolean success, String error, String cacheKey, int resultCount) implements Serializable {
+        private static final long serialVersionUID = 194830182741982741L;
+    }
+
+    public record PythonModelExecutionMessageRecord(String tenantId, Integer executionDate,
+                                                    List<String> instrumentIds,
+                                                    boolean isLast) implements Serializable {
+        private static final long serialVersionUID = -2899730985792805319L;
+    }
+
     public record GroupedMetricsByInstrument(String instrumentId,
                                              String metricName) {
         private static final long serialVersionUID = -7455631766826985863L;
@@ -542,7 +556,7 @@ public class Records {
         private static final long serialVersionUID = -7350503432076490961L;
     }
 
-    public record ActivityLogDetailRecord(String tableName, Long recordsRead,
+    public record ActivityLogDetailRecord(String tableName,String fileName, Long recordsRead,
                                           Long recordsWritten,
                                           Long recordsSkipped,
                                           LocalDateTime starting,
@@ -560,4 +574,11 @@ public class Records {
         private static final long serialVersionUID = -4291181294245150358L;
     }
 
+    public record JobResultResponseRecord(
+            Long jobId,
+            String status,
+            Integer successCount
+    )implements Serializable  {
+        private static final long serialVersionUID = 1234567890123456789L; // Example serialVersionUID, should be generated uniquely
+    }
 }

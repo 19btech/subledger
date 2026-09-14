@@ -24,6 +24,7 @@ public class Aggregation implements Serializable {
     private String id;
     private String transactionName;
     private String metricName;
+    private boolean isDeleted;
 
     public static BitSet group(String instrumentId) {
         return null;

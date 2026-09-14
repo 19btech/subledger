@@ -17,6 +17,7 @@ import org.bson.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -84,20 +85,24 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
 
             ExecutorService executor = Executors.newFixedThreadPool(this.threadPoolSize);
 
-            int totalChunks = transactionActivityQueue.getTotalChunks(tenantId, jobId, chunkSize);
+            Query countQuery = new Query(Criteria.where("batchId").is(jobId));
+            long totalRecords = this.dataService.getMongoTemplate(tenantId).count(countQuery, TransactionActivity.class);
+            int totalChunks = (int) Math.ceil((double) totalRecords / chunkSize);
 
             for (int i = 0; i < totalChunks; i++) {
-                List<TransactionActivity> chunk = transactionActivityQueue.readChunk(tenantId, jobId, chunkSize, i);
+                final int chunkIndex = i;
                 executor.submit(() -> {
                     try {
+                        Query chunkQuery = new Query(Criteria.where("batchId").is(jobId));
+                        chunkQuery.skip((long) chunkIndex * chunkSize).limit(chunkSize);
+                        List<TransactionActivity> chunk = this.dataService.getMongoTemplate(tenantId).find(chunkQuery, TransactionActivity.class);
                         processTransactionActivityChunk(tenantId, chunk);
                     } catch (Exception e) {
-                        log.error("Error processing chunk: {}", chunk, e);
+                        log.error("Error processing chunk: {}", chunkIndex, e);
                         throw new RuntimeException("Error processing chunk", e);
                     }
                 });
             }
-
 
             executor.shutdown();
             while (!executor.isTerminated()) {

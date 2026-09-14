@@ -3,11 +3,13 @@ package com.reserv.dataloader.batch.writer;
 import com.fyntrac.common.cache.collection.CacheList;
 import com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.config.ReferenceData;
+import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.AccountingPeriod;
 import com.fyntrac.common.entity.ExecutionState;
 import com.fyntrac.common.entity.InstrumentAttribute;
+import com.fyntrac.common.repository.AttributesRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.ExecutionStateService;
@@ -35,8 +37,9 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     private final MongoItemWriter<InstrumentAttribute> delegate;
     private final MemcachedRepository memcachedRepository;
     private final InstrumentAttributeService instrumentAttributeService;
+    private final AttributesRepository attributesRepository;
 
-    private String tenantId;
+    String tenantId; // package-private: settable directly by unit tests
     private long runId;
     private AccountingPeriodService accountingPeriodService;
     private long batchId;
@@ -48,6 +51,24 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     // OPTIMIZATION: Store ReferenceData as a field
     private ReferenceData referenceData;
 
+    // Accounting periods resolved so far in this step. AccountingPeriodService.getAccountingPeriod()
+    // goes to memcached and deserializes the whole accounting-period CacheMap on every call, so
+    // calling it once per row costs a round trip per row. Periods don't change while a step runs,
+    // so resolving each periodId once per step is equivalent and removes that per-row cost.
+    // A null value is memoized too, so a periodId with no matching period isn't re-queried per row.
+    private final Map<Integer, AccountingPeriod> accountingPeriodCache = new HashMap<>();
+
+    // Attribute definition's isVersionable flag, keyed by Attributes.attributeName (normalised
+    // upper-case) — NOT by InstrumentAttribute.attributeId. attributeId is an opaque business/
+    // grouping key on the InstrumentAttribute document (same role it plays on AttributeLevelLtd /
+    // TransactionActivity); the actual attribute definitions (e.g. "ORDER_DATE") live as *keys
+    // inside the attributes map* on each document, exactly like TransactionActivityService
+    // .getReclassableAttributes(Map) already cross-references isReclassable by attributeName.
+    // Preloaded once per step so write() doesn't need a repository round-trip per row.
+    // Package-private (not private) so unit tests can populate it directly without going through
+    // the full beforeStep()/TenantContextHolder/repository plumbing.
+    final Map<String, Boolean> attributeVersionableMap = new HashMap<>();
+
     private static final int LOCK_TIMEOUT_SECONDS = 10;
     private static final int MAX_RETRIES = 10;
     private static final long RETRY_DELAY_MS = 100;
@@ -57,7 +78,8 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                                      MemcachedRepository memcachedRepository,
                                      InstrumentAttributeService instrumentAttributeService,
                                      AccountingPeriodService accountingPeriodService,
-                                     ExecutionStateService executionStateService) {
+                                     ExecutionStateService executionStateService,
+                                     AttributesRepository attributesRepository) {
         this.delegate = delegate;
         this.dataSourceProvider = dataSourceProvider;
         this.memcachedRepository = memcachedRepository;
@@ -65,6 +87,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         this.runId = 0;
         this.accountingPeriodService = accountingPeriodService;
         this.executionStateService = executionStateService;
+        this.attributesRepository = attributesRepository;
     }
 
     @BeforeStep
@@ -92,6 +115,82 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
             log.error("Failed to fetch ReferenceData during BeforeStep", e);
             throw new RuntimeException("Could not initialize writer due to Cache Error", e);
         }
+
+        // Preload each attribute definition's isVersionable flag so write() can decide, per row,
+        // whether a value change should open a new version or just overwrite the existing record.
+        this.attributeVersionableMap.clear();
+        if (this.tenantId != null && !this.tenantId.isEmpty() && this.attributesRepository != null) {
+            TenantContextHolder.runWithTenant(this.tenantId, () -> {
+                try {
+                    attributesRepository.findAll().forEach(attr -> {
+                        if (attr.getAttributeName() != null) {
+                            attributeVersionableMap.put(attr.getAttributeName().trim().toUpperCase(), attr.getIsVersionable() != 0);
+                        }
+                    });
+                    log.info("Preloaded {} attribute versionable flags.", attributeVersionableMap.size());
+                } catch (Exception e) {
+                    log.error("Failed to preload attribute versionable flags for tenant {}", this.tenantId, e);
+                }
+            });
+        }
+    }
+
+    /**
+     * Whether the attribute definition named attributeName (a key inside InstrumentAttribute
+     * .attributes) is marked versionable (Attributes.isVersionable != 0). Defaults to
+     * {@code true} (preserve today's versioning behavior) if the name isn't found in the
+     * preloaded map — e.g. reference data wasn't loaded yet, the tenant context was unavailable
+     * in beforeStep, or the upload references an attribute name with no matching Attributes
+     * definition.
+     */
+    boolean isAttributeNameVersionable(String attributeName) {
+        if (attributeName == null) {
+            return true;
+        }
+        Boolean versionable = attributeVersionableMap.get(attributeName.trim().toUpperCase());
+        return versionable == null || versionable;
+    }
+
+    /**
+     * Whether at least one field carried in these rows' attributes maps is versionable. When
+     * none are (every field present is explicitly Attributes.isVersionable == 0), the whole
+     * attributeId/instrumentId group is a plain in-place update — nothing about it should ever
+     * open a version, regardless of what changed.
+     */
+    private boolean hasVersionableAttribute(List<InstrumentAttribute> rows) {
+        boolean sawAnyKey = false;
+        for (InstrumentAttribute row : rows) {
+            Map<String, Object> attrs = row.getAttributes();
+            if (attrs == null) {
+                continue;
+            }
+            for (String key : attrs.keySet()) {
+                sawAnyKey = true;
+                if (isAttributeNameVersionable(key)) {
+                    return true;
+                }
+            }
+        }
+        return !sawAnyKey; // no fields at all to inspect -> preserve the old always-version default
+    }
+
+    /**
+     * Projects an attributes map down to just the entries whose attribute definition is
+     * versionable, so the "did the value change" comparisons below only look at fields that
+     * should actually drive a new version — a non-versionable field changing alongside doesn't
+     * spuriously trigger (or block) one.
+     */
+    private Map<String, Object> versionableProjection(Map<String, Object> attributes) {
+        if (attributes == null) {
+            return Collections.emptyMap();
+        }
+        Map<String, Object> projection = new HashMap<>();
+        for (Map.Entry<String, Object> entry : attributes.entrySet()) {
+            if (isAttributeNameVersionable(entry.getKey())) {
+                projection.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return projection;
     }
 
     @Override
@@ -113,7 +212,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 }
 
                 int effectivePeriodId = com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(instrumentAttribute.getEffectiveDate());
-                AccountingPeriod effectiveAccountingPeriod = this.accountingPeriodService.getAccountingPeriod(effectivePeriodId, this.tenantId);
+                AccountingPeriod effectiveAccountingPeriod = resolveAccountingPeriod(effectivePeriodId);
 
                 instrumentAttribute.setEndDate(null);
                 instrumentAttribute.setCloseDate(null);
@@ -131,11 +230,14 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 }
 
                 instrumentAttribute.setBatchId(batchId);
-
-                // Warning: Calling cache put in a loop is still risky for high volume.
-                // If possible, verify if instrumentAttributeService supports bulk additions.
-                this.instrumentAttributeService.addIntoCache(this.tenantId, instrumentAttribute);
             }
+
+            // Cache the whole chunk in one pass rather than once per row: the sets are
+            // pipelined over the single memcached connection instead of paying a round
+            // trip each. (This loop used to call addIntoCache() per row, which then
+            // read-modify-wrote one tenant-wide map — quadratic in the number of rows.)
+            this.instrumentAttributeService.addIntoCache(this.tenantId, combinedAttributes);
+
             delegate.setTemplate(mongoTemplate);
         }
 
@@ -153,6 +255,24 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     }
 
     // ... (Rest of your methods remain unchanged) ...
+
+    /** Resolves an accounting period once per step rather than once per row. */
+    private AccountingPeriod resolveAccountingPeriod(int periodId) {
+        if (accountingPeriodCache.containsKey(periodId)) {
+            return accountingPeriodCache.get(periodId);
+        }
+        AccountingPeriod period;
+        try {
+            period = this.accountingPeriodService.getAccountingPeriod(periodId, this.tenantId);
+        } catch (Exception e) {
+            // Mirror the previous behaviour: the caller already falls back to the current period
+            // when this comes back null, so a lookup failure must not fail the whole chunk.
+            log.warn("Failed to resolve accounting period {} for tenant {}: {}", periodId, this.tenantId, e.getMessage());
+            period = null;
+        }
+        accountingPeriodCache.put(periodId, period);
+        return period;
+    }
 
     private <T> void updateCacheWithLock(String lockKey, String dataKey, CacheList<T> newItems) {
         if (newItems == null || newItems.getList() == null || newItems.getList().isEmpty()) return;
@@ -203,11 +323,32 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         }
     }
 
-    private Chunk<InstrumentAttribute> setEndDate(long batchId, List<InstrumentAttribute> attributesList, CacheList<Records.InstrumentAttributeReclassMessageRecord> localMessages) throws ParseException {
+    /**
+     * Builds the version chain for the incoming chunk, grouped by (attributeId, instrumentId).
+     *
+     * <p>Each document's {@code attributes} map can carry several attribute-definition fields at
+     * once (e.g. ORDER_DATE alongside others), each independently flagged versionable or not in
+     * the {@code Attributes} collection (keyed by attributeName — see {@link #attributeVersionableMap}).
+     * A new version is only opened when at least one <em>versionable</em> field's value actually
+     * changed relative to what's already open in the DB:
+     * <ul>
+     *   <li><b>Rows sharing the same postingDate AND effectiveDate</b> are folded into a single
+     *       row before any diffing happens (see {@link #mergeSameDateRows}) — one upload can carry
+     *       several attribute-field changes for the same date, and those changes together make up
+     *       exactly one version, never one version per row.</li>
+     *   <li><b>No versionable fields present</b> (every field on the row is explicitly
+     *       {@code Attributes.isVersionable == 0}): the existing open record (if any) is updated
+     *       in place — same document, no chain, no reclass message.</li>
+     *   <li><b>Versionable fields unchanged</b>: the existing open record is left as-is
+     *       (postingDate/periodId untouched — no new version is opened), even if a
+     *       non-versionable field alongside them changed.</li>
+     *   <li><b>A versionable field changed</b> (or no existing open record): existing
+     *       open/close/reclass-message chaining behavior, unchanged.</li>
+     * </ul>
+     */
+    Chunk<InstrumentAttribute> setEndDate(long batchId, List<InstrumentAttribute> attributesList, CacheList<Records.InstrumentAttributeReclassMessageRecord> localMessages) throws ParseException {
 
         Map<String, List<InstrumentAttribute>> groupedAttributes = new HashMap<>();
-        List<InstrumentAttribute> openVersion = new ArrayList<>(0);
-
         for (InstrumentAttribute attribute : attributesList) {
             String key = attribute.getAttributeId() + "_" + attribute.getInstrumentId();
             groupedAttributes
@@ -215,54 +356,181 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                     .add(attribute);
         }
 
-        for (List<InstrumentAttribute> subChunk : groupedAttributes.values()) {
-            List<InstrumentAttribute> sortedSubChunk = subChunk.stream()
+        List<InstrumentAttribute> toWrite = new ArrayList<>();
+
+        // Prefetch the open attributes for every instrument in this chunk in ONE query, keyed by
+        // "attributeId_instrumentId". This loop used to issue a separate Mongo query per group,
+        // i.e. one round trip per (attributeId, instrumentId) in the chunk. Nothing writes to Mongo
+        // between those lookups — setEndDate only mutates objects in memory and the chunk is
+        // persisted afterwards by the delegate — so one prefetch sees the same state as N queries.
+        Set<String> chunkInstrumentIds = new HashSet<>();
+        for (InstrumentAttribute attribute : attributesList) {
+            if (attribute.getInstrumentId() != null) {
+                chunkInstrumentIds.add(attribute.getInstrumentId());
+            }
+        }
+        Map<String, List<InstrumentAttribute>> openByKey =
+                this.instrumentAttributeService.getOpenInstrumentAttributes(chunkInstrumentIds, this.tenantId);
+
+        for (List<InstrumentAttribute> rawSubChunk : groupedAttributes.values()) {
+            List<InstrumentAttribute> sortedSubChunk = rawSubChunk.stream()
                     .sorted(Comparator.comparingInt(InstrumentAttribute::getPeriodId))
                     .collect(Collectors.toList());
 
+            String attributeId = sortedSubChunk.get(0).getAttributeId();
+            String instrumentId = sortedSubChunk.get(0).getInstrumentId();
+
             if (sortedSubChunk.size() == 1) {
-                log.info("Processing SINGLE item (Retry Mode) for Instrument: {}", sortedSubChunk.get(0).getInstrumentId());
+                log.info("Processing SINGLE item (Retry Mode) for Instrument: {}", instrumentId);
             }
 
-            for (int i = 0; i < sortedSubChunk.size(); i++) {
-                InstrumentAttribute currentAttribute = sortedSubChunk.get(i);
+            // One or more rows in this upload sharing the same postingDate AND effectiveDate
+            // represent the same version's data split across multiple lines (e.g. one attribute
+            // field per line) — fold them into a single row before diffing, so they produce
+            // exactly one version instead of one per row.
+            sortedSubChunk = mergeSameDateRows(sortedSubChunk);
 
-                if (sortedSubChunk.size() > i + 1) {
-                    InstrumentAttribute nextAttribute = sortedSubChunk.get(i + 1);
+            // Copy the prefetched list: the code below mutates these rows and adds them to
+            // toWrite, and the caller must not see the map's own list change underneath it.
+            List<InstrumentAttribute> openInstrumentAttributes =
+                    new ArrayList<>(openByKey.getOrDefault(attributeId + "_" + instrumentId, List.of()));
+
+            if (!hasVersionableAttribute(sortedSubChunk)) {
+                toWrite.addAll(applyNonVersionableUpdate(batchId, sortedSubChunk, openInstrumentAttributes));
+                continue;
+            }
+
+            // Collapse consecutive rows within this same upload whose value is unchanged, so an
+            // unchanged value never opens a spurious new version within the file itself.
+            List<InstrumentAttribute> chain = collapseUnchanged(batchId, sortedSubChunk);
+
+            // Resolve the first entry against what's already open in the DB *before* wiring up
+            // next-version links below, so any later entry's previousVersionId points at whichever
+            // record actually ends up "current" (the new first entry, or the extended existing one).
+            InstrumentAttribute first = chain.get(0);
+            boolean firstIsNewVersion = true;
+
+            if (sortedSubChunk.size() == 1) {
+                log.info("Retry Mode: Found {} open attributes for linking", openInstrumentAttributes.size());
+            }
+
+            for (InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
+                if (Objects.equals(openInstrumentAttribute.getVersionId(), first.getVersionId())) {
+                    continue;
+                }
+
+                if (Objects.equals(versionableProjection(openInstrumentAttribute.getAttributes()), versionableProjection(first.getAttributes()))) {
+                    // Versionable fields unchanged from what's already open — keep that version
+                    // as-is (postingDate/periodId untouched) rather than opening a new one, even
+                    // if a non-versionable field alongside it changed. Only batchId is stamped,
+                    // to record that this batch touched/confirmed the record.
+                    openInstrumentAttribute.setBatchId(batchId);
+                    toWrite.add(openInstrumentAttribute);
+                    chain.set(0, openInstrumentAttribute); // later links point at the survivor
+                    first = openInstrumentAttribute;
+                    firstIsNewVersion = false;
+                } else {
+                    openInstrumentAttribute.setEndDate(first.getEffectiveDate());
+                    openInstrumentAttribute.setCloseDate(DateUtil.convertIntDateToUtc(first.getPostingDate()));
+                    first.setPreviousVersionId(openInstrumentAttribute.getVersionId());
+                    toWrite.add(openInstrumentAttribute);
+                    this.addReclassMessage(batchId, openInstrumentAttribute, first, localMessages);
+                }
+            }
+
+            for (int i = 0; i < chain.size(); i++) {
+                InstrumentAttribute currentAttribute = chain.get(i);
+
+                if (chain.size() > i + 1) {
+                    InstrumentAttribute nextAttribute = chain.get(i + 1);
                     currentAttribute.setEndDate(nextAttribute.getEffectiveDate());
                     currentAttribute.setCloseDate(DateUtil.convertIntDateToUtc(nextAttribute.getPostingDate()));
                     nextAttribute.setPreviousVersionId(currentAttribute.getVersionId());
                     this.addReclassMessage(batchId, currentAttribute, nextAttribute, localMessages);
                 }
 
-                if (i == 0) {
-                    List<InstrumentAttribute> openInstrumentAttributes =
-                            this.instrumentAttributeService.getOpenInstrumentAttributes(currentAttribute.getAttributeId(), currentAttribute.getInstrumentId(), this.tenantId);
-
-                    if (sortedSubChunk.size() == 1) {
-                        log.info("Retry Mode: Found {} open attributes for linking", openInstrumentAttributes.size());
-                    }
-
-                    for (InstrumentAttribute openInstrumentAttribute : openInstrumentAttributes) {
-                        if (Objects.equals(openInstrumentAttribute.getVersionId(), currentAttribute.getVersionId())) {
-                            continue;
-                        }
-                        openInstrumentAttribute.setEndDate(currentAttribute.getEffectiveDate());
-                        openInstrumentAttribute.setCloseDate(DateUtil.convertIntDateToUtc(currentAttribute.getPostingDate()));
-                        currentAttribute.setPreviousVersionId(openInstrumentAttribute.getVersionId());
-                        openVersion.add(openInstrumentAttribute);
-                        this.addReclassMessage(batchId, openInstrumentAttribute, currentAttribute, localMessages);
-                    }
+                if (i > 0 || firstIsNewVersion) {
+                    toWrite.add(currentAttribute);
                 }
             }
         }
 
-        List<InstrumentAttribute> flattenedList = groupedAttributes.values().stream()
-                .flatMap(List::stream)
-                .collect(Collectors.toList());
+        return new Chunk<>(toWrite);
+    }
 
-        flattenedList.addAll(openVersion);
-        return new Chunk<>(flattenedList);
+    /**
+     * Folds rows within this attributeId+instrumentId group that share the same postingDate AND
+     * effectiveDate into a single row, combining their attribute maps. An upload can carry several
+     * lines for the same instrument/date — e.g. one attribute field changed per line — and those
+     * lines are all part of the same version, not one version each. Rows are merged in upload
+     * order: the first row seen for a given (postingDate, effectiveDate) pair is kept as the
+     * surviving record (its id/versionId/etc. are preserved), and later rows for that same pair
+     * only contribute their attribute entries into it (a later row's key wins on conflict).
+     */
+    private List<InstrumentAttribute> mergeSameDateRows(List<InstrumentAttribute> sortedSubChunk) {
+        Map<String, InstrumentAttribute> mergedByDate = new LinkedHashMap<>();
+        for (InstrumentAttribute row : sortedSubChunk) {
+            String dateKey = row.getPostingDate() + "_" + (row.getEffectiveDate() == null ? "null" : row.getEffectiveDate().getTime());
+            InstrumentAttribute merged = mergedByDate.get(dateKey);
+            if (merged == null) {
+                // Defensive copy: this row survives as the merged record, so give it its own
+                // attributes map rather than mutating whatever the caller handed in.
+                Map<String, Object> attrsCopy = new HashMap<>();
+                if (row.getAttributes() != null) {
+                    attrsCopy.putAll(row.getAttributes());
+                }
+                row.setAttributes(attrsCopy);
+                mergedByDate.put(dateKey, row);
+            } else if (row.getAttributes() != null) {
+                merged.getAttributes().putAll(row.getAttributes());
+            }
+        }
+        return new ArrayList<>(mergedByDate.values());
+    }
+
+    /**
+     * Collapses consecutive rows in the same upload (for one attributeId+instrumentId group)
+     * whose versionable attribute values are identical into a single entry, so an unchanged
+     * value between two rows in the same file doesn't open a version for the second one — the
+     * surviving row's postingDate/periodId are left as they were; the discarded row's dates are
+     * not carried forward.
+     */
+    private List<InstrumentAttribute> collapseUnchanged(long batchId, List<InstrumentAttribute> sortedSubChunk) {
+        List<InstrumentAttribute> chain = new ArrayList<>();
+        for (InstrumentAttribute candidate : sortedSubChunk) {
+            if (!chain.isEmpty()) {
+                InstrumentAttribute last = chain.get(chain.size() - 1);
+                if (Objects.equals(versionableProjection(last.getAttributes()), versionableProjection(candidate.getAttributes()))) {
+                    // Unchanged value within the same upload — keep the surviving row's
+                    // postingDate/periodId as-is; the later candidate's dates are discarded.
+                    last.setBatchId(batchId);
+                    continue;
+                }
+            }
+            chain.add(candidate);
+        }
+        return chain;
+    }
+
+    /**
+     * Non-versionable attribute: no version chain ever — the existing record (if any) is updated
+     * in place with the latest incoming row's value; otherwise a single fresh record is created.
+     */
+    private List<InstrumentAttribute> applyNonVersionableUpdate(long batchId, List<InstrumentAttribute> sortedSubChunk,
+                                                                  List<InstrumentAttribute> openInstrumentAttributes) {
+        InstrumentAttribute latestIncoming = sortedSubChunk.get(sortedSubChunk.size() - 1);
+        if (!openInstrumentAttributes.isEmpty()) {
+            InstrumentAttribute existing = openInstrumentAttributes.get(0);
+            existing.setAttributes(latestIncoming.getAttributes());
+            existing.setEffectiveDate(latestIncoming.getEffectiveDate());
+            existing.setPostingDate(latestIncoming.getPostingDate());
+            existing.setPeriodId(latestIncoming.getPeriodId());
+            existing.setBatchId(batchId);
+            log.info("Non-versionable attribute {} for instrument {}: updated existing record in place (no new version).",
+                    existing.getAttributeId(), existing.getInstrumentId());
+            return List.of(existing);
+        }
+        return List.of(latestIncoming);
     }
 
     private void addReclassMessage(long batchId, InstrumentAttribute openInstrumentAttribute, InstrumentAttribute currentAttribute, CacheList<Records.InstrumentAttributeReclassMessageRecord> localMessages) {

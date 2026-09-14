@@ -4,6 +4,7 @@ import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.enums.ActivityType;
 import com.fyntrac.common.utils.DateUtil;
+import com.fyntrac.common.utils.FileUtil;
 import com.reserv.dataloader.entity.ActivityLog;
 import com.fyntrac.common.enums.FileUploadActivityType;
 import com.fyntrac.common.service.DataService;
@@ -96,9 +97,10 @@ public class ActivityLogService {
                         Date postingDate = DateUtil.convertIntDateToUtc(log.getPostingDate());
                         localPostingDate = DateUtil.convertDateToLocalDate(postingDate).atStartOfDay();
                     }
-
+                String uploadedFileName = FileUtil.getFileNameFromPath(log.getUploadFilePath());
                 Records.ActivityLogDetailRecord detail = RecordFactory.createActivityLogDetailRecord(
                         tableName,
+                        uploadedFileName,
                         log.getRecordsRead(),
                         log.getRecordsWritten(),
                         log.getRecordsSkipped(),

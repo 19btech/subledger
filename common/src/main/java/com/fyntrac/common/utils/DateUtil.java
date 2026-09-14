@@ -1711,7 +1711,33 @@ public class DateUtil extends org.apache.commons.lang.time.DateUtils {
         return utc.format(outputFormatter);
     }
 
+    /**
+     * Attempts to parse a raw string into a legacy java.util.Date using a pattern fallback matrix.
+     */
+    public static java.util.Date parseAnyFormat(String rawValue) {
+        String cleaned = rawValue.trim();
 
+        // Your pattern array strings
+        String[] datePatterns = {
+                "MM/dd/yyyy", "yyyy-MM-dd", "yyyyMMdd",
+                "dd-MM-yyyy", "dd/MM/yyyy", "MM-dd-yyyy", "yyyy/MM/dd"
+        };
+
+        for (String pattern : datePatterns) {
+            try {
+                // Explicitly use java.time instead of the file's global Joda-Time import
+                java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern(pattern);
+                java.time.LocalDate localDate = java.time.LocalDate.parse(cleaned, formatter);
+
+                // Convert cleanly to java.util.Date
+                return java.util.Date.from(localDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
+            } catch (java.time.format.DateTimeParseException ignored) {
+                // Context fallback step: try next pattern matching token
+            }
+        }
+
+        throw new IllegalArgumentException("Unsupported date format topology: " + rawValue);
+    }
 
 }
 

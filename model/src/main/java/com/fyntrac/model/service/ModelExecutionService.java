@@ -17,6 +17,7 @@ import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.StringUtil;
 import com.fyntrac.model.pulsar.producer.AggregationMessageProducer;
 import com.fyntrac.model.pulsar.producer.GeneralLedgerMessageProducer;
+import com.fyntrac.model.pulsar.producer.ModelCompletionProducer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -50,6 +51,7 @@ public class ModelExecutionService {
     private final InstrumentAttributeService instrumentAttributeService;
     private final TransactionActivityQueue transactionActivityQueue;
     private final EventRepository eventRepository;
+    private final ModelCompletionProducer modelCompletionProducer;
 
     public ModelExecutionService(ModelDataService modelDataService
             , MemcachedRepository memcachedRepository
@@ -63,7 +65,8 @@ public class ModelExecutionService {
             , AggregationMessageProducer aggregationMessageProducer
             , InstrumentAttributeService instrumentAttributeService
             , TransactionActivityQueue transactionActivityQueue
-            , EventRepository eventRepository) {
+            , EventRepository eventRepository
+            , ModelCompletionProducer modelCompletionProducer) {
         this.modelDataService = modelDataService;
         this.memcachedRepository = memcachedRepository;
         this.accountingPeriodService = accountingPeriodService;
@@ -77,10 +80,14 @@ public class ModelExecutionService {
         this.instrumentAttributeService = instrumentAttributeService;
         this.transactionActivityQueue = transactionActivityQueue;
         this.eventRepository = eventRepository;
+        this.modelCompletionProducer = modelCompletionProducer;
 
     }
 
-    public void executeExcelModels(Date executionDate, Records.ModelExecutionMessageRecord msg) throws Throwable {
+    public void executeExcelModels(Date executionDate, Records.ModelExecutionMessageRecord msg, String correlationId) throws Throwable {
+        boolean success = true;
+        String errorMsg = null;
+        long jobId = System.currentTimeMillis();
         try {
             List<Model> models = this.modelDataService.getActiveModels(msg.tenantId());
             // this.eventRepository.findAllByPostingDate(Date)
@@ -132,9 +139,6 @@ public class ModelExecutionService {
             String tenantId = msg.tenantId();
             int postingDate = DateUtil.dateInNumber(executionDate);
             String jobKey = String.format("%s-%s-%d", tenantId, "TA", postingDate);
-            long jobId = System.currentTimeMillis();
-            String transactionActivityKey = String.format("%s-%d", jobKey, timestamp);
-            TransactionActivityList activityList = new TransactionActivityList();
             // Step 3: Virtual Thread Pool
             try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
@@ -159,20 +163,8 @@ public class ModelExecutionService {
                                             accountingPeriod
                                             , instrumentId
                                             , activeModels
-                                            , events);
+                                            , events, jobId);
 
-                                    if (activities != null) {
-                                        activities.forEach(transactionActivity -> {
-                                                    log.info(String.format("Adding TransactionActivityQueue[%s]",
-                                                            transactionActivity.toString()));
-                                                    this.transactionActivityQueue.add(tenantId, jobId, transactionActivity);
-                                                    String activityKey = String.format("%s-%d", key, transactionActivity.hashCode());
-
-                                                    activityList.add(activityKey);
-                                                    this.memcachedRepository.putInCache(activityKey, transactionActivity);
-                                                }
-                                        );
-                                    }
                                 } catch (Throwable e) {
                                     throw new RuntimeException(e);
                                 }
@@ -204,14 +196,15 @@ public class ModelExecutionService {
                 }
             } catch (Throwable e) {
                 log.error("Error in executeModels", e);
+                success = false;
+                errorMsg = e.getMessage();
                 throw e; // Rethrow the exception for further handling
             } finally {
-                Records.ExecuteAggregationMessageRecord aggregationMessageRecord =
-                        RecordFactory.createExecutionAggregationRecord(tenantId, jobId, (long) postingDate);
-                aggregationMessageProducer.executeAggregation(aggregationMessageRecord);
-                this.memcachedRepository.putInCache(transactionActivityKey, activityList);
-                Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(this.transactionActivityService.getDataService().getTenantId(), jobId);
-                generalLedgerMessageProducer.bookTempGL(glRec);
+                if (correlationId != null && !correlationId.isBlank()) {
+                    String resultPayload = String.format("{\"jobId\": %d, \"status\": \"%s\"}",
+                            jobId, success ? "SUCCESS" : "FAILED");
+                    modelCompletionProducer.sendCompletionMessage(correlationId, success, resultPayload, errorMsg);
+                }
 
                 if (msg.isLast()) {
                     if (postingDate > executionState.getExecutionDate()) {
@@ -223,6 +216,8 @@ public class ModelExecutionService {
             }
         } catch (Exception exp) {
             log.error(StringUtil.getStackTrace(exp));
+            success = false;
+            errorMsg = exp.getMessage();
             throw exp;
         }
     }
@@ -367,7 +362,7 @@ public class ModelExecutionService {
                                                               AccountingPeriod accountingPeriod
             , String instrumentId
             , List<Records.ModelRecord> activeModels
-            , List<Event> events) throws Exception {
+            , List<Event> events, long jobId) throws Exception {
         log.info("Processing " + instrumentId + " on Thread: " + Thread.currentThread().getName());
 
         List<InstrumentAttribute> currentOpenInstrumentAttributes = this.instrumentAttributeService.getOpenInstrumentAttributesByInstrumentId(instrumentId, tenantId);
@@ -401,7 +396,7 @@ public class ModelExecutionService {
                                     && attr.getAttributeId().equals(act.getAttributeId()))
                             .toList();
                     List<TransactionActivity> activityList = populateMissingFields(attr, matchingActivities,
-                            accountingPeriod, DateUtil.convertIntDateToUtc(executionDate), model.model().getId());
+                            accountingPeriod, DateUtil.convertIntDateToUtc(executionDate), model.model().getId(), jobId);
                     transactions.addAll(activityList);
                     // Do something with matchingActivities
                 }
@@ -487,12 +482,13 @@ public class ModelExecutionService {
                 }
 
 
+                long jobId = System.currentTimeMillis();
                 for (InstrumentAttribute attr : currentOpenInstrumentAttributes) {
                     List<TransactionActivity> matchingActivities = filledTransactions.stream()
                             .filter(act -> attr.getInstrumentId().equals(act.getInstrumentId())
                                     && attr.getAttributeId().equals(act.getAttributeId()))
                             .toList();
-                    List<TransactionActivity> activityList = populateMissingFields(attr, matchingActivities, accountingPeriod, DateUtil.convertToUtc(context.getExecutionDate()), model.model().getId());
+                    List<TransactionActivity> activityList = populateMissingFields(attr, matchingActivities, accountingPeriod, DateUtil.convertToUtc(context.getExecutionDate()), model.model().getId(), jobId);
                     transactions.addAll(activityList);
                     // Do something with matchingActivities
                 }
@@ -504,42 +500,12 @@ public class ModelExecutionService {
                 // transactionActivities = this.transactionActivityService.save(filteredTransactions);
                 transactionActivities = this.transactionActivityService.getDataService().saveAll(filteredTransactions, tenantId, TransactionActivity.class);
 
-                // Now send message to generate GL
-                // Now send message to Aggregate transactions
-                // this.commonAggregationService.aggregate(transactionActivities, previousPostingDate);
-                LocalDateTime dateTime = LocalDateTime.now();
-                int timestamp = (int) (dateTime.toEpochSecond(ZoneOffset.UTC));
-                String key = String.format("%s-%s-%d", tenantId, "TA", DateUtil.dateInNumber(executionDate));
-
-                long jobId = System.currentTimeMillis();
-                if (transactionActivities != null) {
-                    transactionActivities.forEach(transactionActivity -> {
-                                this.transactionActivityQueue.add(tenantId, jobId, transactionActivity);
-                            }
-                    );
-                }
-
                 Records.ExecuteAggregationMessageRecord aggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenantId, jobId, (long) DateUtil.dateInNumber(executionDate));
                 aggregationMessageProducer.executeAggregation(aggregationMessageRecord);
 
-                String transactionActivityKey = String.format("%s-%d", key, timestamp);
-
-                TransactionActivityList activityList = new TransactionActivityList();
-                if (transactionActivities != null) {
-                    transactionActivities.forEach(transactionActivity -> {
-                                String activityKey = String.format("%s-%d", key, transactionActivity.hashCode());
-
-                                activityList.add(activityKey);
-                                this.memcachedRepository.putInCache(activityKey, transactionActivity);
-                            }
-                    );
-                }
-
-                this.memcachedRepository.putInCache(transactionActivityKey, activityList);
-
-
-                Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(this.transactionActivityService.getDataService().getTenantId(), jobId);
+                Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenantId, jobId);
                 generalLedgerMessageProducer.bookTempGL(glRec);
+
 
             } catch (Exception e) {
                 // Log the exception and continue processing the next model
@@ -695,7 +661,8 @@ public class ModelExecutionService {
                                                             List<TransactionActivity> transactionActivities,
                                                             AccountingPeriod accountingPeriod,
                                                             Date executionDate,
-                                                            String modelId) throws ParseException {
+                                                            String modelId,
+                                                            long jobId) throws ParseException {
 
         Map<String, Object> attributes = this.transactionActivityService.getReclassableAttributes(instrumentAttribute.getAttributes());
 
@@ -722,6 +689,7 @@ public class ModelExecutionService {
             transactionActivity.setInstrumentAttributeVersionId(instrumentAttribute.getVersionId());
             transactionActivity.setSource(Source.MODEL);
             transactionActivity.setSourceId(modelId);
+            transactionActivity.setBatchId(jobId);
         }
 
         return transactionActivities;

@@ -11,6 +11,8 @@ import com.fyntrac.common.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.StepExecutionListener;
+import org.springframework.batch.core.ItemProcessListener;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
@@ -18,6 +20,7 @@ import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.batch.item.data.builder.MongoItemWriterBuilder;
@@ -66,25 +69,45 @@ public class AttributesDataLoadConfig {
     }
 
     @Bean
-    public Step attributeImportStep() {
+    public Step attributeImportStep(
+            ItemProcessor<Attributes, Attributes> attributeItemProcessor,
+            ItemReader<Attributes> attributeFileReader,
+            ItemWriter<Attributes> attributesItemWriter,
+            com.reserv.dataloader.batch.listener.ValidationLoggingListener validationLoggingListener) {
+        
         return new StepBuilder("attributeImportStep", jobRepository)
                 .<Attributes, Attributes>chunk(10, new ResourcelessTransactionManager())
-                .reader(attributeFileReader(""))
-                .processor(attributeItemProcessor())
-                .writer(attributesItemWriter(dataSourceProvider,
-                        tenantContextHolder))
+                .reader(attributeFileReader)
+                .processor(attributeItemProcessor)
+                .faultTolerant()
+                .skip(com.reserv.dataloader.batch.exception.ItemValidationException.class)
+                .skipLimit(Integer.MAX_VALUE)
+                .listener((StepExecutionListener) validationLoggingListener)
+                .listener((ItemProcessListener) validationLoggingListener)
+                .listener(attributeItemProcessor)
+                .writer(attributesItemWriter)
                 .build();
     }
 
+    // Declared to return the concrete AttributesItemProcessor type, not the ItemProcessor
+    // interface: with @StepScope's TARGET_CLASS proxy mode, Spring needs the factory method's
+    // return type to be a concrete class to CGLIB-subclass it. Returning the bare interface here
+    // made Spring silently fall back to a JDK interface-only proxy that exposes nothing but
+    // process(Object) — beforeStep() never existed on that proxy, so it never fired, and the
+    // duplicate-name preload never ran (see TransactionsDataLoadConfig for the same bug).
     @Bean
-    public ItemProcessor<Attributes, Attributes> attributeItemProcessor() {
-        return new AttributesItemProcessor();
+    @StepScope
+    public AttributesItemProcessor attributeItemProcessor(
+            com.reserv.dataloader.validation.AttributesValidator validator,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) com.fyntrac.common.repository.AttributesRepository attributesRepository,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) com.fyntrac.common.repository.RefDataValidationLogRepository validationLogRepository) {
+        return new AttributesItemProcessor(validator, attributesRepository, validationLogRepository);
     }
 
-    @Bean()
+    @Bean
     @StepScope
     public FlatFileItemReader<Attributes> attributeFileReader(@Value("#{jobParameters[filePath]}") String fileName) {
-
+        log.info("Initializing attributeFileReader for file: {}", fileName);
         DefaultLineMapper<Attributes> defaultLineMapper = new DefaultLineMapper<>();
         DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
         lineTokenizer.setNames(new String[] {"ACTIVITYUPLOADID", "USERFIELD", "ATTRIBUTENAME", "RECLASSABLE", "VERSIONABLE", "DATATYPE", "NULLABLE"});
@@ -93,19 +116,38 @@ public class AttributesDataLoadConfig {
             @Override
             public Attributes mapFieldSet(FieldSet fieldSet) throws BindException {
                 Attributes attribute = new Attributes();
-                attribute.setAttributeName(fieldSet.readString("ATTRIBUTENAME"));
-                attribute.setUserField(fieldSet.readString("USERFIELD"));
-                String dataType = fieldSet.readString("DATATYPE");
-                if(DataType.isValid(dataType)) {
-                    attribute.setDataType(DataType.valueOf(dataType));
-                }else {
-                    attribute.setDataType(DataType.STRING);
-                }
+                attribute.setAttributeName(readStringSafe(fieldSet, "ATTRIBUTENAME"));
+                attribute.setUserField(readStringSafe(fieldSet, "USERFIELD"));
+                
+                // Pass raw string data for Enum/Nullable validation directly to transient fields
+                attribute.setRawDataType(readStringSafe(fieldSet, "DATATYPE"));
+                attribute.setRawNullable(readStringSafe(fieldSet, "NULLABLE"));
 
-                attribute.setIsReclassable(StringUtil.parseBoolean(fieldSet.readString("RECLASSABLE")));
-                attribute.setIsVersionable(StringUtil.parseBoolean(fieldSet.readString("VERSIONABLE")));
-                attribute.setIsNullable(StringUtil.parseBoolean(fieldSet.readString("NULLABLE")));
+                // Map validation sentinel integer flags (-1 = invalid, -2 = empty)
+                attribute.setIsReclassable(parseBooleanFlag(readStringSafe(fieldSet, "RECLASSABLE")));
+                attribute.setIsVersionable(parseBooleanFlag(readStringSafe(fieldSet, "VERSIONABLE")));
+                
+                // Note: The AttributesValidator will assign default values on warning and resolve final mappings.
                 return attribute;
+            }
+
+            private String readStringSafe(FieldSet fieldSet, String name) {
+                try {
+                    return fieldSet.readString(name);
+                } catch (IllegalArgumentException e) {
+                    return "";
+                }
+            }
+
+            private int parseBooleanFlag(String val) {
+                if (val == null || val.trim().isEmpty())
+                    return -2; // missing
+                val = val.trim().toLowerCase();
+                if (val.equals("true") || val.equals("1") || val.equals("1.0") || val.equals("yes") || val.equals("y"))
+                    return 1;
+                if (val.equals("false") || val.equals("0") || val.equals("0.0") || val.equals("no") || val.equals("n"))
+                    return 0;
+                return -1; // invalid
             }
         });
 
@@ -131,6 +173,7 @@ public class AttributesDataLoadConfig {
     }
 
     @Bean
+    @StepScope
     public ItemWriter<Attributes> attributesItemWriter(TenantDataSourceProvider dataSourceProvider,
                                                       TenantContextHolder tenantContextHolder) {
         MongoItemWriter<Attributes> delegate = new MongoItemWriterBuilder<Attributes>()

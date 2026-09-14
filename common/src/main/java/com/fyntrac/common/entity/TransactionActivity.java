@@ -16,7 +16,9 @@ import java.io.Serializable;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.ParseException;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -71,6 +73,40 @@ public class TransactionActivity implements Serializable {
     @Field("attributes")
     private Map<String, Object> attributes;
     int isReplayable;
+
+    @org.springframework.data.annotation.Transient
+    @Builder.Default
+    private List<ValidationError> validationErrors = new ArrayList<>();
+
+    public static class ValidationError implements java.io.Serializable {
+        private String column;
+        private String value;
+        private String errorCode;
+        private String message;
+        private String severity;
+
+        public ValidationError() {}
+
+        public ValidationError(String column, String value, String errorCode,
+                               String message, String severity) {
+            this.column    = column;
+            this.value     = value;
+            this.errorCode = errorCode;
+            this.message   = message;
+            this.severity  = severity;
+        }
+
+        public String getColumn()   { return column; }
+        public void setColumn(String column) { this.column = column; }
+        public String getValue()    { return value; }
+        public void setValue(String value) { this.value = value; }
+        public String getErrorCode() { return errorCode; }
+        public void setErrorCode(String errorCode) { this.errorCode = errorCode; }
+        public String getMessage()  { return message; }
+        public void setMessage(String message) { this.message = message; }
+        public String getSeverity() { return severity; }
+        public void setSeverity(String severity) { this.severity = severity; }
+    }
 
     /**
      * Get Transaction Date

@@ -66,7 +66,7 @@ public class InstrumentAttributeJobCompletionListener implements JobExecutionLis
         Long jobId = jobExecution.getJobParameters().getLong("jobId");
         Long uploadId = jobExecution.getJobParameters().getLong("uploadId");
         String tableName = "InstrumentAttributeHistory";
-        FileUploadActivityType activityType = FileUploadActivityType.TRANSACTION_ACTIVITY;
+        FileUploadActivityType activityType = FileUploadActivityType.INSTRUMENT_ATTRIBUTE;
 
         if (jobExecution.getStatus() == BatchStatus.COMPLETED) {
             jobExecutionMessage.append("Job Status : ")
@@ -86,7 +86,6 @@ public class InstrumentAttributeJobCompletionListener implements JobExecutionLis
 
             if (jobExecution.getStatus() == BatchStatus.COMPLETED) {
                 try{
-                    if(activityCount != null && activityCount == 1) {
                         assert tenantId != null;
                         assert jobId != null;
                         JobParameters jobParameters = new JobParametersBuilder()
@@ -101,7 +100,7 @@ public class InstrumentAttributeJobCompletionListener implements JobExecutionLis
                         assert executionState != null;
                         this.logActivity(uploadId, executionState.getExecutionDate(), tableName,jobExecution,
                                 activityType);
-                    }
+
                 }catch (Exception e){
                     throw new RuntimeException(e);
                 }finally {

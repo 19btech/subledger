@@ -18,15 +18,45 @@ import java.util.Collection;
 public class TransactionController {
 
     private final TransactionService transactionService;
+    private final com.reserv.dataloader.validation.TransactionValidator transactionValidator;
 
     @Autowired
-    public TransactionController(TransactionService transactionService) {
+    public TransactionController(TransactionService transactionService, com.reserv.dataloader.validation.TransactionValidator transactionValidator) {
         this.transactionService = transactionService;
+        this.transactionValidator = transactionValidator;
     }
 
     @PostMapping("/add")
-    public void saveData(@RequestBody Transactions t) {
+    public ResponseEntity<?> saveData(@RequestBody Transactions t) {
+        if (t == null) {
+            return ResponseEntity.badRequest().body("Request body is required.");
+        }
+
+        // Leverage efficient single-record existence check for fast REST validation
+        java.util.Set<String> existingNames = new java.util.HashSet<>();
+        if (t.getName() != null && transactionService != null) {
+            String txName = t.getName().trim();
+            Transactions existing = transactionService.getTransaction(txName);
+            if (existing != null) {
+                // Pick object from validation only where ID is NOT equal to request object (Updation logic)
+                if (t.getId() == null || !existing.getId().equals(t.getId())) {
+                    existingNames.add(txName.toUpperCase());
+                }
+            }
+        }
+
+        // Invoke the unified stateless validation matrix
+        java.util.List<com.reserv.dataloader.batch.exception.ItemValidationException.ValidationError> errors = 
+                transactionValidator.validate(t, existingNames);
+        
+        boolean hasError = errors.stream().anyMatch(log -> "ERROR".equals(log.getSeverity()));
+
+        if (hasError) {
+            return ResponseEntity.badRequest().body(errors);
+        }
+
         transactionService.save(t);
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping("/get/all")
@@ -76,6 +106,34 @@ public class TransactionController {
         } catch (Exception e) {
             // Log the exception for debugging purposes
             log.error(e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @DeleteMapping("/delete/{id}")
+    public ResponseEntity<Void> deleteTransactionById(@PathVariable String id) {
+        try {
+            transactionService.removeTransactionById(id);
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        } catch (Exception e) {
+            log.error("Error deleting transaction by ID [{}]: {}", id, e.getLocalizedMessage());
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @DeleteMapping("/delete/name/{name}")
+    public ResponseEntity<Void> deleteTransactionByName(@PathVariable String name) {
+        try {
+            transactionService.removeTransactionByName(name);
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        } catch (java.util.NoSuchElementException e) {
+            log.warn("Transaction not found for deletion by name [{}]: {}", name, e.getMessage());
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid name argument for deletion: {}", e.getMessage());
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+        } catch (Exception e) {
+            log.error("Error deleting transaction by name [{}]: {}", name, e.getLocalizedMessage());
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

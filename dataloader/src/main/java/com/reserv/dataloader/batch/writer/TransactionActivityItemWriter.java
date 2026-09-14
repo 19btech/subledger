@@ -143,20 +143,26 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
     private void setAttributes(TransactionActivity transactionActivity) {
         InstrumentAttribute instrumentAttribute = this.getLatestInstrumentAttribute(transactionActivity);
         long instrumentAttributeVersionId = 0;
-        if(instrumentAttribute != null) {
+        if (instrumentAttribute != null) {
             instrumentAttributeVersionId = instrumentAttribute.getVersionId();
+            transactionActivity.setInstrumentAttributeVersionId(instrumentAttributeVersionId);
+            Map<String, Object> attrs = this.getReclassableAttributes(instrumentAttribute.getAttributes());
+            transactionActivity.setAttributes(attrs);
+        } else {
+            log.warn("No InstrumentAttribute found for instrumentId={} attributeId={} — skipping attribute enrichment.",
+                    transactionActivity.getInstrumentId(), transactionActivity.getAttributeId());
+            transactionActivity.setInstrumentAttributeVersionId(0L);
+            transactionActivity.setAttributes(new HashMap<>());
         }
-        transactionActivity.setInstrumentAttributeVersionId(instrumentAttributeVersionId);
-
-        Map<String, Object> attributes = this.getReclassableAttributes(instrumentAttribute.getAttributes());
-            transactionActivity.setAttributes(attributes);
-
     }
 
     private InstrumentAttribute getLatestInstrumentAttribute(TransactionActivity transactionActivity) {
-        return this.instrumentAttributeService.getOpenInstrumentAttributesByInstrumentId(transactionActivity.getInstrumentId()
-                , transactionActivity.getAttributeId()
-                , this.tenantId).getFirst();
+        List<InstrumentAttribute> results = this.instrumentAttributeService
+                .getOpenInstrumentAttributesByInstrumentId(
+                        transactionActivity.getInstrumentId(),
+                        transactionActivity.getAttributeId(),
+                        this.tenantId);
+        return (results != null && !results.isEmpty()) ? results.getFirst() : null;
     }
 
     private Map<String, Object> getReclassableAttributes(Map<String, Object> instrumentAttributes) {

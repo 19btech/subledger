@@ -1,6 +1,7 @@
 package com.reserv.dataloader.service.upload;
 
 import  com.fyntrac.common.enums.FileUploadActivityType;
+import com.fyntrac.common.repository.TransactionsRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParametersInvalidException;
@@ -21,9 +22,15 @@ public class TransactionsUploadService  extends UploadService {
     @Autowired
     protected JobLauncher jobLauncher;
 
+    @Autowired
+    TransactionsRepository transactionsRepository;
 
-    public void uploadData(long uploadId,String filePath) throws JobInstanceAlreadyCompleteException,
+    public void uploadData(boolean isOverwrite,long uploadId, String filePath) throws JobInstanceAlreadyCompleteException,
             JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+        if (isOverwrite) {
+            log.info("Overwrite requested: purging existing Transactions before reload.");
+            transactionsRepository.deleteAll();
+        }
         super.uploadData(uploadId,jobLauncher, transactionsUploadJob, filePath, FileUploadActivityType.TRANSACTION);
     }
 

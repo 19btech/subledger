@@ -1,6 +1,7 @@
 package com.reserv.dataloader.service.upload;
 
 import  com.fyntrac.common.enums.FileUploadActivityType;
+import com.fyntrac.common.repository.SubledgerMappingRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParametersInvalidException;
@@ -22,7 +23,13 @@ public class SubledgerMappingUploadService extends UploadService {
     @Autowired
     protected JobLauncher jobLauncher;
 
-    public void uploadData(long uploadId,String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+    @Autowired
+    SubledgerMappingRepository subledgerMappingRepository;
+    public void uploadData(boolean isOverwrite,long uploadId, String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException, ExecutionException, InterruptedException {
+        if (isOverwrite) {
+            log.info("Overwrite requested: purging existing SubledgerMappings before reload.");
+            subledgerMappingRepository.deleteAll();
+        }
         super.uploadData(uploadId,jobLauncher, subledgerMappingUploadJob, filePath, FileUploadActivityType.SUBLEDGER_MAPPING);
     }
 }

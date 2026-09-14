@@ -8,6 +8,7 @@ import com.fyntrac.common.entity.Option;
 import com.fyntrac.common.enums.CustomTableType;
 import com.fyntrac.common.service.CustomTableDefinitionService;
 import com.fyntrac.common.service.DataService;
+import com.reserv.dataloader.exception.AccountingPeriodClosedException;
 import com.reserv.dataloader.exception.CustomTableNotFoundException;
 import com.reserv.dataloader.service.upload.FileUploadService;
 import lombok.extern.slf4j.Slf4j;
@@ -84,6 +85,25 @@ public class CustomTableController {
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(Records.ApiResponseRecord.error("Failed to get custom table: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Soft-deletes a table definition (isDeleted = true) rather than dropping its physical
+     * collection or data - see {@link CustomTableDefinitionService#softDeleteById} for the
+     * REFERENCE/OPERATIONAL cascade rules.
+     */
+    @DeleteMapping("/delete/{id}")
+    public ResponseEntity<Records.ApiResponseRecord<List<String>>> softDeleteCustomTable(@PathVariable String id) {
+        try {
+            List<String> deletedIds = tableDefinitionService.softDeleteById(id);
+            return ResponseEntity.ok(Records.ApiResponseRecord.success("Custom table deleted successfully", deletedIds));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Records.ApiResponseRecord.error(e.getMessage()));
+        } catch (Exception e) {
+            log.error("Error deleting custom table by ID [{}]: {}", id, e.getLocalizedMessage());
+            return ResponseEntity.internalServerError()
+                    .body(Records.ApiResponseRecord.error("Failed to delete custom table: " + e.getMessage()));
         }
     }
 
@@ -280,6 +300,7 @@ public class CustomTableController {
 
     @Autowired
     FileUploadService fileUploadService;
+
     @PostMapping("/data-upload")
     public ResponseEntity<String> handleFileUpload(@RequestParam("files") MultipartFile[] files) {
         try {
@@ -288,13 +309,57 @@ public class CustomTableController {
             for (MultipartFile file : files) {
                 // Save the file or perform any other operations
                 System.out.println("Received file: " + file.getOriginalFilename());
-                fileUploadService.uploadCustomTableDataFiles(file);
+                fileUploadService.uploadCustomTableDataFiles(Boolean.FALSE,file);
             }
             return ResponseEntity.ok("Files uploaded successfully");
-        } catch (Exception  e) {
+        } catch (AccountingPeriodClosedException e) {
+            // Validation check 1: executionDate falls in a closed accounting period
+            log.warn("Custom table upload rejected – accounting period is closed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("Upload rejected: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            // Validation check 2: postingDate in an OPERATIONAL file is earlier than executionDate
+            log.warn("Custom table upload rejected – postingDate validation failed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body("Upload rejected: " + e.getMessage());
+        } catch (Exception e) {
             String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
             log.error(stackTrace);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload files: cause:" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to upload files: cause:" + e.getMessage());
+        } catch (Throwable e) {
+            log.error(e.getLocalizedMessage());
+            throw new RuntimeException(e);
+        }
+    }
+
+
+    @PostMapping("/data-upload-overwrite")
+    public ResponseEntity<String> handleFileUploadOverwrite(@RequestParam("files") MultipartFile[] files) {
+        try {
+            // Process the uploaded files
+            log.info("Tesing log");
+            for (MultipartFile file : files) {
+                // Save the file or perform any other operations
+                System.out.println("Received file: " + file.getOriginalFilename());
+                fileUploadService.uploadCustomTableDataFiles(Boolean.TRUE,file);
+            }
+            return ResponseEntity.ok("Files uploaded successfully");
+        } catch (AccountingPeriodClosedException e) {
+            // Validation check 1: executionDate falls in a closed accounting period
+            log.warn("Custom table upload rejected – accounting period is closed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("Upload rejected: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            // Validation check 2: postingDate in an OPERATIONAL file is earlier than executionDate
+            log.warn("Custom table upload rejected – postingDate validation failed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body("Upload rejected: " + e.getMessage());
+        } catch (Exception e) {
+            String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
+            log.error(stackTrace);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to upload files: cause:" + e.getMessage());
         } catch (Throwable e) {
             log.error(e.getLocalizedMessage());
             throw new RuntimeException(e);
@@ -327,29 +392,37 @@ public class CustomTableController {
                         .body(Records.ApiResponseRecord.error("No Reference Table linked to Operational Table: " + reference));
             }
 
+            // The values to offer are keyed by the REFERENCE table's own designated lookup
+            // column (referenceColumn), not the operational table's primary key — the
+            // operational table's primary key (instrumentId/attributeId/postingDate) doesn't
+            // exist on reference-table documents, so using it here always yielded zero matches.
+            CustomTableDefinition referenceTableDefinition = tableDefinitionService.getCustomTableDefinition(referenceTable);
+            String referenceColumn = referenceTableDefinition != null ? referenceTableDefinition.getReferenceColumn() : null;
+
+            if (referenceColumn == null || referenceColumn.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Records.ApiResponseRecord.error("Reference Table '" + referenceTable + "' has no reference column configured."));
+            }
+
             List<Option> options = new ArrayList<>();
 
-            if(tableDefinition.getPrimaryKeys() != null && !tableDefinition.getPrimaryKeys().isEmpty()) {
-                String primaryKey = tableDefinition.getPrimaryKeys().get(0);
+            List<Document> data = this.dataService.findSelectedFieldsAsMap(referenceTable, List.of(referenceColumn));
 
-                List< Document> data = this.dataService.findSelectedFieldsAsMap(referenceTable,List.of(primaryKey));
+            for (Document doc : data) {
+                // Extract the value using the field name.
+                // We cast to String, or use toString() to be safe if it's an ObjectId or Integer.
+                Object rawValue = doc.get(referenceColumn);
 
-                for (Document doc : data) {
-                    // Extract the value using the field name.
-                    // We cast to String, or use toString() to be safe if it's an ObjectId or Integer.
-                    Object rawValue = doc.get(primaryKey);
+                if (rawValue != null) {
+                    String val = rawValue.toString();
 
-                    if (rawValue != null) {
-                        String val = rawValue.toString();
+                    // Create the Option object (Label = Value in this case)
+                    Option option = Option.builder()
+                            .label(val)
+                            .value(val)
+                            .build();
 
-                        // Create the Option object (Label = Value in this case)
-                        Option option = Option.builder()
-                                .label(val)
-                                .value(val)
-                                .build();
-
-                        options.add(option);
-                    }
+                    options.add(option);
                 }
             }
             return ResponseEntity.ok(Records.ApiResponseRecord.success(options));
@@ -378,41 +451,38 @@ public class CustomTableController {
             // 2. Check if it is the correct type
             if (tableDefinition.getTableType() != CustomTableType.REFERENCE) {
                 return ResponseEntity.badRequest()
-                        .body(Records.ApiResponseRecord.error("Table '" + reference + "' is not of type OPERATIONAL."));
+                        .body(Records.ApiResponseRecord.error("Table '" + reference + "' is not of type REFERENCE."));
             }
 
-            // 3. Perform logic
-            String referenceTable = tableDefinition.getReferenceTable();
+            // 3. Perform logic — a REFERENCE table has no separate linked table; query it
+            // directly, keyed by its own designated lookup column (referenceColumn), the same
+            // field the operational-table variant of this endpoint joins against.
+            String referenceColumn = tableDefinition.getReferenceColumn();
 
-            // Optional safety check if referenceTable can be null
-            if (referenceTable == null || referenceTable.isEmpty()) {
+            if (referenceColumn == null || referenceColumn.isEmpty()) {
                 return ResponseEntity.badRequest()
-                        .body(Records.ApiResponseRecord.error("No Reference Table linked to Operational Table: " + reference));
+                        .body(Records.ApiResponseRecord.error("Reference Table '" + reference + "' has no reference column configured."));
             }
 
             List<Option> options = new ArrayList<>();
 
-            if(tableDefinition.getPrimaryKeys() != null && !tableDefinition.getPrimaryKeys().isEmpty()) {
-                String primaryKey = tableDefinition.getPrimaryKeys().get(0);
+            List<Document> data = this.dataService.findSelectedFieldsAsMap(reference, List.of(referenceColumn));
 
-                List< Document> data = this.dataService.findSelectedFieldsAsMap(referenceTable,List.of(primaryKey));
+            for (Document doc : data) {
+                // Extract the value using the field name.
+                // We cast to String, or use toString() to be safe if it's an ObjectId or Integer.
+                Object rawValue = doc.get(referenceColumn);
 
-                for (Document doc : data) {
-                    // Extract the value using the field name.
-                    // We cast to String, or use toString() to be safe if it's an ObjectId or Integer.
-                    Object rawValue = doc.get(primaryKey);
+                if (rawValue != null) {
+                    String val = rawValue.toString();
 
-                    if (rawValue != null) {
-                        String val = rawValue.toString();
+                    // Create the Option object (Label = Value in this case)
+                    Option option = Option.builder()
+                            .label(val)
+                            .value(val)
+                            .build();
 
-                        // Create the Option object (Label = Value in this case)
-                        Option option = Option.builder()
-                                .label(val)
-                                .value(val)
-                                .build();
-
-                        options.add(option);
-                    }
+                    options.add(option);
                 }
             }
             return ResponseEntity.ok(Records.ApiResponseRecord.success(options));

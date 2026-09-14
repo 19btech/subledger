@@ -36,7 +36,7 @@ public class PlayGroundController {
             for (MultipartFile file : files) {
                 // Save the file or perform any other operations
                 System.out.println("Received file: " + file.getOriginalFilename());
-                fileUploadService.uploadFiles(file);
+                fileUploadService.uploadFiles(Boolean.FALSE,file);
             }
 
 

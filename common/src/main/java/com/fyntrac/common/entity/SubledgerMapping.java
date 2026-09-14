@@ -26,6 +26,7 @@ public class SubledgerMapping implements Cloneable, Serializable {
     private Sign sign;
     private EntryType entryType;
     private String accountSubType;
+    private boolean isDeleted;
 
     @Override
     public String toString() {

@@ -21,4 +21,13 @@ public class ModelExecutionProducer {
         log.info("EventPublisher::publishRawMessage publish topic {} {}, {}", topic, messageRecord.tenantId(), messageRecord.key());
         log.info("EventPublisher::publishRawMessage MessageId {}", msgId);
     }
+
+    public void sendModelExecutionMessageOrchestrated(Records.ModelExecutionMessageRecord messageRecord, String correlationId) {
+        var msgId = pulsarTemplate.newMessage(messageRecord)
+                .withTopic(topic)
+                .withMessageCustomizer(mb -> mb.property("correlationId", correlationId))
+                .send();
+        log.info("ModelExecutionProducer::sendOrchestrated topic={} tenant={} correlationId={} msgId={}",
+                topic, messageRecord.tenantId(), correlationId, msgId);
+    }
 }

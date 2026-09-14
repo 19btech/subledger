@@ -23,6 +23,7 @@ public class AccountTypes implements Serializable {
     private String id;
     private String accountSubType;
     private AccountType accountType;
+    private boolean isDeleted;
 
     @Override
     public String toString() {

@@ -68,6 +68,7 @@ public class ActivityReversalJobCompletionListener implements JobExecutionListen
             Integer executionDate = executionState.getExecutionDate();
             Records.ExecuteAggregationMessageRecord aggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenantId, jobId, (long) executionDate);
             aggregationExecutionService.execute(aggregationMessageRecord, executionState);
+            aggregationExecutionService.executePostAggregation(aggregationMessageRecord, executionState);
         } catch (Exception e) {
             this.memcachedRepository.flush(5);
             throw new RuntimeException(e);

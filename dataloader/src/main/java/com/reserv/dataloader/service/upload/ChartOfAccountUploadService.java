@@ -2,6 +2,7 @@ package com.reserv.dataloader.service.upload;
 
 import  com.fyntrac.common.enums.FileUploadActivityType;
 import com.fyntrac.common.entity.Attributes;
+import com.fyntrac.common.repository.ChartOfAccountRepository;
 import com.fyntrac.common.service.AttributeService;
 import com.fyntrac.common.utils.DateUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -30,7 +31,15 @@ public class ChartOfAccountUploadService extends UploadService {
     @Autowired
     AttributeService attributeService;
 
-    public void uploadData(long uploadId,String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException {
+    @Autowired
+    private ChartOfAccountRepository chartOfAccountRepository;
+
+    public void uploadData(boolean isOverwrite,long uploadId, String filePath) throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException {
+        if (isOverwrite) {
+            log.info("Overwrite requested: purging existing ChartOfAccounts before reload.");
+            chartOfAccountRepository.deleteAll();
+        }
+
         LocalDateTime startingTime = DateUtil.getDateTime();
         long runid = System.currentTimeMillis();
         StringBuilder columnNames = new StringBuilder();
@@ -49,9 +58,11 @@ public class ChartOfAccountUploadService extends UploadService {
 
         JobParameters jobParameters = new JobParametersBuilder()
                 .addString("filePath", filePath)
+                .addString("tenantId", this.dataService.getTenantId())
                 .addString("columnName", columnNames.toString())
                 .addLong("run.id", runid)
                 .toJobParameters();
+
         super.uploadData(uploadId,jobLauncher
                 ,chartOfAccountUploadJob
                 ,jobParameters

@@ -7,11 +7,12 @@ plugins {
 }
 
 group = 'com.reserv'
-version = '0.0.2-SNAPSHOT'
+version = '0.0.3-SNAPSHOT'
 
 ext {
 	projectname = 'dataloader'
 	pulsarVersion = '3.3.4'
+	commonsVersion = '0.0.2-SNAPSHOT'
 	gituser = System.getenv('GIT_USER')
 	gittoken = System.getenv('GIT_KEY')
 }
@@ -74,6 +75,7 @@ docker {
 
 
 repositories {
+	mavenLocal()
 	mavenCentral()  // Central Maven repository
 	maven {
 		url = uri("https://maven.pkg.github.com/${gituser}/subledger")  // Use an environment variable for username
@@ -90,9 +92,11 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-pulsar'
 	implementation "org.apache.pulsar:pulsar-client-all:${pulsarVersion}"
-	implementation "com.fyntrac:commons:${project.version}"
+	implementation "com.fyntrac:commons:${commonsVersion}"
 	implementation 'org.apache.poi:poi:5.4.1'
 	// implementation 'org.apache.poi:poi-ooxml:5.3.0'
 	implementation 'org.apache.poi:poi-ooxml:5.4.1'

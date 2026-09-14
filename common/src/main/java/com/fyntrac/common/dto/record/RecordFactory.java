@@ -112,6 +112,13 @@ public class RecordFactory {
         return createRecord(() -> new Records.ModelExecutionMessageRecord(tenant, executionDate, key, isLast));
     }
 
+    public static Records.PythonModelExecutionMessageRecord createPythonModelExecutionMessage(String tenant,
+                                                                                              Integer executionDate,
+                                                                                              List<String> instrumentIds,
+                                                                                              boolean isLast) {
+        return createRecord(() -> new Records.PythonModelExecutionMessageRecord(tenant, executionDate, instrumentIds, isLast));
+    }
+
     public static Records.ModelRecord createModelRecord(Model model, ModelFile modelFile) {
         return createRecord(() -> new Records.ModelRecord(model, modelFile));
     }
@@ -573,13 +580,13 @@ public class RecordFactory {
         return createRecord(() -> new Records.CustomTableColumnsRecord(tableName, columns));
     }
 
-    public static Records.ActivityLogDetailRecord createActivityLogDetailRecord(String tableName, Long recordsRead,
+    public static Records.ActivityLogDetailRecord createActivityLogDetailRecord(String tableName, String fileName, Long recordsRead,
                                                                                 Long recordsWritten,
                                                                                 Long recordsSkipped,
                                                                                 LocalDateTime startTime,
                                                                                 LocalDateTime endTime,
                                                                                 String errorMessage) {
-        return createRecord(() -> new Records.ActivityLogDetailRecord(tableName, recordsRead, recordsWritten,
+        return createRecord(() -> new Records.ActivityLogDetailRecord(tableName, fileName, recordsRead, recordsWritten,
                 recordsSkipped, startTime, endTime, errorMessage));
     }
 
@@ -591,6 +598,12 @@ public class RecordFactory {
                                                                     List<Records.ActivityLogDetailRecord> details) {
         return createRecord(() -> new Records.ActivityLogRecord(uploadId, jobName, postingDate, starting, endTime, activityStatus,
                 details));
+    }
+
+    public static Records.JobResultResponseRecord createJobResultResponseRecord(Long jobId,
+                                                                                String status,
+                                                                                Integer successCount) {
+        return  createRecord(() -> new Records.JobResultResponseRecord(jobId, status, successCount));
     }
 }
 

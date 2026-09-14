@@ -2,12 +2,20 @@ package com.reserv.dataloader.batch.processor;
 
 
 import com.fyntrac.common.entity.ChartOfAccount;
+import com.fyntrac.common.utils.NumberUtil;
+import com.reserv.dataloader.validation.ChartOfAccountValidator;
 import org.springframework.batch.item.ItemProcessor;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public class ChartOfAccountItemProcessor implements ItemProcessor<Map<String,Object>, ChartOfAccount> {
+    private final ChartOfAccountValidator validator;
+
+    public ChartOfAccountItemProcessor(ChartOfAccountValidator validator) {
+        this.validator = validator;
+    }
+
     @Override
     public ChartOfAccount process(Map<String, Object> item) throws Exception {
         final ChartOfAccount chartOfAccount = new ChartOfAccount();
@@ -18,7 +26,7 @@ public class ChartOfAccountItemProcessor implements ItemProcessor<Map<String,Obj
             if(key.equalsIgnoreCase("ACTIVITYUPLOADID")){
                 continue;
             } else if (key.equalsIgnoreCase("ACCOUNTNUMBER")) {
-                chartOfAccount.setAccountNumber((String) value);
+                chartOfAccount.setAccountNumber(NumberUtil.normalizeWholeNumberString((String) value));
             } else if (key.equalsIgnoreCase("ACCOUNTNAME")) {
                 chartOfAccount.setAccountName((String) value);
             } else if (key.equalsIgnoreCase("ACCOUNTSUBTYPE")) {
@@ -28,6 +36,11 @@ public class ChartOfAccountItemProcessor implements ItemProcessor<Map<String,Obj
             }
         }
         chartOfAccount.setAttributes(attributes);
+
+        if (validator != null) {
+            validator.validate(chartOfAccount, item);
+        }
+
         return chartOfAccount;
     }
 }

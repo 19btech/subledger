@@ -7,6 +7,9 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import org.springframework.data.mongodb.repository.Aggregation;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.util.List;
 
 @Repository
@@ -53,14 +56,34 @@ public interface EventRepository extends MongoRepository<Event, String> {
     // Count events by instrumentId
     long countByInstrumentId(String instrumentId);
 
-    // Count events by postingDate
+    // Count events by postingDate (raw event rows — use countDistinctInstrumentsByPostingDate for instrument count)
     long countByPostingDate(Integer postingDate);
 
+    /**
+     * Count of DISTINCT instrumentIds for a given postingDate.
+     * This is the correct denominator for progress tracking:
+     *   - execution batches instruments (not raw events)
+     *   - one instrument may have multiple event rows
+     *
+     * Pipeline: $match postingDate → $group by instrumentId → $count
+     */
+    @Aggregation(pipeline = {
+        "{ '$match': { 'postingDate': ?0 } }",
+        "{ '$group': { '_id': '$instrumentId' } }",
+        "{ '$count': 'total' }"
+    })
+    Long countDistinctInstrumentsByPostingDate(Integer postingDate);
+
     // Delete events by instrumentId
+    @Transactional
     void deleteByInstrumentId(String instrumentId);
 
     // Delete events by postingDate
+    @Transactional
     void deleteByPostingDate(Integer postingDate);
+
+    @Transactional
+    void deleteByPostingDateGreaterThanEqual(Integer postingDate);
 
     // Check if event exists by instrumentId and postingDate and eventId
     boolean existsByInstrumentIdAndPostingDateAndEventId(String instrumentId, Integer postingDate, String eventId);

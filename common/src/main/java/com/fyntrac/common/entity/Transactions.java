@@ -26,6 +26,7 @@ public class Transactions implements Serializable {
     private int exclusive;
     private int isGL;
     private int isReplayable;
+    private boolean isDeleted;
 
     @Override
     public String toString() {
@@ -36,6 +37,7 @@ public class Transactions implements Serializable {
         json.append("\"exclusive\":").append(exclusive).append(",");
         json.append("\"isGL\":").append(isGL);
         json.append("\"isReplayable\":").append(isReplayable);
+        json.append("\"isDeleted\":").append(isDeleted);
         json.append("}");
         return json.toString();
     }

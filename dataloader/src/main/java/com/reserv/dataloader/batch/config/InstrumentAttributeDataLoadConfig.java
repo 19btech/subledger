@@ -1,20 +1,27 @@
 package com.reserv.dataloader.batch.config;
 
-import com.fyntrac.common.component.InstrumentReplayQueue;
-import com.fyntrac.common.component.InstrumentReplaySet;
 import com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.entity.InstrumentAttribute;
+import com.fyntrac.common.repository.AttributesRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
+import com.fyntrac.common.repository.RefDataValidationLogRepository;
+import com.reserv.dataloader.service.ActivityValidationLogService;
 import com.fyntrac.common.service.AccountingPeriodService;
 import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.InstrumentAttributeService;
+import com.reserv.dataloader.batch.exception.ItemValidationException;
 import com.reserv.dataloader.batch.listener.InstrumentAttributeJobCompletionListener;
+import com.reserv.dataloader.batch.listener.ValidationLoggingListener;
 import com.reserv.dataloader.batch.processor.InstrumentAttributeItemProcessor;
 import com.reserv.dataloader.batch.writer.InstrumentAttributeWriter;
+import com.reserv.dataloader.validation.InstrumentAttributeValidator;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.ItemProcessListener;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
@@ -26,8 +33,8 @@ import org.springframework.batch.item.data.builder.MongoItemWriterBuilder;
 import org.springframework.batch.support.transaction.ResourcelessTransactionManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.IOException;
 import java.util.Map;
@@ -36,17 +43,26 @@ import java.util.Map;
 @EnableBatchProcessing(modular = true)
 @Slf4j
 public class InstrumentAttributeDataLoadConfig {
+    // Spring Batch chunk size for this upload step. Each chunk is one Mongo bulk write,
+    // one transaction boundary and one pipelined memcached flush, so a chunk of 10 meant
+    // ~364 round trips for a 3,631-row activity file. Deliberately a separate property
+    // from fyntrac.chunk.size, which sizes the model-execution page in ExcelModelService
+    // and needs to stay tunable independently of the loader.
+    @Value("${fyntrac.batch.chunk.size:500}")
+    private int batchChunkSize;
+
+
     private final JobRepository jobRepository;
     private final TenantDataSourceProvider dataSourceProvider;
-    private MongoTemplate mongoTemplate;
-    private MemcachedRepository memcachedRepository;
-    private InstrumentAttributeService instrumentAttributeService;
-    private AccountingPeriodService accountingPeriodService;
-    private ExecutionStateService executionStateService;
+    private final MongoTemplate mongoTemplate;
+    private final MemcachedRepository memcachedRepository;
+    private final InstrumentAttributeService instrumentAttributeService;
+    private final AccountingPeriodService accountingPeriodService;
+    private final ExecutionStateService executionStateService;
     private final BatchCommonConfig batchCommonConfig;
 
-
-    public InstrumentAttributeDataLoadConfig(JobRepository jobRepository, MongoTemplate mongoTemplate,
+    public InstrumentAttributeDataLoadConfig(JobRepository jobRepository,
+                                             MongoTemplate mongoTemplate,
                                              TenantDataSourceProvider dataSourceProvider,
                                              MemcachedRepository memcachedRepository,
                                              InstrumentAttributeService instrumentAttributeService,
@@ -63,8 +79,14 @@ public class InstrumentAttributeDataLoadConfig {
         this.batchCommonConfig = batchCommonConfig;
     }
 
+    // ------------------------------------------------------------------
+    // Job
+    // ------------------------------------------------------------------
+
     @Bean("instrumentAttributeUploadJob")
-    public Job instrumentAttributeUploadJob(InstrumentAttributeJobCompletionListener listener, Step instrumentAttributeImportStep) {
+    public Job instrumentAttributeUploadJob(
+            InstrumentAttributeJobCompletionListener listener,
+            Step instrumentAttributeImportStep) {
         return new JobBuilder("instrumentAttributeUploadJob", jobRepository)
                 .incrementer(new RunIdIncrementer())
                 .listener(listener)
@@ -73,39 +95,67 @@ public class InstrumentAttributeDataLoadConfig {
                 .build();
     }
 
+    // ------------------------------------------------------------------
+    // Step  — follows AggregationDataLoadConfig.aggregationImportStep()
+    // ------------------------------------------------------------------
+
     @Bean
-    public Step instrumentAttributeImportStep() throws IOException {
+    public Step instrumentAttributeImportStep(
+            ItemProcessor<Map<String, Object>, InstrumentAttribute> instrumentAttributeItemProcessor,
+            ValidationLoggingListener validationLoggingListener,
+            AttributesRepository attributesRepository) throws IOException {
         return new StepBuilder("instrumentAttributeImportStep", jobRepository)
-                .<Map<String,Object>,InstrumentAttribute>chunk(10, new ResourcelessTransactionManager())
+                .<Map<String, Object>, InstrumentAttribute>chunk(batchChunkSize, new ResourcelessTransactionManager())
                 .reader(this.batchCommonConfig.genericReader(""))
-                .processor(instrumentAttributeMapItemProcessor())
-                .taskExecutor(new SimpleAsyncTaskExecutor("instrumentAttributeImportStep"))
-                .writer(instrumentAttributeWriter(dataSourceProvider
-                        , this.memcachedRepository
-                        , this.instrumentAttributeService
-                        , this.accountingPeriodService
-                        , this.executionStateService))
+                .processor(instrumentAttributeItemProcessor)
+                .faultTolerant()
+                .skip(ItemValidationException.class)
+                .skipLimit(Integer.MAX_VALUE)
+                .listener((StepExecutionListener) validationLoggingListener)
+                .listener((ItemProcessListener) validationLoggingListener)
+                .listener(instrumentAttributeItemProcessor)     // @BeforeStep wiring
+                .writer(instrumentAttributeWriter(
+                        dataSourceProvider,
+                        memcachedRepository,
+                        instrumentAttributeService,
+                        accountingPeriodService,
+                        executionStateService,
+                        attributesRepository))
                 .build();
     }
 
-    @Bean
-    public ItemProcessor<Map<String,Object>,InstrumentAttribute> instrumentAttributeMapItemProcessor() {
-        return new InstrumentAttributeItemProcessor();
-    }
+    // ------------------------------------------------------------------
+    // Processor Bean  — @StepScope matches AggregationDataLoadConfig pattern
+    // ------------------------------------------------------------------
 
     @Bean
-    public ItemWriter<InstrumentAttribute> instrumentAttributeWriter(TenantDataSourceProvider dataSourceProvider,
-                                                                     MemcachedRepository memcachedRepository,
-                                                                     InstrumentAttributeService instrumentAttributeService,
-                                                                     AccountingPeriodService accountingPeriodService,
-                                                                     ExecutionStateService executionStateService
-    ) {
+    @StepScope
+    public InstrumentAttributeItemProcessor instrumentAttributeItemProcessor(
+            InstrumentAttributeValidator validator,
+            ActivityValidationLogService validationLogService,
+            AttributesRepository attributesRepository) {
+        return new InstrumentAttributeItemProcessor(validator, validationLogService, attributesRepository);
+    }
+
+    // ------------------------------------------------------------------
+    // Writer
+    // ------------------------------------------------------------------
+
+    @Bean
+    public ItemWriter<InstrumentAttribute> instrumentAttributeWriter(
+            TenantDataSourceProvider dataSourceProvider,
+            MemcachedRepository memcachedRepository,
+            InstrumentAttributeService instrumentAttributeService,
+            AccountingPeriodService accountingPeriodService,
+            ExecutionStateService executionStateService,
+            AttributesRepository attributesRepository) {
+
         MongoItemWriter<InstrumentAttribute> delegate = new MongoItemWriterBuilder<InstrumentAttribute>()
                 .template(mongoTemplate)
                 .collection("InstrumentAttribute")
                 .build();
 
-        return new InstrumentAttributeWriter(delegate, dataSourceProvider,  memcachedRepository,
-                instrumentAttributeService, accountingPeriodService, executionStateService);
+        return new InstrumentAttributeWriter(delegate, dataSourceProvider, memcachedRepository,
+                instrumentAttributeService, accountingPeriodService, executionStateService, attributesRepository);
     }
 }

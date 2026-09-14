@@ -15,7 +15,8 @@ import java.util.Arrays;
 import java.util.Date;
 
 @SpringBootApplication(scanBasePackages = {"com.fyntrac.common", "com.reserv.dataloader"})
-
+@org.springframework.data.jpa.repository.config.EnableJpaRepositories(basePackages = {"com.fyntrac.common.repository", "com.reserv.dataloader.repository"})
+@org.springframework.boot.autoconfigure.domain.EntityScan(basePackages = {"com.fyntrac.common.entity", "com.reserv.dataloader.entity"})
 public class DataloaderApplication {
 
 	@Bean

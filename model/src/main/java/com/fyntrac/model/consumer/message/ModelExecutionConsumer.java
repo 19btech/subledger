@@ -76,8 +76,8 @@ public class ModelExecutionConsumer {
 
             // Step 7: Execute the model
             executionDate = DateUtil.convertToDateFromYYYYMMDD(msg.getValue().executionDate());
-            // modelExecutionService.executeModels(executionDate, msg.getValue());
-            modelExecutionService.executeExcelModels(executionDate, msg.getValue());
+            String correlationId = msg.getProperty("correlationId");
+            modelExecutionService.executeExcelModels(executionDate, msg.getValue(), correlationId);
 
             // Step 8: Log success
             log.info("Message processed successfully: {}", msg.getValue());

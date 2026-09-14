@@ -193,7 +193,8 @@ public class AttributeLevelLtdFlatteningWriter implements ItemWriter<List<Record
 
     private AttributeLevelLtd getFromMemcached(String key) {
         try {
-            return memcachedRepository.getFromCache(key, AttributeLevelLtd.class);
+            // return memcachedRepository.getFromCache(key, AttributeLevelLtd.class);
+            return null;
         } catch (Exception e) {
             return null; // fallback to DB
         }

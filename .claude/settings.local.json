@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs cat)",
+      "Bash(timeout 300 ./gradlew test --tests \"*TransactionsItemProcessorTest*\" --tests \"*AttributesItemProcessorTest*\" --tests \"*AccountTypesValidatorTest*\" --tests \"*SubledgerMappingValidatorTest*\" --tests \"*TransactionValidatorTest*\" -q)",
+      "Bash(timeout 400 ./gradlew test --tests \"*TransactionsItemProcessorTest*\" --tests \"*AttributesItemProcessorTest*\" --tests \"*AccountTypesValidatorTest*\" --tests \"*SubledgerMappingValidatorTest*\" --tests \"*TransactionValidatorTest*\")",
+      "Bash(timeout 400 ./gradlew test --tests \"*TransactionsItemProcessorTest*\" --tests \"*AttributesItemProcessorTest*\" --tests \"*AccountTypesValidatorTest*\" --tests \"*SubledgerMappingValidatorTest*\" --tests \"*TransactionValidatorTest*\" --rerun-tasks)",
+      "Bash(timeout 300 ./gradlew test --tests \"*TxDupProbeTest*\" --rerun-tasks)",
+      "Bash(xargs -I{} basename {})",
+      "Bash(timeout 200 ./gradlew compileJava compileTestJava -q)",
+      "Bash(timeout 300 ./gradlew test --tests \"*SubledgerMappingValidatorTest*\" --tests \"*AccountTypesValidatorTest*\" --rerun-tasks)",
+      "Bash(timeout 300 ./gradlew test --tests \"*AccountTypesItemProcessorTest*\" --tests \"*SubledgerMappingItemProcessorTest*\" --rerun-tasks)",
+      "Bash(timeout 500 ./gradlew test --rerun-tasks)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8080/actuator/health)",
+      "Bash(awk '{print $2}')",
+      "Bash(ps -p 30374 -o pid,etime,cmd --no-headers)",
+      "Bash(kill 30374)",
+      "Bash(ps -p 30374 -o pid,cmd --no-headers)",
+      "Bash(docker exec *)",
+      "Bash(grep -v \"^$\")"
+    ]
+  }
+}
