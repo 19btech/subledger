@@ -1,3 +1,7 @@
 
 subledger/common/.idea/workspace.xml
 subledger/dataloader/.idea/workspace.xml
+
+# Model binaries extracted from MongoDB by docs/extract_model_files.py — tenant data, never commit
+model-files/
+__pycache__/

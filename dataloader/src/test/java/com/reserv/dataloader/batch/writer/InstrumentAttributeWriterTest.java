@@ -95,8 +95,8 @@ class InstrumentAttributeWriterTest {
         writer.attributeVersionableMap.put(VALUE_FIELD, true);
 
         InstrumentAttribute existingOpen = newAttribute(100L, valueOf(1), 1, 20240101);
-        when(instrumentAttributeService.getOpenInstrumentAttributes(ATTRIBUTE_ID, INSTRUMENT_ID, TENANT_ID))
-                .thenReturn(new java.util.ArrayList<>(List.of(existingOpen)));
+        when(instrumentAttributeService.getOpenInstrumentAttributes(anyCollection(), eq(TENANT_ID)))
+                .thenReturn(Map.of(ATTRIBUTE_ID + "_" + INSTRUMENT_ID, new java.util.ArrayList<>(List.of(existingOpen))));
 
         InstrumentAttribute incoming = newAttribute(200L, valueOf(2), 2, 20240201);
 
@@ -119,8 +119,8 @@ class InstrumentAttributeWriterTest {
         writer.attributeVersionableMap.put(VALUE_FIELD, true);
 
         InstrumentAttribute existingOpen = newAttribute(100L, valueOf(1), 1, 20240101);
-        when(instrumentAttributeService.getOpenInstrumentAttributes(ATTRIBUTE_ID, INSTRUMENT_ID, TENANT_ID))
-                .thenReturn(new java.util.ArrayList<>(List.of(existingOpen)));
+        when(instrumentAttributeService.getOpenInstrumentAttributes(anyCollection(), eq(TENANT_ID)))
+                .thenReturn(Map.of(ATTRIBUTE_ID + "_" + INSTRUMENT_ID, new java.util.ArrayList<>(List.of(existingOpen))));
 
         // Same value ("VALUE" -> 1), later posting/period date.
         InstrumentAttribute incoming = newAttribute(200L, valueOf(1), 2, 20240201);
@@ -144,8 +144,8 @@ class InstrumentAttributeWriterTest {
         writer.attributeVersionableMap.put(VALUE_FIELD, false);
 
         InstrumentAttribute existingOpen = newAttribute(100L, valueOf("A"), 1, 20240101);
-        when(instrumentAttributeService.getOpenInstrumentAttributes(ATTRIBUTE_ID, INSTRUMENT_ID, TENANT_ID))
-                .thenReturn(new java.util.ArrayList<>(List.of(existingOpen)));
+        when(instrumentAttributeService.getOpenInstrumentAttributes(anyCollection(), eq(TENANT_ID)))
+                .thenReturn(Map.of(ATTRIBUTE_ID + "_" + INSTRUMENT_ID, new java.util.ArrayList<>(List.of(existingOpen))));
 
         InstrumentAttribute incoming = newAttribute(200L, valueOf("B"), 2, 20240201);
 
@@ -168,8 +168,8 @@ class InstrumentAttributeWriterTest {
     void firstEverLoad_noExistingOpenVersion_writesNewRecordPlainly() throws Exception {
         writer.attributeVersionableMap.put(VALUE_FIELD, true);
 
-        when(instrumentAttributeService.getOpenInstrumentAttributes(ATTRIBUTE_ID, INSTRUMENT_ID, TENANT_ID))
-                .thenReturn(Collections.emptyList());
+        when(instrumentAttributeService.getOpenInstrumentAttributes(anyCollection(), eq(TENANT_ID)))
+                .thenReturn(Map.of(ATTRIBUTE_ID + "_" + INSTRUMENT_ID, Collections.<InstrumentAttribute>emptyList()));
 
         InstrumentAttribute incoming = newAttribute(200L, valueOf(1), 1, 20240101);
 
@@ -193,8 +193,8 @@ class InstrumentAttributeWriterTest {
         openValues.put("ORDER_DATE", "2024-01-01");
         openValues.put("NOTES", "old note");
         InstrumentAttribute existingOpen = newAttribute(100L, openValues, 1, 20240101);
-        when(instrumentAttributeService.getOpenInstrumentAttributes(ATTRIBUTE_ID, INSTRUMENT_ID, TENANT_ID))
-                .thenReturn(new java.util.ArrayList<>(List.of(existingOpen)));
+        when(instrumentAttributeService.getOpenInstrumentAttributes(anyCollection(), eq(TENANT_ID)))
+                .thenReturn(Map.of(ATTRIBUTE_ID + "_" + INSTRUMENT_ID, new java.util.ArrayList<>(List.of(existingOpen))));
 
         Map<String, Object> incomingValues = new HashMap<>();
         incomingValues.put("ORDER_DATE", "2024-01-01"); // unchanged (versionable)
@@ -225,8 +225,8 @@ class InstrumentAttributeWriterTest {
         openValues.put("ORDER_DATE", "2024-01-01");
         openValues.put("NOTES", "same note");
         InstrumentAttribute existingOpen = newAttribute(100L, openValues, 1, 20240101);
-        when(instrumentAttributeService.getOpenInstrumentAttributes(ATTRIBUTE_ID, INSTRUMENT_ID, TENANT_ID))
-                .thenReturn(new java.util.ArrayList<>(List.of(existingOpen)));
+        when(instrumentAttributeService.getOpenInstrumentAttributes(anyCollection(), eq(TENANT_ID)))
+                .thenReturn(Map.of(ATTRIBUTE_ID + "_" + INSTRUMENT_ID, new java.util.ArrayList<>(List.of(existingOpen))));
 
         Map<String, Object> incomingValues = new HashMap<>();
         incomingValues.put("ORDER_DATE", "2024-02-01"); // changed (versionable)
@@ -253,8 +253,8 @@ class InstrumentAttributeWriterTest {
         writer.attributeVersionableMap.put("ORDER_DATE", true);
         writer.attributeVersionableMap.put("NOTES", true);
 
-        when(instrumentAttributeService.getOpenInstrumentAttributes(ATTRIBUTE_ID, INSTRUMENT_ID, TENANT_ID))
-                .thenReturn(Collections.emptyList());
+        when(instrumentAttributeService.getOpenInstrumentAttributes(anyCollection(), eq(TENANT_ID)))
+                .thenReturn(Map.of(ATTRIBUTE_ID + "_" + INSTRUMENT_ID, Collections.<InstrumentAttribute>emptyList()));
 
         Map<String, Object> row1Values = new HashMap<>();
         row1Values.put("ORDER_DATE", "2024-01-01");
@@ -294,8 +294,8 @@ class InstrumentAttributeWriterTest {
         // be folded together, even though they belong to the same attributeId+instrumentId group.
         writer.attributeVersionableMap.put(VALUE_FIELD, true);
 
-        when(instrumentAttributeService.getOpenInstrumentAttributes(ATTRIBUTE_ID, INSTRUMENT_ID, TENANT_ID))
-                .thenReturn(Collections.emptyList());
+        when(instrumentAttributeService.getOpenInstrumentAttributes(anyCollection(), eq(TENANT_ID)))
+                .thenReturn(Map.of(ATTRIBUTE_ID + "_" + INSTRUMENT_ID, Collections.<InstrumentAttribute>emptyList()));
 
         InstrumentAttribute row1 = newAttribute(100L, valueOf(1), 1, 20240101);
         InstrumentAttribute row2 = newAttribute(200L, valueOf(2), 2, 20240201);

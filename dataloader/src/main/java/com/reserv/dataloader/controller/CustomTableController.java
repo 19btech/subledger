@@ -392,29 +392,37 @@ public class CustomTableController {
                         .body(Records.ApiResponseRecord.error("No Reference Table linked to Operational Table: " + reference));
             }
 
+            // The values to offer are keyed by the REFERENCE table's own designated lookup
+            // column (referenceColumn), not the operational table's primary key — the
+            // operational table's primary key (instrumentId/attributeId/postingDate) doesn't
+            // exist on reference-table documents, so using it here always yielded zero matches.
+            CustomTableDefinition referenceTableDefinition = tableDefinitionService.getCustomTableDefinition(referenceTable);
+            String referenceColumn = referenceTableDefinition != null ? referenceTableDefinition.getReferenceColumn() : null;
+
+            if (referenceColumn == null || referenceColumn.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Records.ApiResponseRecord.error("Reference Table '" + referenceTable + "' has no reference column configured."));
+            }
+
             List<Option> options = new ArrayList<>();
 
-            if(tableDefinition.getPrimaryKeys() != null && !tableDefinition.getPrimaryKeys().isEmpty()) {
-                String primaryKey = tableDefinition.getPrimaryKeys().get(0);
+            List<Document> data = this.dataService.findSelectedFieldsAsMap(referenceTable, List.of(referenceColumn));
 
-                List< Document> data = this.dataService.findSelectedFieldsAsMap(referenceTable,List.of(primaryKey));
+            for (Document doc : data) {
+                // Extract the value using the field name.
+                // We cast to String, or use toString() to be safe if it's an ObjectId or Integer.
+                Object rawValue = doc.get(referenceColumn);
 
-                for (Document doc : data) {
-                    // Extract the value using the field name.
-                    // We cast to String, or use toString() to be safe if it's an ObjectId or Integer.
-                    Object rawValue = doc.get(primaryKey);
+                if (rawValue != null) {
+                    String val = rawValue.toString();
 
-                    if (rawValue != null) {
-                        String val = rawValue.toString();
+                    // Create the Option object (Label = Value in this case)
+                    Option option = Option.builder()
+                            .label(val)
+                            .value(val)
+                            .build();
 
-                        // Create the Option object (Label = Value in this case)
-                        Option option = Option.builder()
-                                .label(val)
-                                .value(val)
-                                .build();
-
-                        options.add(option);
-                    }
+                    options.add(option);
                 }
             }
             return ResponseEntity.ok(Records.ApiResponseRecord.success(options));
@@ -443,41 +451,38 @@ public class CustomTableController {
             // 2. Check if it is the correct type
             if (tableDefinition.getTableType() != CustomTableType.REFERENCE) {
                 return ResponseEntity.badRequest()
-                        .body(Records.ApiResponseRecord.error("Table '" + reference + "' is not of type OPERATIONAL."));
+                        .body(Records.ApiResponseRecord.error("Table '" + reference + "' is not of type REFERENCE."));
             }
 
-            // 3. Perform logic
-            String referenceTable = tableDefinition.getReferenceTable();
+            // 3. Perform logic — a REFERENCE table has no separate linked table; query it
+            // directly, keyed by its own designated lookup column (referenceColumn), the same
+            // field the operational-table variant of this endpoint joins against.
+            String referenceColumn = tableDefinition.getReferenceColumn();
 
-            // Optional safety check if referenceTable can be null
-            if (referenceTable == null || referenceTable.isEmpty()) {
+            if (referenceColumn == null || referenceColumn.isEmpty()) {
                 return ResponseEntity.badRequest()
-                        .body(Records.ApiResponseRecord.error("No Reference Table linked to Operational Table: " + reference));
+                        .body(Records.ApiResponseRecord.error("Reference Table '" + reference + "' has no reference column configured."));
             }
 
             List<Option> options = new ArrayList<>();
 
-            if(tableDefinition.getPrimaryKeys() != null && !tableDefinition.getPrimaryKeys().isEmpty()) {
-                String primaryKey = tableDefinition.getPrimaryKeys().get(0);
+            List<Document> data = this.dataService.findSelectedFieldsAsMap(reference, List.of(referenceColumn));
 
-                List< Document> data = this.dataService.findSelectedFieldsAsMap(referenceTable,List.of(primaryKey));
+            for (Document doc : data) {
+                // Extract the value using the field name.
+                // We cast to String, or use toString() to be safe if it's an ObjectId or Integer.
+                Object rawValue = doc.get(referenceColumn);
 
-                for (Document doc : data) {
-                    // Extract the value using the field name.
-                    // We cast to String, or use toString() to be safe if it's an ObjectId or Integer.
-                    Object rawValue = doc.get(primaryKey);
+                if (rawValue != null) {
+                    String val = rawValue.toString();
 
-                    if (rawValue != null) {
-                        String val = rawValue.toString();
+                    // Create the Option object (Label = Value in this case)
+                    Option option = Option.builder()
+                            .label(val)
+                            .value(val)
+                            .build();
 
-                        // Create the Option object (Label = Value in this case)
-                        Option option = Option.builder()
-                                .label(val)
-                                .value(val)
-                                .build();
-
-                        options.add(option);
-                    }
+                    options.add(option);
                 }
             }
             return ResponseEntity.ok(Records.ApiResponseRecord.success(options));

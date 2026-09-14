@@ -72,6 +72,14 @@ import java.util.Map;
 @EnableBatchProcessing(modular = true)
 @Slf4j
 public class TransactionActivityDataLoadConfig {
+    // Spring Batch chunk size for this upload step. Each chunk is one Mongo bulk write,
+    // one transaction boundary and one pipelined memcached flush, so a chunk of 10 meant
+    // ~364 round trips for a 3,631-row activity file. Deliberately a separate property
+    // from fyntrac.chunk.size, which sizes the model-execution page in ExcelModelService
+    // and needs to stay tunable independently of the loader.
+    @Value("${fyntrac.batch.chunk.size:500}")
+    private int batchChunkSize;
+
 
     private final JobRepository jobRepository;
     private final TenantContextHolder tenantContextHolder;
@@ -153,7 +161,7 @@ public class TransactionActivityDataLoadConfig {
             ItemProcessor<Map<String, Object>, TransactionActivity> transactionActivityItemProcessor,
             ValidationLoggingListener validationLoggingListener) throws IOException {
         return new StepBuilder("transactionActivityImportStep", jobRepository)
-                .<Map<String, Object>, TransactionActivity>chunk(10, new ResourcelessTransactionManager())
+                .<Map<String, Object>, TransactionActivity>chunk(batchChunkSize, new ResourcelessTransactionManager())
                 .reader(transactionActivityReader(""))
                 .processor(transactionActivityItemProcessor)
                 .faultTolerant()

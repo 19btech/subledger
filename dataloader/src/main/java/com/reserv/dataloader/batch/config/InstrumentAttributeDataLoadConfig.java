@@ -34,6 +34,7 @@ import org.springframework.batch.support.transaction.ResourcelessTransactionMana
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.IOException;
 import java.util.Map;
@@ -42,6 +43,14 @@ import java.util.Map;
 @EnableBatchProcessing(modular = true)
 @Slf4j
 public class InstrumentAttributeDataLoadConfig {
+    // Spring Batch chunk size for this upload step. Each chunk is one Mongo bulk write,
+    // one transaction boundary and one pipelined memcached flush, so a chunk of 10 meant
+    // ~364 round trips for a 3,631-row activity file. Deliberately a separate property
+    // from fyntrac.chunk.size, which sizes the model-execution page in ExcelModelService
+    // and needs to stay tunable independently of the loader.
+    @Value("${fyntrac.batch.chunk.size:500}")
+    private int batchChunkSize;
+
 
     private final JobRepository jobRepository;
     private final TenantDataSourceProvider dataSourceProvider;
@@ -96,7 +105,7 @@ public class InstrumentAttributeDataLoadConfig {
             ValidationLoggingListener validationLoggingListener,
             AttributesRepository attributesRepository) throws IOException {
         return new StepBuilder("instrumentAttributeImportStep", jobRepository)
-                .<Map<String, Object>, InstrumentAttribute>chunk(10, new ResourcelessTransactionManager())
+                .<Map<String, Object>, InstrumentAttribute>chunk(batchChunkSize, new ResourcelessTransactionManager())
                 .reader(this.batchCommonConfig.genericReader(""))
                 .processor(instrumentAttributeItemProcessor)
                 .faultTolerant()

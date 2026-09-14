@@ -103,6 +103,23 @@ public class ExcelModelService {
                 continue;
             }
 
+            // 1b. This block publishes a whole-table "system" snapshot event and is only
+            // meant for configs backed by a REFERENCE table (triggerSource "reference_table"),
+            // e.g. SSP_RULE -> Accounting_Policy — a global lookup table with no instrument tie.
+            // Configs backed by an OPERATIONAL table (triggerSource "operational_table"), e.g.
+            // PROF_SERVICE_DELIVERY -> PSDLogs, are already handled per-instrument by the
+            // getValuesFromCustomTable() path below. Without this check, an operational-table
+            // config also fell into this branch (CustomTableDefinition.tableType == OPERATIONAL
+            // resolves to its referenceTable) and produced a second, redundant Event under the
+            // same eventId — one instrument-specific, one a dump of the unrelated reference table.
+            // This mirrors the same "reference_table" check EventConfigurationValidator already
+            // uses to treat these two trigger sources differently.
+            List<Option> triggerSource = cfg.getTriggerSetup().getTriggerSource();
+            if (triggerSource == null || triggerSource.isEmpty()
+                    || !"reference_table".equals(triggerSource.get(0).getValue())) {
+                continue;
+            }
+
             // 2. Validate Source Mappings
             if (cfg.getSourceMappings() == null || cfg.getSourceMappings().isEmpty()) {
                 continue;
@@ -175,9 +192,9 @@ public class ExcelModelService {
                             .build();
 
                     Event event = Event.builder()
-                            .eventId(referenceTableName)
-                            .eventName(referenceTableName)
-                            .priority(0)
+                            .eventId(cfg.getEventId())
+                            .eventName(cfg.getEventName())
+                            .priority(cfg.getPriority())
                             .instrumentId(instrumentId)
                             .postingDate(postingDate)
                             .effectiveDate(postingDate)
@@ -259,27 +276,70 @@ public class ExcelModelService {
                                          java.util.function.Consumer<Set<String>> batchConsumer) throws Exception {
         final String tenant = TenantContextHolder.getTenant();
 
+        // ── Cursor (keyset) pagination by instrumentId ────────────────────────────
+        // Previously this walked the collection with findAllByEndDateIsNull(PageRequest.of(n, size)),
+        // which put the same instrument into more than one batch for two reasons:
+        //   1. The page unit is the InstrumentAttribute DOCUMENT, not the instrument. An instrument
+        //      has one active row per attributeId, so an instrument whose rows straddle a page
+        //      boundary was grouped on page N *and* again on page N+1 — dispatched twice, and each
+        //      time processInstrumentGroup() only saw a PARTIAL attribute list for it.
+        //   2. The query carried no sort, and MongoDB gives no stable ordering guarantee for
+        //      skip/limit without one, so a document could be returned on two pages while another
+        //      was skipped entirely.
+        // Walking by instrumentId fixes both: pages are cut on instrument boundaries (never inside
+        // a group) and the cursor only ever moves forward, so each instrument is dispatched exactly
+        // once with its complete active attribute set.
         int pageNumber = 0;
         final int pageSize = this.pageSize;
-        Page<InstrumentAttribute> page;
+        String cursorInstrumentId = null;   // last instrumentId fully processed
 
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
-            do {
+            while (true) {
                 final int currentPage = pageNumber;
+                final String cursor = cursorInstrumentId;
+                final PageRequest limit =
+                        PageRequest.of(0, pageSize, Sort.by(Sort.Direction.ASC, "instrumentId"));
 
-                page = TenantContextHolder.runWithTenant(tenant,
-                        () -> instrumentRepo.findAllByEndDateIsNull(PageRequest.of(currentPage, pageSize))
+                List<InstrumentAttribute> attributes = TenantContextHolder.runWithTenant(tenant,
+                        () -> cursor == null
+                                ? instrumentRepo.findActiveOrderedByInstrumentId(limit)
+                                : instrumentRepo.findActiveAfterInstrumentId(cursor, limit)
                 );
 
-                List<InstrumentAttribute> attributes = page.getContent();
-                if (attributes.isEmpty()) break;
+                if (attributes == null || attributes.isEmpty()) break;
 
-                // Group by instrumentId — keys are the distinct IDs for this page
+                // A short read means we reached the end of the collection; a full read means the
+                // last instrument on this page may still have rows beyond the cut.
+                final boolean mayHaveMore = attributes.size() == pageSize;
+                final String lastInstrumentId = attributes.get(attributes.size() - 1).getInstrumentId();
+
+                // Group by instrumentId — LinkedHashMap keeps the instrumentId-ascending order.
                 Map<String, List<InstrumentAttribute>> groups = attributes.stream()
-                        .collect(Collectors.groupingBy(InstrumentAttribute::getInstrumentId));
+                        .collect(Collectors.groupingBy(InstrumentAttribute::getInstrumentId,
+                                LinkedHashMap::new, Collectors.toList()));
 
-                Set<String> pageInstrumentIds = new LinkedHashSet<>(groups.keySet());
+                if (mayHaveMore) {
+                    if (groups.size() > 1) {
+                        // Drop the trailing instrument — it is picked up whole at the head of the
+                        // next page, since the cursor stops short of it.
+                        groups.remove(lastInstrumentId);
+                    } else {
+                        // The entire page belongs to one instrument that has more rows past the cut.
+                        // Re-read its full active set so the group is never processed in halves.
+                        groups.put(lastInstrumentId, TenantContextHolder.runWithTenant(tenant,
+                                () -> instrumentRepo.findActiveByInstrumentId(lastInstrumentId)));
+                    }
+                }
+
+                List<String> orderedInstrumentIds = new ArrayList<>(groups.keySet());
+                if (orderedInstrumentIds.isEmpty()) break;
+
+                Set<String> pageInstrumentIds = new LinkedHashSet<>(orderedInstrumentIds);
+
+                // Advance the cursor to the last instrument this page owns. Nothing at or before it
+                // can be read again, so no instrument can reach a second batch.
+                cursorInstrumentId = orderedInstrumentIds.get(orderedInstrumentIds.size() - 1);
 
                 // Generate events for this page concurrently
                 List<CompletableFuture<List<Event>>> futures = groups.entrySet().stream()
@@ -316,14 +376,31 @@ public class ExcelModelService {
                     log.info("Saved {} events for tenant {} page {}", pageEvents.size(), tenant, currentPage);
                 }
 
-                // ── Stream this page's IDs to caller immediately ──────────────────
-                // After callback returns, pageInstrumentIds goes out of scope → GC-eligible.
-                // Only this page's IDs are live in heap at any point.
-                batchConsumer.accept(pageInstrumentIds);
+                // ── Stream only the IDs that actually produced events ──────────────
+                // pageInstrumentIds is every "active" instrument in this page (endDate == null),
+                // regardless of whether any EventConfiguration actually matched. Dispatching the
+                // full page unconditionally used to send a batch to the Python model service even
+                // when zero events were generated for it. Narrow it down to the instruments whose
+                // groups actually produced an Event, and skip the callback entirely if none did —
+                // there's nothing for the downstream model execution to process.
+                Set<String> instrumentIdsWithEvents = pageEvents.stream()
+                        .map(Event::getInstrumentId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
+
+                if (!instrumentIdsWithEvents.isEmpty()) {
+                    // After callback returns, this set goes out of scope → GC-eligible.
+                    // Only this page's IDs are live in heap at any point.
+                    batchConsumer.accept(instrumentIdsWithEvents);
+                } else {
+                    log.info("No events generated for tenant {} page {} ({} instruments checked) — skipping dispatch",
+                            tenant, currentPage, pageInstrumentIds.size());
+                }
 
                 pageNumber++;
 
-            } while (page.hasNext());
+                if (!mayHaveMore) break;   // short read — collection exhausted
+            }
 
         } catch (Exception ex) {
             log.error("Event generation failed for tenant {}", tenant, ex);
@@ -1143,8 +1220,46 @@ public class ExcelModelService {
             }
 
         Map<String, Object> valueMap = this.getBalanceValues(balances);
+
+        // Guarantee a value for every (sourceColumn, dataMapping metric) pair this SourceMapping
+        // declares, even when no AttributeLevelLtd record exists yet for that metric (e.g. no
+        // activity has posted for this instrument/attribute as of postingDate). Without this,
+        // getBalanceValues() simply omits the key instead of reporting zero, so a config like
+        // REVENUE_BALANCE (sourceColumn "EndingBalance", dataMapping "TOTAL_REVENUE") silently
+        // drops BALANCES_ENDINGBALANCE_TOTAL_REVENUE from the event instead of carrying a 0.0 —
+        // which downstream DSL/Python consumers expecting a fixed column set can choke on.
+        applyBalanceDefaults(valueMap, mapping);
+
         valueMap.put("EffectiveDate", DateUtil.convertIntDateToUtc(postingDate));
         return valueMap;
+    }
+
+    private static final Map<String, String> BALANCE_SOURCE_COLUMN_KEY_SEGMENTS = Map.of(
+            "beginningbalance", "BEGINNINGBALANCE",
+            "activity", "ACTIVITY",
+            "endingbalance", "ENDINGBALANCE"
+    );
+
+    /**
+     * Fills in a numeric default (0.0) for every (sourceColumn, dataMapping metric) combination
+     * a BALANCES SourceMapping declares that getBalanceValues() didn't produce — see caller.
+     */
+    private void applyBalanceDefaults(Map<String, Object> valueMap, SourceMapping mapping) {
+        if (mapping.getSourceColumns() == null || mapping.getDataMapping() == null) {
+            return;
+        }
+        for (Option sourceColumn : mapping.getSourceColumns()) {
+            if (sourceColumn == null || sourceColumn.getValue() == null) continue;
+            String segment = BALANCE_SOURCE_COLUMN_KEY_SEGMENTS.get(sourceColumn.getValue().toLowerCase());
+            if (segment == null) {
+                continue; // unrecognized column name for this source table — nothing to default
+            }
+            for (Option metric : mapping.getDataMapping()) {
+                if (metric == null || metric.getValue() == null) continue;
+                String key = String.format("%s_%s_%s", "BALANCES", segment, metric.getValue().toUpperCase());
+                valueMap.putIfAbsent(key, 0.0d);
+            }
+        }
     }
 
     public Map<String, Object> getValues(List<TransactionActivity> activities) throws ParseException {

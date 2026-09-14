@@ -51,6 +51,13 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     // OPTIMIZATION: Store ReferenceData as a field
     private ReferenceData referenceData;
 
+    // Accounting periods resolved so far in this step. AccountingPeriodService.getAccountingPeriod()
+    // goes to memcached and deserializes the whole accounting-period CacheMap on every call, so
+    // calling it once per row costs a round trip per row. Periods don't change while a step runs,
+    // so resolving each periodId once per step is equivalent and removes that per-row cost.
+    // A null value is memoized too, so a periodId with no matching period isn't re-queried per row.
+    private final Map<Integer, AccountingPeriod> accountingPeriodCache = new HashMap<>();
+
     // Attribute definition's isVersionable flag, keyed by Attributes.attributeName (normalised
     // upper-case) — NOT by InstrumentAttribute.attributeId. attributeId is an opaque business/
     // grouping key on the InstrumentAttribute document (same role it plays on AttributeLevelLtd /
@@ -205,7 +212,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 }
 
                 int effectivePeriodId = com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(instrumentAttribute.getEffectiveDate());
-                AccountingPeriod effectiveAccountingPeriod = this.accountingPeriodService.getAccountingPeriod(effectivePeriodId, this.tenantId);
+                AccountingPeriod effectiveAccountingPeriod = resolveAccountingPeriod(effectivePeriodId);
 
                 instrumentAttribute.setEndDate(null);
                 instrumentAttribute.setCloseDate(null);
@@ -223,11 +230,14 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
                 }
 
                 instrumentAttribute.setBatchId(batchId);
-
-                // Warning: Calling cache put in a loop is still risky for high volume.
-                // If possible, verify if instrumentAttributeService supports bulk additions.
-                this.instrumentAttributeService.addIntoCache(this.tenantId, instrumentAttribute);
             }
+
+            // Cache the whole chunk in one pass rather than once per row: the sets are
+            // pipelined over the single memcached connection instead of paying a round
+            // trip each. (This loop used to call addIntoCache() per row, which then
+            // read-modify-wrote one tenant-wide map — quadratic in the number of rows.)
+            this.instrumentAttributeService.addIntoCache(this.tenantId, combinedAttributes);
+
             delegate.setTemplate(mongoTemplate);
         }
 
@@ -245,6 +255,24 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     }
 
     // ... (Rest of your methods remain unchanged) ...
+
+    /** Resolves an accounting period once per step rather than once per row. */
+    private AccountingPeriod resolveAccountingPeriod(int periodId) {
+        if (accountingPeriodCache.containsKey(periodId)) {
+            return accountingPeriodCache.get(periodId);
+        }
+        AccountingPeriod period;
+        try {
+            period = this.accountingPeriodService.getAccountingPeriod(periodId, this.tenantId);
+        } catch (Exception e) {
+            // Mirror the previous behaviour: the caller already falls back to the current period
+            // when this comes back null, so a lookup failure must not fail the whole chunk.
+            log.warn("Failed to resolve accounting period {} for tenant {}: {}", periodId, this.tenantId, e.getMessage());
+            period = null;
+        }
+        accountingPeriodCache.put(periodId, period);
+        return period;
+    }
 
     private <T> void updateCacheWithLock(String lockKey, String dataKey, CacheList<T> newItems) {
         if (newItems == null || newItems.getList() == null || newItems.getList().isEmpty()) return;
@@ -330,6 +358,20 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
 
         List<InstrumentAttribute> toWrite = new ArrayList<>();
 
+        // Prefetch the open attributes for every instrument in this chunk in ONE query, keyed by
+        // "attributeId_instrumentId". This loop used to issue a separate Mongo query per group,
+        // i.e. one round trip per (attributeId, instrumentId) in the chunk. Nothing writes to Mongo
+        // between those lookups — setEndDate only mutates objects in memory and the chunk is
+        // persisted afterwards by the delegate — so one prefetch sees the same state as N queries.
+        Set<String> chunkInstrumentIds = new HashSet<>();
+        for (InstrumentAttribute attribute : attributesList) {
+            if (attribute.getInstrumentId() != null) {
+                chunkInstrumentIds.add(attribute.getInstrumentId());
+            }
+        }
+        Map<String, List<InstrumentAttribute>> openByKey =
+                this.instrumentAttributeService.getOpenInstrumentAttributes(chunkInstrumentIds, this.tenantId);
+
         for (List<InstrumentAttribute> rawSubChunk : groupedAttributes.values()) {
             List<InstrumentAttribute> sortedSubChunk = rawSubChunk.stream()
                     .sorted(Comparator.comparingInt(InstrumentAttribute::getPeriodId))
@@ -348,8 +390,10 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
             // exactly one version instead of one per row.
             sortedSubChunk = mergeSameDateRows(sortedSubChunk);
 
+            // Copy the prefetched list: the code below mutates these rows and adds them to
+            // toWrite, and the caller must not see the map's own list change underneath it.
             List<InstrumentAttribute> openInstrumentAttributes =
-                    this.instrumentAttributeService.getOpenInstrumentAttributes(attributeId, instrumentId, this.tenantId);
+                    new ArrayList<>(openByKey.getOrDefault(attributeId + "_" + instrumentId, List.of()));
 
             if (!hasVersionableAttribute(sortedSubChunk)) {
                 toWrite.addAll(applyNonVersionableUpdate(batchId, sortedSubChunk, openInstrumentAttributes));

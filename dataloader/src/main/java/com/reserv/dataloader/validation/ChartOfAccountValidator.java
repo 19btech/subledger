@@ -28,8 +28,12 @@ public class ChartOfAccountValidator {
     private final AttributesRepository attributesRepository;
     private final ChartOfAccountRepository chartOfAccountRepository;
     private final Set<String> validAccountSubtypes = new HashSet<>();
-    private final Set<String> seenAccountNumbers = new HashSet<>();
-    private final Set<String> seenAccountNames = new HashSet<>();
+    // Uniqueness is the composite of accountNumber + accountName + accountSubtype together
+    // with every custom attribute value — see ChartOfAccountKey. accountNumber and accountName
+    // used to be tracked separately and required to be globally unique on their own, which
+    // rejected legitimate rows that reuse an account number under a different name/subtype, or
+    // repeat the same triple with a different attribute combination.
+    private final Set<String> seenCompositeKeys = new HashSet<>();
     private final Map<String, DataType> attributeDataTypeByName = new HashMap<>();
     private static final Pattern ACCOUNT_NUMBER_PATTERN = Pattern.compile("^[a-zA-Z0-9_\\-\\.]+$");
     private static final Pattern ACCOUNT_NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_\\-\\.\\s\\(\\)\\[\\]&',/]+$");
@@ -57,11 +61,11 @@ public class ChartOfAccountValidator {
     }
 
     /**
-     * Preloads accountNumber/accountName of every ChartOfAccount record already persisted,
-     * so that re-uploading a file whose rows were already loaded in a previous job run is
-     * flagged as a duplicate (ERR_DUP_01) instead of being silently re-inserted. Without this,
-     * seenAccountNumbers/seenAccountNames only ever caught in-file duplicates (this bean is
-     * @StepScope, so a fresh instance — and empty sets — is created for every run/request).
+     * Preloads the composite key of every ChartOfAccount record already persisted, so that
+     * re-uploading a file whose rows were already loaded in a previous job run is flagged as a
+     * duplicate (ERR_DUP_01) instead of being silently re-inserted. Without this, the in-memory
+     * set only ever catches in-file duplicates (this bean is @StepScope, so a fresh instance —
+     * and an empty set — is created for every run/request).
      *
      * <p>Only wired for the batch upload path (see ChartOfAccountDataLoadConfig); the single-record
      * REST controller intentionally omits chartOfAccountRepository here, since it already performs
@@ -73,16 +77,11 @@ public class ChartOfAccountValidator {
             return;
         }
         try {
-            for (com.fyntrac.common.entity.ChartOfAccount existing : chartOfAccountRepository.findAll()) {
-                if (existing.getAccountNumber() != null) {
-                    seenAccountNumbers.add(existing.getAccountNumber());
-                }
-                if (existing.getAccountName() != null) {
-                    seenAccountNames.add(existing.getAccountName());
-                }
+            for (ChartOfAccount existing : chartOfAccountRepository.findAll()) {
+                seenCompositeKeys.add(ChartOfAccountKey.of(existing));
             }
-            log.info("Preloaded {} existing account numbers and {} existing account names for duplicate validation.",
-                    seenAccountNumbers.size(), seenAccountNames.size());
+            log.info("Preloaded {} existing chart of account keys for duplicate validation.",
+                    seenCompositeKeys.size());
         } catch (Exception e) {
             log.warn("Failed to preload existing ChartOfAccount records; DB-level duplicate detection will be skipped for this run.", e);
         }
@@ -129,13 +128,13 @@ public class ChartOfAccountValidator {
             }
         }
 
-        // Validate accountNumber
+        // Validate accountNumber (format/required only — uniqueness is composite, below)
         String rawNum = (String) rawData.get("ACCOUNTNUMBER");
-        validateAccountNumber(rawNum, errors, seenAccountNumbers);
+        validateAccountNumber(rawNum, errors);
 
-        // Validate accountName
+        // Validate accountName (format/required only — uniqueness is composite, below)
         String rawName = (String) rawData.get("ACCOUNTNAME");
-        validateAccountName(rawName, errors, seenAccountNames);
+        validateAccountName(rawName, errors);
 
         // Validate Attributes
         for (Map.Entry<String, Object> entry : rawData.entrySet()) {
@@ -182,6 +181,16 @@ public class ChartOfAccountValidator {
             }
         }
 
+        // Composite uniqueness: a row is a duplicate only when accountNumber, accountName,
+        // accountSubtype AND every custom attribute value match a row already seen — whether
+        // earlier in this file or already persisted from a previous run. Reusing an account
+        // number under a different name or subtype, or repeating the same triple with a
+        // different attribute combination, is legitimate and passes.
+        if (!seenCompositeKeys.add(ChartOfAccountKey.of(account))) {
+            errors.add(new ValidationError("composite", ChartOfAccountKey.describe(account),
+                    ErrorCode.ERR_DUP_01.getCode(), ErrorCode.ERR_DUP_01.getName(), "ERROR"));
+        }
+
         if (!errors.isEmpty()) {
             throw new ItemValidationException("Validation failed for ChartOfAccount", errors);
         }
@@ -213,7 +222,7 @@ public class ChartOfAccountValidator {
         return false;
     }
 
-    private void validateAccountNumber(String value, List<ValidationError> errors, Set<String> duplicateSet) {
+    private void validateAccountNumber(String value, List<ValidationError> errors) {
         if (value == null || value.trim().isEmpty()) {
             errors.add(new ValidationError("ACCOUNTNUMBER", value, ErrorCode.ERR_REQ_01.getCode(), ErrorCode.ERR_REQ_01.getName(), "ERROR"));
             return;
@@ -231,12 +240,9 @@ public class ChartOfAccountValidator {
             errors.add(new ValidationError("ACCOUNTNUMBER", value, ErrorCode.ERR_FMT_01.getCode(), ErrorCode.ERR_FMT_01.getName(), "ERROR"));
         }
 
-        if (!duplicateSet.add(value)) {
-            errors.add(new ValidationError("ACCOUNTNUMBER", value, ErrorCode.ERR_DUP_01.getCode(), ErrorCode.ERR_DUP_01.getName(), "ERROR"));
-        }
     }
 
-    private void validateAccountName(String value, List<ValidationError> errors, Set<String> duplicateSet) {
+    private void validateAccountName(String value, List<ValidationError> errors) {
         if (value == null || value.trim().isEmpty()) {
             errors.add(new ValidationError("ACCOUNTNAME", value, ErrorCode.ERR_REQ_01.getCode(), ErrorCode.ERR_REQ_01.getName(), "ERROR"));
             return;
@@ -250,8 +256,5 @@ public class ChartOfAccountValidator {
             errors.add(new ValidationError("ACCOUNTNAME", value, ErrorCode.ERR_FMT_01.getCode(), ErrorCode.ERR_FMT_01.getName(), "ERROR"));
         }
 
-        if (!duplicateSet.add(value)) {
-            errors.add(new ValidationError("ACCOUNTNAME", value, ErrorCode.ERR_DUP_01.getCode(), ErrorCode.ERR_DUP_01.getName(), "ERROR"));
-        }
     }
 }
