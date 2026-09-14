@@ -40,6 +40,24 @@ public interface InstrumentAttributeRepository extends MongoRepository<Instrumen
     // --- NEW: Pagination Support ---
     Page<InstrumentAttribute> findAllByEndDateIsNull(Pageable pageable);
 
+    // --- Keyset (cursor) pagination over ACTIVE rows, ordered by instrumentId ---
+    // skip/limit pagination over this collection is not safe for batching: an instrument
+    // holds one active row per attributeId, so page boundaries split an instrument's rows
+    // across two pages (and an unsorted skip/limit can return the same document twice).
+    // These two methods let callers walk the collection by instrumentId instead, so a given
+    // instrument lands in exactly one batch. Pass the page size via the Pageable; the caller
+    // supplies the ascending instrumentId sort.
+    @Query("{ 'endDate': null }")
+    List<InstrumentAttribute> findActiveOrderedByInstrumentId(Pageable pageable);
+
+    @Query("{ 'endDate': null, 'instrumentId': { $gt: ?0 } }")
+    List<InstrumentAttribute> findActiveAfterInstrumentId(String instrumentId, Pageable pageable);
+
+    // Full active row set for a single instrument — used to complete a group that would
+    // otherwise straddle a page boundary.
+    @Query("{ 'endDate': null, 'instrumentId': ?0 }")
+    List<InstrumentAttribute> findActiveByInstrumentId(String instrumentId);
+
     // Delete all InstrumentAttribute records for a given posting date
     long deleteByPostingDate(Integer postingDate);
 

@@ -36,6 +36,16 @@ public class PythonModelCompletionListener {
 
         log.info("Python completion received for correlationId: {}. Success: {}", correlationId, success);
 
+        if (!success) {
+            // error is frequently null here when the Python service reports a failure without
+            // populating the "error" field (or uses a different field/type than expected) — log
+            // the raw payload so the actual cause isn't lost behind a bare "null" message upstream.
+            log.error("Python completion FAILED for correlationId: {}. Raw payload: {}", correlationId, payload);
+            if (error == null || error.isBlank()) {
+                error = "Python service reported failure with no error detail. Raw payload: " + payload;
+            }
+        }
+
         batchCompletionWaiter.completeBatch(
                 correlationId,
                 new BatchCompletionWaiter.BatchResult(

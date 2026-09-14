@@ -105,54 +105,137 @@ public class ChartOfAccountValidatorTest {
 
     @Test
     void testAccountNumberValidation() {
+        // The entity is populated from the row exactly as ChartOfAccountItemProcessor does, so
+        // each call carries its own composite key and the format checks below are isolated from
+        // duplicate detection.
+
         // Null
         Map<String, Object> rawData = new HashMap<>();
         rawData.put("ACCOUNTNUMBER", null);
-        assertThrows(ItemValidationException.class, () -> validator.validate(new ChartOfAccount(), rawData));
+        assertThrows(ItemValidationException.class,
+                () -> validator.validate(account(null, null, null, Map.of()), rawData));
 
         // Trim whitespace
         rawData.put("ACCOUNTNUMBER", " ACC_001 ");
-        ItemValidationException ex1 = assertThrows(ItemValidationException.class, () -> validator.validate(new ChartOfAccount(), rawData));
+        ItemValidationException ex1 = assertThrows(ItemValidationException.class,
+                () -> validator.validate(account(" ACC_001 ", null, null, Map.of()), rawData));
         assertTrue(ex1.getValidationErrors().stream().anyMatch(e -> e.getErrorCode().equals(ErrorCode.ERR_SPC_02.getCode())));
 
         // No whitespace
         rawData.put("ACCOUNTNUMBER", "ACC 001");
-        ItemValidationException ex2 = assertThrows(ItemValidationException.class, () -> validator.validate(new ChartOfAccount(), rawData));
+        ItemValidationException ex2 = assertThrows(ItemValidationException.class,
+                () -> validator.validate(account("ACC 001", null, null, Map.of()), rawData));
         assertTrue(ex2.getValidationErrors().stream().anyMatch(e -> e.getErrorCode().equals(ErrorCode.ERR_SPC_01.getCode())));
 
         // Alphanum, underscore, hyphens, dots should be allowed
         rawData.put("ACCOUNTNUMBER", "ACC-001");
         rawData.put("ACCOUNTNAME", "Cash Account One");
         rawData.put("ACCOUNTSUBTYPE", "ASSET");
-        assertDoesNotThrow(() -> validator.validate(new ChartOfAccount(), rawData));
+        assertDoesNotThrow(() -> validator.validate(
+                account("ACC-001", "Cash Account One", "ASSET", Map.of()), rawData));
 
         rawData.put("ACCOUNTNUMBER", "ACC.001");
         rawData.put("ACCOUNTNAME", "Cash Account Two");
-        assertDoesNotThrow(() -> validator.validate(new ChartOfAccount(), rawData));
+        assertDoesNotThrow(() -> validator.validate(
+                account("ACC.001", "Cash Account Two", "ASSET", Map.of()), rawData));
 
         // Invalid characters (e.g. #) should fail format validation
         rawData.put("ACCOUNTNUMBER", "ACC#001");
         rawData.put("ACCOUNTNAME", "Cash Account Three");
-        ItemValidationException ex3 = assertThrows(ItemValidationException.class, () -> validator.validate(new ChartOfAccount(), rawData));
+        ItemValidationException ex3 = assertThrows(ItemValidationException.class,
+                () -> validator.validate(account("ACC#001", "Cash Account Three", "ASSET", Map.of()), rawData));
         assertTrue(ex3.getValidationErrors().stream().anyMatch(e -> e.getErrorCode().equals(ErrorCode.ERR_FMT_01.getCode())));
     }
 
-    @Test
-    void testDuplicateAccountNumber() {
+    // ------------------------------------------------------------------
+    // Uniqueness is the composite of accountNumber + accountName + accountSubtype TOGETHER
+    // WITH every custom attribute value. The triple alone is not unique.
+    // ------------------------------------------------------------------
+
+    private static Map<String, Object> rawRow(String number, String name, String subtype) {
         Map<String, Object> rawData = new HashMap<>();
-        rawData.put("ACCOUNTNUMBER", "ACC_001");
-        rawData.put("ACCOUNTNAME", "Name1");
-        rawData.put("ACCOUNTSUBTYPE", "ASSET");
+        rawData.put("ACCOUNTNUMBER", number);
+        rawData.put("ACCOUNTNAME", name);
+        rawData.put("ACCOUNTSUBTYPE", subtype);
+        return rawData;
+    }
 
+    private static ChartOfAccount account(String number, String name, String subtype, Map<String, Object> attributes) {
         ChartOfAccount account = new ChartOfAccount();
-        account.setAccountNumber("ACC_001");
+        account.setAccountNumber(number);
+        account.setAccountName(name);
+        account.setAccountSubtype(subtype);
+        account.setAttributes(attributes);
+        return account;
+    }
 
-        // First one passes
-        assertDoesNotThrow(() -> validator.validate(account, rawData));
+    @Test
+    void testExactDuplicateIsRejected() {
+        Map<String, Object> rawData = rawRow("ACC_001", "Cash", "ASSET");
 
-        // Second one with same number fails
-        ItemValidationException ex = assertThrows(ItemValidationException.class, () -> validator.validate(account, rawData));
+        // Everything matches, attributes included -> the second row is a duplicate.
+        assertDoesNotThrow(() -> validator.validate(
+                account("ACC_001", "Cash", "ASSET", Map.of("DEPT", "NY")), rawData));
+
+        ItemValidationException ex = assertThrows(ItemValidationException.class, () -> validator.validate(
+                account("ACC_001", "Cash", "ASSET", Map.of("DEPT", "NY")), rawData));
         assertTrue(ex.getValidationErrors().stream().anyMatch(e -> e.getErrorCode().equals(ErrorCode.ERR_DUP_01.getCode())));
+    }
+
+    @Test
+    void testSameTripleWithDifferentAttributesIsAllowed() {
+        Map<String, Object> rawData = rawRow("ACC_001", "Cash", "ASSET");
+
+        assertDoesNotThrow(() -> validator.validate(
+                account("ACC_001", "Cash", "ASSET", Map.of("DEPT", "NY")), rawData));
+
+        // Same number/name/subtype, different attribute value -> a distinct mapping, not a duplicate.
+        assertDoesNotThrow(() -> validator.validate(
+                account("ACC_001", "Cash", "ASSET", Map.of("DEPT", "LA")), rawData));
+    }
+
+    @Test
+    void testAccountNumberReusedUnderDifferentNameOrSubtypeIsAllowed() {
+        assertDoesNotThrow(() -> validator.validate(
+                account("ACC_001", "Cash", "ASSET", Map.of()), rawRow("ACC_001", "Cash", "ASSET")));
+
+        // Same account number, different name.
+        assertDoesNotThrow(() -> validator.validate(
+                account("ACC_001", "Petty Cash", "ASSET", Map.of()), rawRow("ACC_001", "Petty Cash", "ASSET")));
+
+        // Same account number and name, different subtype.
+        assertDoesNotThrow(() -> validator.validate(
+                account("ACC_001", "Cash", "LIABILITY", Map.of()), rawRow("ACC_001", "Cash", "LIABILITY")));
+    }
+
+    @Test
+    void testAccountNameReusedUnderDifferentNumberIsAllowed() {
+        assertDoesNotThrow(() -> validator.validate(
+                account("ACC_001", "Cash", "ASSET", Map.of()), rawRow("ACC_001", "Cash", "ASSET")));
+
+        // Same name, different account number.
+        assertDoesNotThrow(() -> validator.validate(
+                account("ACC_002", "Cash", "ASSET", Map.of()), rawRow("ACC_002", "Cash", "ASSET")));
+    }
+
+    @Test
+    void testAttributeOrderAndCaseDoNotAffectDuplicateDetection() {
+        Map<String, Object> rawData = rawRow("ACC_001", "Cash", "ASSET");
+
+        Map<String, Object> first = new LinkedHashMap<>();
+        first.put("DEPT", "NY");
+        first.put("REGION", "East");
+
+        Map<String, Object> sameButReordered = new LinkedHashMap<>();
+        sameButReordered.put("REGION", "east");   // different case
+        sameButReordered.put("DEPT", " NY ");     // different surrounding whitespace
+
+        assertDoesNotThrow(() -> validator.validate(account("ACC_001", "Cash", "ASSET", first), rawData));
+
+        ItemValidationException ex = assertThrows(ItemValidationException.class, () -> validator.validate(
+                account("ACC_001", "Cash", "ASSET", sameButReordered), rawData));
+        assertTrue(ex.getValidationErrors().stream().anyMatch(e -> e.getErrorCode().equals(ErrorCode.ERR_DUP_01.getCode())),
+                "Attribute map order, case and padding must not make an identical record look distinct");
     }
 
     @Test
@@ -162,20 +245,13 @@ public class ChartOfAccountValidatorTest {
         // Without the DB preload, ChartOfAccountValidator only tracked in-file duplicates
         // (its sets start empty on every @StepScope-fresh run), so a repeat upload would
         // silently pass validation and insert a duplicate document.
-        ChartOfAccount existing = new ChartOfAccount();
-        existing.setAccountNumber("ACC_DB_001");
-        existing.setAccountName("Existing Cash Account");
+        ChartOfAccount existing = account("ACC_DB_001", "Existing Cash Account", "ASSET", Map.of("DEPT", "NY"));
         when(chartOfAccountRepository.findAll()).thenReturn(List.of(existing));
         validator.init();
 
-        Map<String, Object> rawData = new HashMap<>();
-        rawData.put("ACCOUNTNUMBER", "ACC_DB_001");
-        rawData.put("ACCOUNTNAME", "Existing Cash Account");
-        rawData.put("ACCOUNTSUBTYPE", "ASSET");
+        Map<String, Object> rawData = rawRow("ACC_DB_001", "Existing Cash Account", "ASSET");
 
-        ChartOfAccount account = new ChartOfAccount();
-        account.setAccountNumber("ACC_DB_001");
-        account.setAccountName("Existing Cash Account");
+        ChartOfAccount account = account("ACC_DB_001", "Existing Cash Account", "ASSET", Map.of("DEPT", "NY"));
 
         ItemValidationException ex = assertThrows(ItemValidationException.class, () -> validator.validate(account, rawData));
         assertTrue(ex.getValidationErrors().stream().anyMatch(e -> e.getErrorCode().equals(ErrorCode.ERR_DUP_01.getCode())),

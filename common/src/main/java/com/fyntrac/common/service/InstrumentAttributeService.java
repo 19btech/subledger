@@ -1,6 +1,5 @@
 package com.fyntrac.common.service;
 
-import com.fyntrac.common.cache.collection.CacheMap;
 import  com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.entity.InstrumentActivityState;
 import com.fyntrac.common.entity.InstrumentAttribute;
@@ -11,6 +10,7 @@ import com.fyntrac.common.repository.InstrumentAttributeRepository;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.utils.DateUtil;
 import com.fyntrac.common.utils.Key;
+import net.spy.memcached.internal.OperationFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
@@ -93,6 +93,44 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         query.addCriteria(Criteria.where("endDate").is(null));
 
         return this.dataService.fetchData(query, tenantId, InstrumentAttribute.class);
+    }
+
+    /**
+     * Bulk form of {@link #getOpenInstrumentAttributes(String, String, String)}: fetches the open
+     * (endDate == null) attributes for many instruments in ONE query and returns them grouped by
+     * "attributeId_instrumentId" — the same key InstrumentAttributeWriter.setEndDate() groups the
+     * incoming chunk by.
+     *
+     * The writer used to call the single-pair method once per group, which is one Mongo round trip
+     * per (attributeId, instrumentId) in the chunk — a few thousand sequential queries for a large
+     * upload file. Nothing is written to Mongo between those calls (setEndDate only mutates objects
+     * in memory; the chunk is persisted afterwards by the delegate writer), so prefetching once per
+     * chunk sees exactly the same state as querying per group.
+     *
+     * The query filters on instrumentId, which is the prefix of the
+     * {instrumentId, attributeId, versionId} compound index, so the $in is index-served.
+     */
+    public Map<String, List<InstrumentAttribute>> getOpenInstrumentAttributes(Collection<String> instrumentIds,
+                                                                             String tenantId) {
+        if (instrumentIds == null || instrumentIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Query query = new Query();
+        query.addCriteria(Criteria.where("instrumentId").in(instrumentIds));
+        query.addCriteria(Criteria.where("endDate").is(null));
+
+        List<InstrumentAttribute> open = this.dataService.fetchData(query, tenantId, InstrumentAttribute.class);
+        if (open == null || open.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, List<InstrumentAttribute>> byKey = new HashMap<>();
+        for (InstrumentAttribute attribute : open) {
+            byKey.computeIfAbsent(attribute.getAttributeId() + "_" + attribute.getInstrumentId(),
+                    k -> new ArrayList<>()).add(attribute);
+        }
+        return byKey;
     }
 
     // Define a method in your service class
@@ -252,19 +290,60 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
         return new HashSet<>(instrumentIds);
     }
 
+    /**
+     * Caches a single InstrumentAttribute under its own key.
+     *
+     * This used to read-modify-write ONE tenant-wide CacheMap holding every instrument
+     * attribute, once per row, from InstrumentAttributeWriter.write(). Each call did a
+     * full download + deserialize (twice over — ifExists() issues its own get and throws
+     * the result away), added one entry, then re-serialized and uploaded the whole map,
+     * so writing N rows moved O(N^2) bytes. A measured Hearst load pushed ~11 GB through
+     * memcached to maintain ~11 MB of cache, and the aggregate entry was already at 41%
+     * of memcached's 1 MB item_size_max — past which the set silently fails, ifExists()
+     * then reports false, and every row rebuilds the map from empty forever.
+     *
+     * Storing each attribute under Key.instrumentAttributeKey (the key the inner map was
+     * already using) makes this O(1) per row, needs no read at all, and removes the 1 MB
+     * ceiling since each entry holds one attribute.
+     */
     public void addIntoCache(String tenantId, InstrumentAttribute instrumentAttribute) {
-        String key = Key.instrumentAttributeList(tenantId);
-        CacheMap<InstrumentAttribute> instrumentAttributeCacheMap;
-        if(this.memcachedRepository.ifExists(key)) {
-            instrumentAttributeCacheMap = this.memcachedRepository.getFromCache(key, CacheMap.class);
-          }else{
-            instrumentAttributeCacheMap = new CacheMap<InstrumentAttribute>();
-         }
-        String iaKey = this.getKey(tenantId
-                , instrumentAttribute);
+        if (instrumentAttribute == null) {
+            return;
+        }
+        this.memcachedRepository.putInCache(this.getKey(tenantId, instrumentAttribute), instrumentAttribute);
+    }
 
-        instrumentAttributeCacheMap.put(iaKey,instrumentAttribute);
-        this.memcachedRepository.putInCache(key, instrumentAttributeCacheMap);
+    /**
+     * Caches a whole chunk in one pass.
+     *
+     * spymemcached's set() is asynchronous, so the sets pipeline over the single
+     * connection instead of paying a round trip each. We still block until they land
+     * before returning, so a subsequent read in the same step cannot miss a write we
+     * just issued.
+     */
+    public void addIntoCache(String tenantId, Collection<InstrumentAttribute> instrumentAttributes) {
+        if (instrumentAttributes == null || instrumentAttributes.isEmpty()) {
+            return;
+        }
+        List<OperationFuture<Boolean>> pending = new ArrayList<>(instrumentAttributes.size());
+        for (InstrumentAttribute instrumentAttribute : instrumentAttributes) {
+            if (instrumentAttribute == null) {
+                continue;
+            }
+            pending.add(this.memcachedRepository.putInCache(
+                    this.getKey(tenantId, instrumentAttribute), instrumentAttribute));
+        }
+        for (OperationFuture<Boolean> future : pending) {
+            try {
+                future.get();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while caching instrument attributes", e);
+            } catch (Exception e) {
+                // A cache write failing is not fatal: every reader falls back to Mongo.
+                log.warn("Failed to cache an instrument attribute for tenant {}: {}", tenantId, e.getMessage());
+            }
+        }
     }
 
     private String getKey(String tenantId, InstrumentAttribute instrumentAttribute) {
@@ -280,23 +359,20 @@ public class InstrumentAttributeService extends CacheBasedService<InstrumentAttr
                 , instrumentId
                 , periodId);
     }
+    /**
+     * Warms the cache for one instrument attribute, reading it from the per-attribute key
+     * written by addIntoCache() and falling back to Mongo on a miss.
+     */
     public void getInstrumentAttribute(String tenantId, String attributeId, String instrumentId, int periodId) {
-        String key = Key.instrumentAttributeList(tenantId);
-        CacheMap<InstrumentAttribute> instrumentAttributeCacheMap;
-        if(this.memcachedRepository.ifExists(key)) {
-            instrumentAttributeCacheMap = this.memcachedRepository.getFromCache(key, CacheMap.class);
-        }else{
-            instrumentAttributeCacheMap = new CacheMap<InstrumentAttribute>();
+        String iaKey = this.getKey(tenantId, attributeId, instrumentId, periodId);
+        InstrumentAttribute instrumentAttribute =
+                this.memcachedRepository.getFromCache(iaKey, InstrumentAttribute.class);
+        if (instrumentAttribute == null) {
+            instrumentAttribute = this.getInstrumentAttributeByPeriodId(tenantId, attributeId, instrumentId, periodId);
+            if (instrumentAttribute != null) {
+                this.addIntoCache(tenantId, instrumentAttribute);
+            }
         }
-        String iaKey = this.getKey(tenantId
-                , attributeId, instrumentId, periodId);
-         InstrumentAttribute instrumentAttribute =  instrumentAttributeCacheMap.getValue(iaKey);
-         if(instrumentAttribute == null) {
-             instrumentAttribute = this.getInstrumentAttributeByPeriodId(tenantId, attributeId, instrumentId, periodId);
-             if(instrumentAttribute != null) {
-                 this.addIntoCache(tenantId, instrumentAttribute);
-             }
-         }
     }
 
     public InstrumentAttribute createInstrumentAttribute(String instrumentId,

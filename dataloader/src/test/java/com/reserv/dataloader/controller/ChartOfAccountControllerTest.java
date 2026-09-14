@@ -77,7 +77,11 @@ class ChartOfAccountControllerTest {
     }
 
     @Test
-    void saveDate_SameSubtypeAttrsDifferentNumber_ReturnsBadRequestErrDup02() {
+    void saveDate_SameSubtypeAttrsDifferentNumber_IsAllowed() {
+        // Uniqueness is the composite of accountNumber + accountName + accountSubtype together
+        // with the attribute values. Reusing a subtype and attribute set under a different
+        // account number/name is legitimate — the old ERR_DUP_02 rule that rejected this has
+        // been removed.
         ChartOfAccount existing = account("existing-id", "ACC_001", "Cash at Bank", "ASSET", new HashMap<>());
         when(dataService.fetchAllData(ChartOfAccount.class)).thenReturn(List.of(existing));
 
@@ -85,11 +89,27 @@ class ChartOfAccountControllerTest {
 
         ResponseEntity<?> response = controller.saveDate(incoming);
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        @SuppressWarnings("unchecked")
-        List<ItemValidationException.ValidationError> errors = (List<ItemValidationException.ValidationError>) response.getBody();
-        assertNotNull(errors);
-        assertTrue(errors.stream().anyMatch(e -> ErrorCode.ERR_DUP_02.getCode().equals(e.getErrorCode())));
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(dataService).save(incoming);
+    }
+
+    @Test
+    void saveDate_SameTripleDifferentAttributes_IsAllowed() {
+        // The triple on its own is not unique: the same number/name/subtype may repeat as long
+        // as the attribute values differ.
+        Map<String, Object> existingAttrs = new HashMap<>();
+        existingAttrs.put("DEPT", "NY");
+        ChartOfAccount existing = account("existing-id", "ACC_001", "Cash at Bank", "ASSET", existingAttrs);
+        when(dataService.fetchAllData(ChartOfAccount.class)).thenReturn(List.of(existing));
+
+        Map<String, Object> incomingAttrs = new HashMap<>();
+        incomingAttrs.put("DEPT", "LA");
+        ChartOfAccount incoming = account(null, "ACC_001", "Cash at Bank", "ASSET", incomingAttrs);
+
+        ResponseEntity<?> response = controller.saveDate(incoming);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(dataService).save(incoming);
     }
 
     @Test
