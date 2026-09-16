@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dataloader
+  namespace: fyntrac
+spec:
+  # 2 replicas so a LoadBalancer Service actually has something to balance across —
+  # see docs/K8S_SCALING_STRATEGY.md for what this does and doesn't parallelize today.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dataloader
+  template:
+    metadata:
+      labels:
+        app: dataloader
+    spec:
+      # Kubernetes injects legacy Docker-link-style env vars for every Service in this namespace
+      # (SVCNAME_PORT=tcp://ip:port, etc.). application-dev.properties' memcached.port=11211 gets
+      # silently clobbered by an auto-injected MEMCACHED_PORT=tcp://... — Spring env vars win over
+      # properties-file values — which crashed the app trying to parse that URL as an int. Turning
+      # this off avoids that whole class of collision for any current or future service name.
+      enableServiceLinks: false
+      # Pulsar has no native "start after X is healthy" ordering in Kubernetes, and
+      # ExecuteAggregationConsumer.init() throws if it can't subscribe at startup — which
+      # crashes the whole pod. This blocks until Pulsar's admin API reports healthy first.
+      initContainers:
+        - name: wait-for-pulsar
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until wget -q -T 3 -O /dev/null http://pulsar:8080/admin/v2/brokers/health; do
+                echo "waiting for pulsar to become healthy..."
+                sleep 5
+              done
+              echo "pulsar is healthy"
+      containers:
+        - name: dataloader
+          image: fyntrac/dataloader:local
+          # Image was `k3s ctr images import`-ed directly into containerd, not pulled from a
+          # registry — Never stops k3s from trying (and failing) to pull it remotely.
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8081
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: dev
+            - name: SPRING_PULSAR_CLIENT_SERVICE-URL
+              value: pulsar://pulsar:6650
+            # application-dev.properties defaults memcached.host to "localhost" (fine for a
+            # native run, wrong pod-to-pod) — point it at the memcached Service instead.
+            - name: MEMCACHED_HOST
+              value: memcached
+            - name: MEMCACHED_PORT
+              value: "11211"
+            - name: ZITADEL_ISSUER_URI
+              valueFrom:
+                secretKeyRef:
+                  name: fyntrac-secrets
+                  key: ZITADEL_ISSUER_URI
+            - name: MONGODB_PSWD
+              valueFrom:
+                secretKeyRef:
+                  name: fyntrac-secrets
+                  key: MONGODB_PSWD
+            - name: SPRING_DATA_MONGODB_URI
+              value: "mongodb://root:$(MONGODB_PSWD)@mongodb:27017/master?authSource=admin"
+            # TenantDatasourceConfig (per-tenant Mongo connections, invoked on every request by
+            # TenantFilter) builds its own connection string from these discrete properties —
+            # separate from spring.data.mongodb.uri above — and none of them were set, so Spring
+            # Boot's defaults (host=localhost) applied and every request tried to reach Mongo on
+            # the pod's own loopback interface. It hand-builds a URI string itself and re-parses
+            # it, so the password here needs the URL-encoded form (MONGODB_PSWD), not the raw one.
+            - name: SPRING_DATA_MONGODB_HOST
+              value: mongodb
+            - name: SPRING_DATA_MONGODB_PORT
+              value: "27017"
+            - name: SPRING_DATA_MONGODB_USERNAME
+              value: root
+            - name: SPRING_DATA_MONGODB_PASSWORD
+              value: "$(MONGODB_PSWD)"
+            - name: SPRING_DATA_MONGODB_AUTHENTICATION_DATABASE
+              value: admin
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "1.5Gi"
+            limits:
+              cpu: "1"
+              # Bumped from 2Gi: both replicas got OOMKilled (exit 137) mid-test after more
+              # posting-date activity data was added to the Hearst test case — the larger
+              # event-generation/aggregation working set for a heavier run exceeded the old
+              # limit. Host has 30Gi total with room to spare for this local dev cluster.
+              memory: "4Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dataloader
+  namespace: fyntrac
+spec:
+  type: LoadBalancer
+  selector:
+    app: dataloader
+  ports:
+    - port: 8081
+      targetPort: 8081

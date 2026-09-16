@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
@@ -24,6 +25,13 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @NoArgsConstructor
 @Document(collection = "activity_data_validation_log")
+// Covers ActivityDataValidationLogRepository's actual hot queries (findByJobId,
+// findByJobIdAndInstrumentId, findByJobIdAndErrorCode, findByJobIdAndValidationType — all as
+// index prefixes off jobId, which had no index at all before this).
+@CompoundIndex(def = "{'jobId': 1, 'instrumentId': 1}", name = "ActivityDataValidationLog_job_instrument_index")
+// Also covers the instrumentId+attributeId+postingDate combination directly, for any future
+// per-instrument/date triage query outside the jobId-scoped ones above.
+@CompoundIndex(def = "{'instrumentId': 1, 'attributeId': 1, 'postingDate': 1}", name = "ActivityDataValidationLog_instrument_attribute_postingdate_index")
 public class ActivityDataValidationLog {
 
     /** Auto-generated MongoDB _id. */

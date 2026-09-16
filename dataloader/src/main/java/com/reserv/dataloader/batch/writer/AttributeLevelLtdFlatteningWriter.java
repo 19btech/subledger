@@ -97,6 +97,14 @@ public class AttributeLevelLtdFlatteningWriter implements ItemWriter<List<Record
                 })
                 .toList();
 
+        // Fetches every groupedRecords key's existing AttributeLevelLtd row in this posting
+        // date in ONE round trip instead of one findOne() per record — getFromMemcached() below
+        // is a disabled stub (always returns null), so every record used to fall through to its
+        // own individual query. With chunk sizes in the hundreds that was hundreds of sequential
+        // round-trips per chunk; confirmed directly as the cause of this aggregation step going
+        // from single-digit-ms to 14s+ as data volume grew. Same result, just fetched together.
+        Map<GroupKey, AttributeLevelLtd> existingByKey = batchFetchExisting(groupedRecords);
+
         for (Records.AttributeLevelLtdRecord record : groupedRecords) {
             String key = buildKey(record, tenantId, jobId);
 
@@ -107,7 +115,8 @@ public class AttributeLevelLtdFlatteningWriter implements ItemWriter<List<Record
                 // Load from Memcached or DB
                 ltd = getFromMemcached(key);
                 if (ltd == null) {
-                    ltd = attributeLevelAggregationService.getDataService().findOne(buildQuery(record), AttributeLevelLtd.class);
+                    ltd = existingByKey.get(new GroupKey(record.metricName().toUpperCase(),
+                            record.instrumentId().toUpperCase(), record.attributeId().toUpperCase()));
                 }
 
                 if (ltd == null) {
@@ -206,6 +215,33 @@ public class AttributeLevelLtdFlatteningWriter implements ItemWriter<List<Record
         } catch (Exception e) {
             // ignore caching failure
         }
+    }
+
+    // All records in a chunk share the same postingDate (see the comment above groupedRecords'
+    // construction), so this one query — postingDate equality plus an $or of this chunk's
+    // (metricName, instrumentId, attributeId) triples — covers what buildQuery() would have
+    // looked up one record at a time.
+    private Map<GroupKey, AttributeLevelLtd> batchFetchExisting(List<Records.AttributeLevelLtdRecord> records) {
+        if (records.isEmpty()) {
+            return Map.of();
+        }
+        Integer postingDate = records.get(0).postingDate();
+        List<Criteria> orCriteria = records.stream()
+                .map(r -> Criteria.where("metricName").is(r.metricName().toUpperCase())
+                        .and("instrumentId").is(r.instrumentId().toUpperCase())
+                        .and("attributeId").is(r.attributeId().toUpperCase()))
+                .toList();
+        Query batchQuery = new Query(new Criteria().andOperator(
+                Criteria.where("postingDate").is(postingDate),
+                new Criteria().orOperator(orCriteria)));
+
+        List<AttributeLevelLtd> existing =
+                attributeLevelAggregationService.getDataService().getMongoTemplate().find(batchQuery, AttributeLevelLtd.class);
+
+        return existing.stream().collect(Collectors.toMap(
+                e -> new GroupKey(e.getMetricName().toUpperCase(), e.getInstrumentId().toUpperCase(), e.getAttributeId().toUpperCase()),
+                e -> e,
+                (a, b) -> a));
     }
 
     private Query buildQuery(Records.AttributeLevelLtdRecord r) {

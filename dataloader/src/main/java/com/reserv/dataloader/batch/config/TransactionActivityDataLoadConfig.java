@@ -102,6 +102,12 @@ public class TransactionActivityDataLoadConfig {
     private final RefDataValidationLogRepository validationLogRepository;
     private final com.fyntrac.common.repository.InstrumentAttributeRepository instrumentAttributeRepository;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("M/d/yyyy");
+
+    // Stage 0 (docs/K8S_SCALING_STRATEGY.md): was a hardcoded chunk(10, ...) — 100k+ Mongo round
+    // trips for a million-row file. Externalized so it can be tuned without a redeploy.
+    @Value("${fyntrac.upload.chunk.size:1000}")
+    private int chunkSize;
+
     @Autowired
     public TransactionActivityDataLoadConfig(JobRepository jobRepository
                                      , MongoTemplate mongoTemplate

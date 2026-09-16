@@ -7,7 +7,7 @@ plugins {
 }
 
 group = 'com.fyntrac'
-version = '0.0.3-SNAPSHOT'
+version = System.getenv('FYNTRAC_VERSION') ?: '0.0.3-SNAPSHOT'
 
 ext {
 	projectname = 'gl'

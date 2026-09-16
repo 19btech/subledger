@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.io.Serial;
@@ -22,7 +23,13 @@ public class Aggregation implements Serializable {
     private static final long serialVersionUID = 8471241075094548866L;
     @Id
     private String id;
+    // AggregationService.getMetricNames/getAggregationMetrics filters on exactly this field —
+    // no index existed before.
+    @Indexed
     private String transactionName;
+    // AggregationService.existsByMetricName/softDeleteByMetricName filter on exactly this field —
+    // no index existed before.
+    @Indexed
     private String metricName;
     private boolean isDeleted;
 

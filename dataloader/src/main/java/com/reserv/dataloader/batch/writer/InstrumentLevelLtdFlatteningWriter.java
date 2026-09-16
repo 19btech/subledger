@@ -95,6 +95,9 @@ public class InstrumentLevelLtdFlatteningWriter implements ItemWriter<List<Recor
                 })
                 .toList();
 
+        // See AttributeLevelLtdFlatteningWriter.batchFetchExisting for why — one round trip for
+        // the whole chunk instead of one findOne() per record.
+        Map<GroupKey, InstrumentLevelLtd> existingByKey = batchFetchExisting(groupedRecords);
 
         for (Records.InstrumentLevelLtdRecord record : groupedRecords) {
             String key = buildKey(record, tenantId, jobId);
@@ -106,7 +109,7 @@ public class InstrumentLevelLtdFlatteningWriter implements ItemWriter<List<Recor
                 // Load from Memcached or DB
                 ltd = getFromMemcached(key);
                 if (ltd == null) {
-                    ltd = instrumentLevelAggregationService.getDataService().findOne(buildQuery(record), InstrumentLevelLtd.class);
+                    ltd = existingByKey.get(new GroupKey(record.metricName().toUpperCase(), record.instrumentId().toUpperCase()));
                 }
 
                 if (ltd == null) {
@@ -202,6 +205,28 @@ public class InstrumentLevelLtdFlatteningWriter implements ItemWriter<List<Recor
         } catch (Exception e) {
             // ignore caching failure
         }
+    }
+
+    private Map<GroupKey, InstrumentLevelLtd> batchFetchExisting(List<Records.InstrumentLevelLtdRecord> records) {
+        if (records.isEmpty()) {
+            return Map.of();
+        }
+        Integer postingDate = records.get(0).postingDate();
+        List<Criteria> orCriteria = records.stream()
+                .map(r -> Criteria.where("metricName").is(r.metricName().toUpperCase())
+                        .and("instrumentId").is(r.instrumentId().toUpperCase()))
+                .toList();
+        Query batchQuery = new Query(new Criteria().andOperator(
+                Criteria.where("postingDate").is(postingDate),
+                new Criteria().orOperator(orCriteria)));
+
+        List<InstrumentLevelLtd> existing =
+                instrumentLevelAggregationService.getDataService().getMongoTemplate().find(batchQuery, InstrumentLevelLtd.class);
+
+        return existing.stream().collect(Collectors.toMap(
+                e -> new GroupKey(e.getMetricName().toUpperCase(), e.getInstrumentId().toUpperCase()),
+                e -> e,
+                (a, b) -> a));
     }
 
     private Query buildQuery(Records.InstrumentLevelLtdRecord r) {

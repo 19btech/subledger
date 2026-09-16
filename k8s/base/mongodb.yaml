@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb
+  namespace: fyntrac
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:8.2
+          # `args`, not `command` — command would override the image's ENTRYPOINT
+          # (docker-entrypoint.sh), which is what applies --bind_ip_all and runs the
+          # MONGO_INITDB_ROOT_* user bootstrap. Overriding it left mongod listening
+          # only on 127.0.0.1 (unreachable from other pods, though the in-container
+          # readiness probe still passed) and with no root user ever created.
+          args: ["--wiredTigerCacheSizeGB", "1.5"]
+          ports:
+            - containerPort: 27017
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              value: root
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fyntrac-secrets
+                  # NOT the MONGODB_PSWD key — that's URL-encoded for connection-string use
+                  # (see create-secret.sh). This env var is consumed literally by
+                  # docker-entrypoint.sh, so it needs the decoded MONGODB_PSWD_RAW or mongod's
+                  # actual password won't match what every client decodes from the URI.
+                  key: MONGODB_PSWD_RAW
+            - name: MONGO_INITDB_DATABASE
+              value: master
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+            - name: mongo-init
+              mountPath: /docker-entrypoint-initdb.d/mongo-init.js
+              subPath: mongo-init.js
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mongodb-data
+        - name: mongo-init
+          configMap:
+            # Name is "mongo-init" in the overlay that generates it (k8s/overlays/local); kustomize
+            # rewrites this to the generated, content-hashed name (e.g. mongo-init-<hash>) at apply
+            # time, so the pod restarts automatically whenever mongo-init.js's content changes.
+            name: mongo-init
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-data
+  namespace: fyntrac
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: fyntrac
+spec:
+  selector:
+    app: mongodb
+  ports:
+    - port: 27017
+      targetPort: 27017

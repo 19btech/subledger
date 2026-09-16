@@ -96,6 +96,10 @@ public class MetricLevelLtdFlatteningWriter implements ItemWriter<List<Records.M
                 .toList();
 
 
+        // See AttributeLevelLtdFlatteningWriter.batchFetchExisting for why — one round trip for
+        // the whole chunk instead of one findOne() per record.
+        Map<String, MetricLevelLtd> existingByKey = batchFetchExisting(groupedRecords);
+
         for (Records.MetricLevelLtdRecord record : groupedRecords) {
             String key = buildKey(record, tenantId, jobId);
 
@@ -106,7 +110,7 @@ public class MetricLevelLtdFlatteningWriter implements ItemWriter<List<Records.M
                 // Load from Memcached or DB
                 ltd = getFromMemcached(key);
                 if (ltd == null) {
-                    ltd = this.metricLevelAggregationService.getDataService().findOne(buildQuery(record), MetricLevelLtd.class);
+                    ltd = existingByKey.get(record.metricName().toUpperCase());
                 }
 
                 if (ltd == null) {
@@ -202,6 +206,27 @@ public class MetricLevelLtdFlatteningWriter implements ItemWriter<List<Records.M
         } catch (Exception e) {
             // ignore caching failure
         }
+    }
+
+    private Map<String, MetricLevelLtd> batchFetchExisting(List<Records.MetricLevelLtdRecord> records) {
+        if (records.isEmpty()) {
+            return Map.of();
+        }
+        Integer postingDate = records.get(0).postingDate();
+        List<String> metricNames = records.stream()
+                .map(r -> r.metricName().toUpperCase())
+                .distinct()
+                .toList();
+        Query batchQuery = new Query(Criteria.where("postingDate").is(postingDate)
+                .and("metricName").in(metricNames));
+
+        List<MetricLevelLtd> existing =
+                this.metricLevelAggregationService.getDataService().getMongoTemplate().find(batchQuery, MetricLevelLtd.class);
+
+        return existing.stream().collect(Collectors.toMap(
+                e -> e.getMetricName().toUpperCase(),
+                e -> e,
+                (a, b) -> a));
     }
 
     private Query buildQuery(Records.MetricLevelLtdRecord r) {

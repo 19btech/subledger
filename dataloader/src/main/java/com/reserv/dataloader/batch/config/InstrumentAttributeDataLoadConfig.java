@@ -31,6 +31,7 @@ import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
 import org.springframework.batch.item.data.builder.MongoItemWriterBuilder;
 import org.springframework.batch.support.transaction.ResourcelessTransactionManager;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -60,6 +61,11 @@ public class InstrumentAttributeDataLoadConfig {
     private final AccountingPeriodService accountingPeriodService;
     private final ExecutionStateService executionStateService;
     private final BatchCommonConfig batchCommonConfig;
+
+    // Stage 0 (docs/K8S_SCALING_STRATEGY.md): was a hardcoded chunk(10, ...) — 100k+ Mongo round
+    // trips for a million-row file. Externalized so it can be tuned without a redeploy.
+    @Value("${fyntrac.upload.chunk.size:1000}")
+    private int chunkSize;
 
     public InstrumentAttributeDataLoadConfig(JobRepository jobRepository,
                                              MongoTemplate mongoTemplate,

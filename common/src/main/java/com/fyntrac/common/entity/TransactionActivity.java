@@ -37,6 +37,22 @@ import javax.validation.constraints.NotNull;
 @NoArgsConstructor
 @Document(collection = "TransactionActivity")
 @CompoundIndex(def = "{'instrumentId': 1, 'attributeId': 1}", name = "transaction_activity_instrument_attribute_index")
+// Covers the attribute/instrument/metric-level LTD batch readers (AttributeLevelLtdBatchConfig
+// etc.), which all filter {postingDate: X, batchId: Y} — postingDate alone is indexed but batchId
+// isn't, so each of those per-batch reads scans every TransactionActivity for that date instead
+// of jumping straight to its own batch's rows.
+@CompoundIndex(def = "{'postingDate': 1, 'batchId': 1}", name = "transaction_activity_postingdate_batch_index")
+// Covers TransactionActivityRepository.findActiveByTransactions/findActiveByTransactionName
+// (ON_TRANSACTION_POST) and findActivityByTransactions (ON_REPLAY) — all filter/range on exactly
+// these three fields, called once per instrument×attribute×EventConfiguration during event
+// generation. Without postingDate in the index, the {instrumentId,attributeId} index above only
+// gets MongoDB to that instrument's rows; since TransactionActivity is append-only across posting
+// dates within a run, it then has to scan through every prior date's rows for that instrument to
+// filter — a scan that grows with each successive posting date processed in the same run
+// (confirmed directly: event-generation page time climbed from ~8.5s/page on the first posting
+// date to ~16s/page on the third, in the same test run, before this index existed).
+@CompoundIndex(def = "{'instrumentId': 1, 'attributeId': 1, 'postingDate': 1}",
+        name = "transaction_activity_instrument_attribute_postingdate_index")
 public class TransactionActivity implements Serializable {
     @Serial
     private static final long serialVersionUID = 8444760102552307163L;

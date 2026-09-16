@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.pulsar.annotation.PulsarListener;
 import org.apache.pulsar.client.api.Message;
+import org.apache.pulsar.client.api.SubscriptionType;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -20,7 +21,19 @@ public class PythonModelCompletionListener {
         this.batchCompletionWaiter = batchCompletionWaiter;
     }
 
-    @PulsarListener(topics = "${spring.pulsar.consumer.topic-python-model-completion:fyntrac-python-model-completion}")
+    // Default (Exclusive) subscription lets only one consumer ever attach — fine for a single
+    // instance, but with >1 dataloader replica the second pod's ConsumerBusyException fails its
+    // whole ApplicationContext at startup (Spring's Pulsar listener container stops on startup
+    // failure by default), so at most one replica could ever come up. Failover avoids that by
+    // keeping exactly one active consumer at a time while letting standby replicas attach without
+    // erroring.
+    // Note: which replica's listener happens to be "active" no longer matters for correctness —
+    // BatchCompletionWaiter now writes completions to Memcached (shared across all replicas)
+    // instead of an in-process map, so Shared would work here too. The replica that dispatched a
+    // given batch no longer needs to be the same one whose listener receives its completion;
+    // see BatchCompletionWaiter for the bug that arose when it did.
+    @PulsarListener(topics = "${spring.pulsar.consumer.topic-python-model-completion:fyntrac-python-model-completion}",
+            subscriptionType = SubscriptionType.Failover)
     public void onPythonModelCompletion(Message<Map<String, Object>> message) {
         String correlationId = message.getProperty("correlationId");
 

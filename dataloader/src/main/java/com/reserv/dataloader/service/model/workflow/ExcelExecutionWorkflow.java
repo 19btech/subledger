@@ -69,6 +69,13 @@ public class ExcelExecutionWorkflow extends AbstractExecutionWorkflow {
 
         AtomicInteger batchCounter = new AtomicInteger(0);
 
+        // See DslExecutionWorkflow.generateAndProcessEvents for why this lock exists: batches now
+        // run concurrently on their own virtual threads, but MetricLevelLtdFlatteningWriter and
+        // incrementCompletedBatches both read-modify-write shared state across batches, so only
+        // aggregation + GL sync + progress-increment need to be serialized, not the slow
+        // dispatch/await part.
+        java.util.concurrent.locks.ReentrantLock aggregationLock = new java.util.concurrent.locks.ReentrantLock();
+
         excelModelService.generateEventAndDispatch(postingDate, batch -> {
             int batchNumber = batchCounter.getAndIncrement();
             String correlationId = instance.getId() + "_batch_" + batchNumber;
@@ -78,8 +85,9 @@ public class ExcelExecutionWorkflow extends AbstractExecutionWorkflow {
                 // [Step 2A] Dispatch to Excel Model Service
                 modelExecutionService.dispatchExcelBatchOrchestrated(executionDate, batch, correlationId);
 
-                // [Step 2B/C] SUSPEND and WAIT for callback from Model Service
-                BatchCompletionWaiter.BatchResult result = batchCompletionWaiter.waitForCompletion(correlationId, 600000L); // 10min timeout
+                // [Step 2B] SUSPEND and WAIT for callback (polls Memcached — see BatchCompletionWaiter).
+                // Runs on this batch's own virtual thread, concurrently with every other batch's wait.
+                BatchCompletionWaiter.BatchResult result = batchCompletionWaiter.awaitCompletion(correlationId, 600000L); // 10min timeout
 
                 if (result == null || !"SUCCESS".equals(result.status())) {
                     throw new RuntimeException("Excel processing failed for batch " + batchNumber + ": " +
@@ -98,18 +106,24 @@ public class ExcelExecutionWorkflow extends AbstractExecutionWorkflow {
                     log.error("Failed to parse jobId from Excel result payload: {}. Payload: {}", e.getMessage(), result.payload());
                 }
 
-                // [Step 3] Immediate Financial Aggregation
                 Records.JobResultResponseRecord jobResultResponseRecord = NativeJsonParserService.parseJobResultSafely(result.payload());
-                Records.ExecuteAggregationMessageRecord executeAggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenant,
-                        jobResultResponseRecord.jobId(), Long.valueOf(postingDate));
-                ExecutionState executionState = executionStateService.getExecutionState();
-                aggregationExecutionService.execute(executeAggregationMessageRecord, executionState);
 
-                // [Step 4] Real-Time General Ledger Sync
-                Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenant, jobResultResponseRecord.jobId());
-                generalLedgerMessageProducer.bookTempGL(glRec);
+                aggregationLock.lock();
+                try {
+                    // [Step 3] Immediate Financial Aggregation
+                    Records.ExecuteAggregationMessageRecord executeAggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenant,
+                            jobResultResponseRecord.jobId(), Long.valueOf(postingDate));
+                    ExecutionState executionState = executionStateService.getExecutionState();
+                    aggregationExecutionService.execute(executeAggregationMessageRecord, executionState);
 
-                incrementCompletedBatches(instance);
+                    // [Step 4] Real-Time General Ledger Sync
+                    Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenant, jobResultResponseRecord.jobId());
+                    generalLedgerMessageProducer.bookTempGL(glRec);
+
+                    incrementCompletedBatches(instance);
+                } finally {
+                    aggregationLock.unlock();
+                }
             } catch (Exception e) {
                 log.error("Critical failure in Excel batch {} for instance {}: {}", batchNumber, instance.getId(), e.getMessage());
                 throw new RuntimeException(e);
