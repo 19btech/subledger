@@ -79,7 +79,7 @@ spec:
             # periods throttled (cpu.stat measured over a full Hearst_GHK run). Keep this equal
             # to the CPU limit below: more workers than quota just adds contention and memory.
             - name: MAX_PROCESS_WORKERS
-              value: "3"
+              value: "4"
           readinessProbe:
             httpGet:
               path: /health
@@ -98,9 +98,11 @@ spec:
               cpu: "1"
               memory: "1Gi"
             limits:
-              # Model execution is CPU-bound and was the run's dominant wall-clock cost; paired
-              # with MAX_PROCESS_WORKERS above. 4 replicas x 3 = 12 of the node's 20 cores.
-              cpu: "3"
+              # Model execution is CPU-bound and is the run's dominant wall-clock cost; paired
+              # with MAX_PROCESS_WORKERS above. At 3 cores with all 4 pods busy the workers were
+              # each pegged at ~100% and the pods throttled 12-14% of periods. 4 replicas x 4 =
+              # 16 of the node's 20 cores; mongodb and the JVMs together use ~2-3.
+              cpu: "4"
               memory: "2Gi"
 ---
 apiVersion: v1
