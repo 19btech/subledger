@@ -76,11 +76,13 @@ spec:
               value: "11211"
             # How many model-execution batches ExcelModelService keeps in flight at once
             # (fyntrac.batch.max-concurrent-dispatch). Each dsl-model pod works one batch at a
-            # time, so this and dsl-model.yaml's `replicas` are ONE knob: raising replicas without
-            # this leaves the extra pods idle; raising this without replicas just lengthens each
-            # batch's wait in the Pulsar queue toward BatchCompletionWaiter's timeout. Keep equal.
+            # time and (since receiver_queue_size=1 on its consumer) is only handed a message
+            # when it is ready, so keep this at ~2x dsl-model.yaml's `replicas`: one batch
+            # executing per pod plus one waiting at the broker, which stops pods idling between
+            # batches (measured at 4/4: only ~2.4 pods busy on average). Each queued batch waits
+            # at most one batch duration (~40s), well inside BatchCompletionWaiter's 10 minutes.
             - name: FYNTRAC_BATCH_MAX_CONCURRENT_DISPATCH
-              value: "4"
+              value: "8"
             - name: ZITADEL_ISSUER_URI
               valueFrom:
                 secretKeyRef:

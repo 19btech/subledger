@@ -7,8 +7,9 @@ spec:
   # 4 replicas — safe to scale since both of its Pulsar consumers use ConsumerType.Shared
   # (verified in app/pulsar/manager.py), not Exclusive like the bug we hit and fixed in
   # dataloader's PythonModelCompletionListener.
-  # Change together with dataloader.yaml's FYNTRAC_BATCH_MAX_CONCURRENT_DISPATCH — each pod
-  # works one batch at a time, so replicas beyond that value sit idle.
+  # Change together with dataloader.yaml's FYNTRAC_BATCH_MAX_CONCURRENT_DISPATCH (keep it at
+  # ~2x replicas): each pod works one batch at a time, so replicas beyond half that value sit
+  # idle, and fewer leaves batches queueing at the broker.
   replicas: 4
   selector:
     matchLabels:
