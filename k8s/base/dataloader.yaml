@@ -38,13 +38,32 @@ spec:
               echo "pulsar is healthy"
       containers:
         - name: dataloader
-          image: fyntrac/dataloader:local
-          # Image was `k3s ctr images import`-ed directly into containerd, not pulled from a
-          # registry — Never stops k3s from trying (and failing) to pull it remotely.
-          imagePullPolicy: Never
+          image: ghcr.io/19btech/fyntrac/docker/dataloader:0.0.4-SNAPSHOT
+          # Built locally via `./gradlew dockerBuildImage` (tags to this name/version per
+          # dataloader/build.gradle's docker{} block) and `k3s ctr images import`-ed directly
+          # into containerd, not pulled from a registry. IfNotPresent uses that local image
+          # without k3s trying to reach ghcr — same pattern as gl.yaml.
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8081
           env:
+            # The openjdk:21 base image is the frozen JDK 21 GA build, whose cgroup-v2 detection
+            # fails when the container's cgroup path is "/" (as under k3s here) — the JVM then sizes
+            # its heap off the HOST's RAM (MaxHeapSize came out at 7.75Gi inside this 4Gi pod) and
+            # never feels memory pressure before the kernel OOM-kills the container. Pin the heap
+            # explicitly; live heap measured at ~70Mi after GC with ~1.5Gi committed peaks, so 2g
+            # leaves room for metaspace (~140Mi), 180+ thread stacks and native allocations.
+            # MaxDirectMemorySize caps Netty (Pulsar client) buffers, which otherwise default to the
+            # heap size. ExitOnOutOfMemoryError restarts the pod on a real heap OOME instead of
+            # leaving a wedged JVM serving 5xx.
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Xmx2g -XX:MaxDirectMemorySize=512m -XX:+ExitOnOutOfMemoryError"
+            # glibc creates up to 8 arenas per core (160 on this 20-core host) for the JVM's 180+
+            # threads; freed native memory then fragments across arenas instead of being reused.
+            # Measured: ~2.1Gi of RSS in 64Mi-aligned anonymous mappings with only ~70Mi live heap,
+            # creeping toward the 4Gi limit over a few hours of uploads. 2 is the standard cap.
+            - name: MALLOC_ARENA_MAX
+              value: "2"
             - name: SPRING_PROFILES_ACTIVE
               value: dev
             - name: SPRING_PULSAR_CLIENT_SERVICE-URL
@@ -55,6 +74,13 @@ spec:
               value: memcached
             - name: MEMCACHED_PORT
               value: "11211"
+            # How many model-execution batches ExcelModelService keeps in flight at once
+            # (fyntrac.batch.max-concurrent-dispatch). Each dsl-model pod works one batch at a
+            # time, so this and dsl-model.yaml's `replicas` are ONE knob: raising replicas without
+            # this leaves the extra pods idle; raising this without replicas just lengthens each
+            # batch's wait in the Pulsar queue toward BatchCompletionWaiter's timeout. Keep equal.
+            - name: FYNTRAC_BATCH_MAX_CONCURRENT_DISPATCH
+              value: "4"
             - name: ZITADEL_ISSUER_URI
               valueFrom:
                 secretKeyRef:

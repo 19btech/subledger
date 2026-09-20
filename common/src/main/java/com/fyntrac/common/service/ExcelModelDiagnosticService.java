@@ -1,6 +1,5 @@
 package com.fyntrac.common.service;
 
-import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
@@ -47,7 +46,6 @@ public class ExcelModelDiagnosticService {
     private final CommonAggregationService commonAggregationService;
     private final ExecutionStateService executionStateService;
     private final InstrumentAttributeService instrumentAttributeService;
-    private final TransactionActivityQueue transactionActivityQueue;
     public ExcelModelDiagnosticService(ModelDataService modelDataService
             , MemcachedRepository memcachedRepository
             , AccountingPeriodDataUploadService accountingPeriodService
@@ -57,7 +55,6 @@ public class ExcelModelDiagnosticService {
             , CommonAggregationService commonAggregationService
             , ExecutionStateService executionStateService
             , InstrumentAttributeService instrumentAttributeService
-            , TransactionActivityQueue transactionActivityQueue
                                        , EventRepository eventRepository
     , InstrumentAttributeRepository instrumentRepo) {
         this.modelDataService = modelDataService;
@@ -69,7 +66,6 @@ public class ExcelModelDiagnosticService {
         this.commonAggregationService = commonAggregationService;
         this.executionStateService = executionStateService;
         this.instrumentAttributeService = instrumentAttributeService;
-        this.transactionActivityQueue = transactionActivityQueue;
         this.instrumentRepo = instrumentRepo;
         this.eventRepository = eventRepository;
 

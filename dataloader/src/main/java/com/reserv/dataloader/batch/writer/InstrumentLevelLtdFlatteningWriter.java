@@ -8,6 +8,7 @@ import com.fyntrac.common.entity.InstrumentLevelLtd;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.aggregation.InstrumentLevelAggregationService;
 import com.fyntrac.common.utils.DateUtil;
+import org.bson.types.ObjectId;
 import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
@@ -20,6 +21,8 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -99,8 +102,10 @@ public class InstrumentLevelLtdFlatteningWriter implements ItemWriter<List<Recor
         // the whole chunk instead of one findOne() per record.
         Map<GroupKey, InstrumentLevelLtd> existingByKey = batchFetchExisting(groupedRecords);
 
+        Set<String> touchedKeys = new LinkedHashSet<>();
         for (Records.InstrumentLevelLtdRecord record : groupedRecords) {
             String key = buildKey(record, tenantId, jobId);
+            touchedKeys.add(key);
 
             // Check whether the value was already in localCache
             InstrumentLevelLtd ltd = localCache.get(key);
@@ -132,6 +137,11 @@ public class InstrumentLevelLtdFlatteningWriter implements ItemWriter<List<Recor
                             .accountingPeriodId(DateUtil.getAccountingPeriodId(record.postingDate()))
                             .balance(balance)
                             .build();
+                    // MongoItemWriter's upsert generates a fresh ObjectId for an id-less entity on EVERY
+                    // write and never sets it back, so a row created here and re-written on a later
+                    // chunk was inserted again as a new document. Fix the id now so later writes
+                    // replace this same document.
+                    ltd.setId(new ObjectId().toHexString());
                 } else {
                     // Found in DB or cache → add activity
                     BaseLtd bal = ltd.getBalance();
@@ -150,11 +160,14 @@ public class InstrumentLevelLtdFlatteningWriter implements ItemWriter<List<Recor
             }
         }
 
-// Collect and cache
-        List<InstrumentLevelLtd> ltdChunk = new ArrayList<>();
-        for (Map.Entry<String, InstrumentLevelLtd> entry : localCache.entrySet()) {
-            ltdChunk.add(entry.getValue());
-            putInMemcached(entry.getKey(), entry.getValue());
+        // Persist only the rows this chunk touched. localCache spans the whole step, and writing
+        // all of it on every chunk re-wrote (and, before ids were fixed above, re-inserted)
+        // rows that hadn't changed since an earlier chunk.
+        List<InstrumentLevelLtd> ltdChunk = new ArrayList<>(touchedKeys.size());
+        for (String touchedKey : touchedKeys) {
+            InstrumentLevelLtd touched = localCache.get(touchedKey);
+            ltdChunk.add(touched);
+            putInMemcached(touchedKey, touched);
         }
 
         Chunk<InstrumentLevelLtd> convertedChunk = this.convertChunk(ltdChunk);

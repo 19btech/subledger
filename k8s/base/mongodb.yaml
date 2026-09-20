@@ -52,10 +52,23 @@ spec:
               command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
             initialDelaySeconds: 15
             periodSeconds: 10
+            # Default timeoutSeconds (1s) is shorter than mongosh's own Node.js startup
+            # time, so probes were failing even when mongod was healthy, pulling this pod
+            # out of the Service's endpoints.
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               cpu: "250m"
-              memory: "512Mi"
+              # Must stay above --wiredTigerCacheSizeGB (1.5Gi) plus mongod's own
+              # connection/journal overhead, or the scheduler under-provisions this pod
+              # relative to what mongod actually needs.
+              memory: "3Gi"
+            limits:
+              # 3Gi was too tight for --wiredTigerCacheSizeGB 1.5 plus mongod's working
+              # set under load and repeatedly OOM-killed the container (exit 137), even
+              # though the node itself had headroom to spare.
+              memory: "5Gi"
       volumes:
         - name: data
           persistentVolumeClaim:

@@ -22,9 +22,11 @@ import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.item.file.transform.DefaultFieldSet;
 import org.springframework.batch.item.file.transform.FieldSet;
 
+import java.util.Collection;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -58,11 +60,16 @@ class DynamicDataProcessorTest {
         processor = new DynamicDataProcessor(tableDef, validator,
                 instrumentAttributeRepository, validationLogService);
 
-        // Stub preload
+        // Stub the per-chunk $in lookups: only the known IDs resolve to an active row
         InstrumentAttribute ia = new InstrumentAttribute();
         ia.setInstrumentId(VALID_INSTRUMENT_ID);
         ia.setAttributeId(VALID_ATTRIBUTE_ID);
-        when(instrumentAttributeRepository.findAll()).thenReturn(List.of(ia));
+        lenient().when(instrumentAttributeRepository.findActiveInstrumentIdsIn(anyCollection()))
+                .thenAnswer(inv -> inv.<Collection<String>>getArgument(0).contains(VALID_INSTRUMENT_ID)
+                        ? List.of(ia) : List.of());
+        lenient().when(instrumentAttributeRepository.findActiveAttributeIdsIn(anyCollection()))
+                .thenAnswer(inv -> inv.<Collection<String>>getArgument(0).contains(VALID_ATTRIBUTE_ID)
+                        ? List.of(ia) : List.of());
 
         JobParameters params = new JobParametersBuilder()
                 .addString("tenantId", "test_tenant")
@@ -87,6 +94,36 @@ class DynamicDataProcessorTest {
 
         assertNotNull(result);
         verify(activityLogRepository, never()).saveAll(any());
+    }
+
+    // -----------------------------------------------------------------------
+    // Chunk-level reference lookup (ItemReadListener wiring)
+    // -----------------------------------------------------------------------
+
+    @Test
+    void testChunkIdsResolvedWithOneQueryPerField() throws Exception {
+        FieldSet valid   = buildFieldSet(VALID_INSTRUMENT_ID, VALID_ATTRIBUTE_ID,
+                "05/19/2026", "05/18/2026", "A", "1.00");
+        FieldSet unknown = buildFieldSet("UNKNOWN", "999",
+                "05/19/2026", "05/18/2026", "B", "2.00");
+
+        // Spring Batch reads the whole chunk first...
+        processor.afterRead(valid);
+        processor.afterRead(unknown);
+
+        // ...then processes it: the first item triggers the chunk-wide lookup.
+        assertNotNull(processor.process(valid));
+        assertNull(processor.process(unknown));
+        assertErrorCode("INSTRUMENTID", "ERR_REF_03");
+        assertErrorCode("ATTRIBUTEID", "ERR_REF_03");
+
+        ArgumentCaptor<Collection<String>> instrumentIds = ArgumentCaptor.forClass(Collection.class);
+        ArgumentCaptor<Collection<String>> attributeIds  = ArgumentCaptor.forClass(Collection.class);
+        verify(instrumentAttributeRepository, times(1)).findActiveInstrumentIdsIn(instrumentIds.capture());
+        verify(instrumentAttributeRepository, times(1)).findActiveAttributeIdsIn(attributeIds.capture());
+        assertTrue(instrumentIds.getValue().containsAll(List.of(VALID_INSTRUMENT_ID, "UNKNOWN")));
+        // "1.0" must also be looked up under its normalized spelling "1"
+        assertTrue(attributeIds.getValue().containsAll(List.of(VALID_ATTRIBUTE_ID, "1", "999")));
     }
 
     // -----------------------------------------------------------------------

@@ -12,6 +12,7 @@ import com.reserv.dataloader.validation.DynamicTableValidator;
 import org.bson.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.batch.core.ItemReadListener;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.annotation.BeforeStep;
@@ -22,42 +23,37 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 
 /**
  * Spring Batch ItemProcessor for dynamic (customer-driven) table CSV rows.
  *
  * <p>Validation pattern matches {@code AggregateItemProcessor}:
  * <ol>
- *   <li>Pre-load reference data into in-memory Sets once per step ({@code @BeforeStep}).</li>
+ *   <li>Resolve the chunk's instrument/attribute IDs against InstrumentAttribute in one query
+ *       per field (see {@link ActiveInstrumentAttributeIdLookup}).</li>
  *   <li>Validate each row via {@link DynamicTableValidator} (metadata-driven).</li>
  *   <li>Persist errors to {@code RefDataValidationLog} (tenant-scoped).</li>
  *   <li>Return {@code null} to silently skip invalid rows — no job failure.</li>
  * </ol>
  */
 public class DynamicDataProcessor
-        implements ItemProcessor<FieldSet, Document>, StepExecutionListener {
+        implements ItemProcessor<FieldSet, Document>, StepExecutionListener, ItemReadListener<FieldSet> {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicDataProcessor.class);
 
     private final CustomTableDefinition tableDefinition;
     private final DynamicTableValidator validator;
-    private final InstrumentAttributeRepository instrumentAttributeRepository;
+    private final ActiveInstrumentAttributeIdLookup idLookup;
     private final ActivityValidationLogService validationLogService;
 
     // Step-scoped state
     private Long jobId;
     private String tenantId;
     private final AtomicLong rowCounter = new AtomicLong(0);
-
-    // Preloaded reference sets (UPPER-CASE keys for O(1) lookup)
-    private final Set<String> validInstrumentIds = new HashSet<>();
-    private final Set<String> validAttributeIds  = new HashSet<>();
 
     // In-file duplicate key tracking
     private final Set<String> seenRowKeys = ConcurrentHashMap.newKeySet();
@@ -68,7 +64,7 @@ public class DynamicDataProcessor
                                 ActivityValidationLogService validationLogService) {
         this.tableDefinition = tableDefinition;
         this.validator = validator;
-        this.instrumentAttributeRepository = instrumentAttributeRepository;
+        this.idLookup = new ActiveInstrumentAttributeIdLookup(instrumentAttributeRepository);
         this.validationLogService = validationLogService;
     }
 
@@ -84,33 +80,20 @@ public class DynamicDataProcessor
         log.info("Initializing DynamicDataProcessor for table='{}' tenant='{}' job={}",
                 tableDefinition.getTableName(), tenantId, jobId);
 
-        validInstrumentIds.clear();
-        validAttributeIds.clear();
+        idLookup.reset();
         seenRowKeys.clear();
 
         if (tenantId == null || tenantId.isBlank()) {
-            log.error("No tenantId provided — reference preload skipped.");
-            return;
+            log.error("No tenantId provided — instrument/attribute reference checks will run without tenant context.");
         }
+    }
 
-        TenantContextHolder.runWithTenant(tenantId, () -> {
-            try {
-                instrumentAttributeRepository.findAll().forEach(ia -> {
-                    if (ia.getInstrumentId() != null) {
-                        validInstrumentIds.add(
-                                DynamicTableValidator.normalizeId(ia.getInstrumentId()).toUpperCase());
-                    }
-                    if (ia.getAttributeId() != null) {
-                        validAttributeIds.add(
-                                DynamicTableValidator.normalizeId(ia.getAttributeId()).toUpperCase());
-                    }
-                });
-                log.info("Preloaded {} instrumentIds and {} attributeIds for DynamicDataProcessor.",
-                        validInstrumentIds.size(), validAttributeIds.size());
-            } catch (Exception e) {
-                log.error("Failed to preload instrument/attribute IDs for DynamicDataProcessor", e);
-            }
-        });
+    // Spring Batch reads the whole chunk before processing its first item, so by the time
+    // process() runs, every row of the chunk has been collected here. Registered explicitly as an
+    // ItemReadListener in the step config: StepBuilder.listener(Object) would not discover it.
+    @Override
+    public void afterRead(FieldSet fieldSet) {
+        idLookup.collect(safeRead(fieldSet, "INSTRUMENTID"), safeRead(fieldSet, "ATTRIBUTEID"));
     }
 
     // ------------------------------------------------------------------
@@ -122,14 +105,19 @@ public class DynamicDataProcessor
 
         // 1. Validate inside tenant context
         long row = rowCounter.incrementAndGet();
+        String rawInstrumentId = safeRead(fieldSet, "INSTRUMENTID");
+        String rawAttributeId  = safeRead(fieldSet, "ATTRIBUTEID");
         List<ItemValidationException.ValidationError> errors;
         if (tenantId != null) {
-            errors = TenantContextHolder.runWithTenant(tenantId,
-                    () -> validator.validate(fieldSet, tableDefinition,
-                            seenRowKeys, validInstrumentIds, validAttributeIds));
+            errors = TenantContextHolder.runWithTenant(tenantId, () -> {
+                idLookup.ensureChecked(rawInstrumentId, rawAttributeId);
+                return validator.validate(fieldSet, tableDefinition, seenRowKeys,
+                        idLookup.validInstrumentIds(), idLookup.validAttributeIds());
+            });
         } else {
-            errors = validator.validate(fieldSet, tableDefinition,
-                    seenRowKeys, validInstrumentIds, validAttributeIds);
+            idLookup.ensureChecked(rawInstrumentId, rawAttributeId);
+            errors = validator.validate(fieldSet, tableDefinition, seenRowKeys,
+                    idLookup.validInstrumentIds(), idLookup.validAttributeIds());
         }
 
         // 2. Persist errors to activity_data_validation_log and skip row

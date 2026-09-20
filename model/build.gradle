@@ -12,7 +12,7 @@ version = System.getenv('FYNTRAC_VERSION') ?: '0.0.3-SNAPSHOT'
 ext {
 	projectname = 'model'
 	pulsarVersion = '3.3.4'
-	commonsVersion = '0.0.2-SNAPSHOT'
+	commonsVersion = System.getenv('FYNTRAC_VERSION') ?: '0.0.4-SNAPSHOT'
 	gituser = System.getenv('GIT_USER')
 	gittoken = System.getenv('GIT_KEY')
 }
@@ -59,6 +59,7 @@ publishing {
 }
 
 repositories {
+	mavenLocal()
 	mavenCentral()  // Central Maven repository
 	maven {
 		url = uri("https://maven.pkg.github.com/${gituser}/subledger")  // Use an environment variable for username

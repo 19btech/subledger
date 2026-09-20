@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -49,11 +50,16 @@ class TransactionActivityItemProcessorTest {
         processor = new TransactionActivityItemProcessor(
                 validator, transactionService, instrumentAttributeRepository, validationLogService);
 
-        // Stub InstrumentAttribute preload
+        // Stub the per-chunk $in lookups: only the known IDs resolve to an active row
         InstrumentAttribute ia = new InstrumentAttribute();
         ia.setInstrumentId(VALID_INSTRUMENT_ID);
         ia.setAttributeId(VALID_ATTRIBUTE_ID);
-        when(instrumentAttributeRepository.findAll()).thenReturn(List.of(ia));
+        lenient().when(instrumentAttributeRepository.findActiveInstrumentIdsIn(anyCollection()))
+                .thenAnswer(inv -> inv.<Collection<String>>getArgument(0).contains(VALID_INSTRUMENT_ID)
+                        ? List.of(ia) : List.of());
+        lenient().when(instrumentAttributeRepository.findActiveAttributeIdsIn(anyCollection()))
+                .thenAnswer(inv -> inv.<Collection<String>>getArgument(0).contains(VALID_ATTRIBUTE_ID)
+                        ? List.of(ia) : List.of());
 
         // Stub Transactions preload — getAll() returns Collection
         Transactions tx = new Transactions();
@@ -85,6 +91,34 @@ class TransactionActivityItemProcessorTest {
         assertEquals(VALID_TX_NAME,       result.getTransactionName());
         assertTrue(result.getValidationErrors().isEmpty());
         verify(activityLogRepository, never()).saveAll(any());
+    }
+
+    // -----------------------------------------------------------------------
+    // Chunk-level reference lookup (ItemReadListener wiring)
+    // -----------------------------------------------------------------------
+
+    @Test
+    void testChunkIdsResolvedWithOneQueryPerField() throws Exception {
+        Map<String, Object> valid = buildValidItem();
+        Map<String, Object> unknown = buildValidItem();
+        unknown.put("INSTRUMENTID", "UNKNOWN");
+        unknown.put("ATTRIBUTEID", "999");
+
+        // Spring Batch reads the whole chunk first...
+        processor.afterRead(valid);
+        processor.afterRead(unknown);
+
+        // ...then processes it: the first item triggers the chunk-wide lookup.
+        assertNotNull(processor.process(valid));
+        assertNullWithSingleError(unknown, "INSTRUMENTID", "ERR_REF_08");
+
+        ArgumentCaptor<Collection<String>> instrumentIds = ArgumentCaptor.forClass(Collection.class);
+        ArgumentCaptor<Collection<String>> attributeIds  = ArgumentCaptor.forClass(Collection.class);
+        verify(instrumentAttributeRepository, times(1)).findActiveInstrumentIdsIn(instrumentIds.capture());
+        verify(instrumentAttributeRepository, times(1)).findActiveAttributeIdsIn(attributeIds.capture());
+        assertTrue(instrumentIds.getValue().containsAll(List.of(VALID_INSTRUMENT_ID, "UNKNOWN")));
+        // "1.0" must also be looked up under its normalized spelling "1"
+        assertTrue(attributeIds.getValue().containsAll(List.of(VALID_ATTRIBUTE_ID, "1", "999")));
     }
 
     // -----------------------------------------------------------------------

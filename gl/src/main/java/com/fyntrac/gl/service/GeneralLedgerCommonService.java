@@ -57,50 +57,23 @@ public class GeneralLedgerCommonService {
         this.generalLedgerAccountBalanceService = generalLedgerAccountBalanceService;
     }
 
-    public Map<EntryType, SubledgerMapping> getSubledgerMapping(String tenantId, String transactionName, BigDecimal amount) {
-
-        Sign sign = (amount.compareTo(BigDecimal.ZERO) > 0 ? com.fyntrac.common.enums.Sign.POSITIVE :  com.fyntrac.common.enums.Sign.NEGATIVE);
-
-
-        if (!memcachedRepository.ifExists(Key.allSubledgerMappingList(tenantId))) {
+    public CacheMap<SubledgerMapping> loadSubledgerMappingCache(String tenantId) {
+        String cacheKey = Key.allSubledgerMappingList(tenantId);
+        this.memcachedRepository.getFromCache(cacheKey);
+        // if (!memcachedRepository.ifExists(cacheKey)) {
             CacheMap<SubledgerMapping> slMapping = new CacheMap<>();
-            List<SubledgerMapping> mappings = this.dataService.fetchAllData(tenantId, SubledgerMapping.class);
-            // Iterate through the mappings and fill the mappingList
-            for (SubledgerMapping mapping : mappings) {
-                // Use the hashCode of the mapping as the key
-                String key = tenantId
-                        + mapping.getTransactionName()
-                        + mapping.getEntryType().getValue()
-                        + mapping.getSign().getValue();
-                slMapping.put(StringUtil.convertToUpperCaseAndRemoveSpaces(key), mapping);
+            List<SubledgerMapping> allMappings = this.dataService.fetchAllData(tenantId, SubledgerMapping.class);
+            for (SubledgerMapping mapping : allMappings) {
+                slMapping.put(subledgerMappingKey(tenantId, mapping.getTransactionName(), mapping.getEntryType(), mapping.getAccountSubType()), mapping);
             }
-            this.memcachedRepository.putCollectionInCache(Key.allSubledgerMappingList(tenantId), slMapping, 0);
-        }
+            this.memcachedRepository.putCollectionInCache(cacheKey, slMapping, 0);
+            return slMapping;
+        // }
+        //return this.memcachedRepository.getFromCache(cacheKey, CacheMap.class);
+    }
 
-        String debitKey = StringUtil.convertToUpperCaseAndRemoveSpaces(tenantId
-                + transactionName
-                + EntryType.DEBIT
-                + sign.getValue());
-
-            String creditKey = StringUtil.convertToUpperCaseAndRemoveSpaces(tenantId
-                + transactionName
-                + EntryType.CREDIT
-                + sign.getValue());
-
-        CacheMap slMapping;
-        slMapping = this.memcachedRepository.getFromCache(Key.allSubledgerMappingList(tenantId), CacheMap.class);
-
-        SubledgerMapping debitSubledgerMapping = null;
-        SubledgerMapping creditSubledgerMapping = null;
-        Map<EntryType, SubledgerMapping> mappings = new HashMap<>(0);
-        if (slMapping != null) {
-            debitSubledgerMapping = (SubledgerMapping) slMapping.getValue(debitKey);
-            creditSubledgerMapping = (SubledgerMapping) slMapping.getValue(creditKey);
-            mappings.put(EntryType.DEBIT, debitSubledgerMapping);
-            mappings.put(EntryType.CREDIT, creditSubledgerMapping);
-
-        }
-        return mappings;
+    private String subledgerMappingKey(String tenantId, String transactionName, EntryType entryType, String accountSubType) {
+        return StringUtil.convertToUpperCaseAndRemoveSpaces(tenantId + transactionName + entryType.getValue() + accountSubType);
     }
 
     /**
@@ -240,11 +213,17 @@ public class GeneralLedgerCommonService {
                 Collection<GeneralLedgerAccountBalance> balances = this.generalLedgerAccountBalanceService.getBalance(subCode, reclassValues.getCurrentPeriodId());
 
                 for (GeneralLedgerAccountBalance balance : balances) {
-                    Map<EntryType, SubledgerMapping> mapping = this.getSubledgerMapping(tenantId, balance.getTransactionName(), balance.getAmount());
+                    CacheMap<SubledgerMapping> mapping = this.loadSubledgerMappingCache(tenantId);
 
-                    for (Map.Entry<EntryType, SubledgerMapping> entry : mapping.entrySet()) {
-                        EntryType entryType = entry.getKey();
-                        SubledgerMapping subledgerMapping = entry.getValue();
+                    List<SubledgerMapping> subledgerMappings = new ArrayList<>(0);
+                    for(Map.Entry<String , SubledgerMapping> entry : mapping.getMap().entrySet()) {
+                        SubledgerMapping m = entry.getValue();
+                        if(balance.getTransactionName().equalsIgnoreCase(m.getTransactionName())) {
+                            subledgerMappings.add(m);
+                        }
+                    }
+
+                    for (SubledgerMapping subledgerMapping : subledgerMappings) {
                         AccountTypes accountType = this.getAccountType(tenantId, subledgerMapping.getAccountSubType());
                         if (accountType.getAccountType() != AccountType.BALANCESHEET) {
                             continue;

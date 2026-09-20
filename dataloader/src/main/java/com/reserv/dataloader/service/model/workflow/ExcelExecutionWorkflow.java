@@ -16,6 +16,7 @@ import com.reserv.dataloader.pulsar.producer.GeneralLedgerMessageProducer;
 import com.reserv.dataloader.service.AggregationExecutionService;
 import com.reserv.dataloader.service.model.ModelExecutionService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.JobParameters;
 import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
@@ -72,8 +73,8 @@ public class ExcelExecutionWorkflow extends AbstractExecutionWorkflow {
         // See DslExecutionWorkflow.generateAndProcessEvents for why this lock exists: batches now
         // run concurrently on their own virtual threads, but MetricLevelLtdFlatteningWriter and
         // incrementCompletedBatches both read-modify-write shared state across batches, so only
-        // aggregation + GL sync + progress-increment need to be serialized, not the slow
-        // dispatch/await part.
+        // metric-level aggregation + GL sync + progress-increment need to be serialized, not the
+        // slow dispatch/await part nor the per-instrument attribute/instrument-level aggregation.
         java.util.concurrent.locks.ReentrantLock aggregationLock = new java.util.concurrent.locks.ReentrantLock();
 
         excelModelService.generateEventAndDispatch(postingDate, batch -> {
@@ -108,13 +109,18 @@ public class ExcelExecutionWorkflow extends AbstractExecutionWorkflow {
 
                 Records.JobResultResponseRecord jobResultResponseRecord = NativeJsonParserService.parseJobResultSafely(result.payload());
 
+                // [Step 3a] Attribute- and instrument-level aggregation: per-instrument rows, and
+                // an instrument is in exactly one batch, so this runs concurrently across batches.
+                Records.ExecuteAggregationMessageRecord executeAggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenant,
+                        jobResultResponseRecord.jobId(), Long.valueOf(postingDate));
+                ExecutionState executionState = executionStateService.getExecutionState();
+                JobParameters aggregationJobParameters =
+                        aggregationExecutionService.executeInstrumentScoped(executeAggregationMessageRecord, executionState);
+
                 aggregationLock.lock();
                 try {
-                    // [Step 3] Immediate Financial Aggregation
-                    Records.ExecuteAggregationMessageRecord executeAggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenant,
-                            jobResultResponseRecord.jobId(), Long.valueOf(postingDate));
-                    ExecutionState executionState = executionStateService.getExecutionState();
-                    aggregationExecutionService.execute(executeAggregationMessageRecord, executionState);
+                    // [Step 3b] Metric-level aggregation (one row per metric across all instruments — serialized)
+                    aggregationExecutionService.executeMetricLevel(aggregationJobParameters, executeAggregationMessageRecord);
 
                     // [Step 4] Real-Time General Ledger Sync
                     Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenant, jobResultResponseRecord.jobId());

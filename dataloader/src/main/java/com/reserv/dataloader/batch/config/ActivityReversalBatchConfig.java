@@ -1,7 +1,6 @@
 package com.reserv.dataloader.batch.config;
 
 import com.fyntrac.common.component.InstrumentReplayQueue;
-import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.TransactionActivity;
 import com.fyntrac.common.service.TransactionActivityReversalService;
@@ -37,17 +36,14 @@ public class ActivityReversalBatchConfig {
 
     private final InstrumentReplayQueue instrumentReplayQueue;
     private final TransactionActivityReversalService reversalService;
-    private final TransactionActivityQueue transactionActivityQueue;
     private final TransactionService transactionService;
 
     @Autowired
     public ActivityReversalBatchConfig(InstrumentReplayQueue instrumentReplayQueue,
                                        TransactionActivityReversalService reversalService,
-                                       TransactionActivityQueue transactionActivityQueue,
                                        TransactionService transactionService) {
         this.instrumentReplayQueue = instrumentReplayQueue;
         this.reversalService = reversalService;
-        this.transactionActivityQueue = transactionActivityQueue;
         this.transactionService = transactionService;
     }
 
@@ -59,7 +55,7 @@ public class ActivityReversalBatchConfig {
         return new StepBuilder("reversalStep", jobRepository)
                 .<Records.InstrumentReplayRecord, List<TransactionActivity>>chunk(1000, transactionManager)
                 .reader(reversalInstrumentReplayReader("", 0L))
-                .processor(reversalActivityProcessor("", 0L, reversalService, transactionActivityQueue, transactionService))
+                .processor(reversalActivityProcessor("", 0L, reversalService, transactionService))
                 .writer(writer)
                 .taskExecutor(new SimpleAsyncTaskExecutor())
                 .build();
@@ -72,9 +68,8 @@ public class ActivityReversalBatchConfig {
     public ItemProcessor<Records.InstrumentReplayRecord, List<TransactionActivity>> reversalActivityProcessor(
             @Value("#{jobParameters['tenantId']}") String tenantId,
             @Value("#{jobParameters['jobId']}") Long jobId, TransactionActivityReversalService reversalService
-            , TransactionActivityQueue transactionActivityQueue
     , TransactionService transactionService) {
-        return new ReversalActivityProcessor(tenantId, jobId, reversalService, transactionActivityQueue, transactionService);
+        return new ReversalActivityProcessor(tenantId, jobId, reversalService, transactionService);
     }
 
     @Bean("reversalJob")

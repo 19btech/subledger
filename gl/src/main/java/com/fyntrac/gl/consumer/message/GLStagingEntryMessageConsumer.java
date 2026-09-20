@@ -1,5 +1,6 @@
 package com.fyntrac.gl.consumer.message;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.gl.staging.ProcessGeneralLedgerStaging;
 import lombok.extern.slf4j.Slf4j;
@@ -17,15 +18,27 @@ public class GLStagingEntryMessageConsumer {
     @Autowired
     ProcessGeneralLedgerStaging processGeneralLedgerStaging;
 
+    @Autowired
+    ObjectMapper objectMapper;
+
+    // Schema.BYTES, not JSON: fyntrac-py-model's GeneralLedgerMessageProducer sends this topic
+    // with no Pulsar schema at all (client.create_producer(topic) + json.dumps(...).encode()),
+    // and Pulsar locks a freshly-created topic's schema to whichever side touches it first. Since
+    // Pulsar's local dev data is wiped on every restart (see pulsar.yaml's reset-pulsar-data
+    // initContainer), that race replays on every restart — losing it (Python touches the topic
+    // first) permanently blocks this consumer with IncompatibleSchemaException until the next
+    // wipe. Consuming raw bytes and parsing JSON ourselves sidesteps Pulsar's schema registry
+    // entirely, so it never conflicts with the schemaless producer regardless of who wins.
     @PulsarListener(
             topics = "${spring.pulsar.producer.topic-bookGLStaging}",
             subscriptionName = "${spring.pulsar.consumer.subscription.name}",
-            schemaType = SchemaType.JSON,
+            schemaType = SchemaType.BYTES,
             subscriptionType = SubscriptionType.Shared
     )
-    public void bookTempGL(Message<Records.GeneralLedgerMessageRecord> message) {
+    public void bookTempGL(Message<byte[]> message) {
         try {
-            Records.GeneralLedgerMessageRecord transactionActivity = message.getValue(); // Get the value from the message
+            Records.GeneralLedgerMessageRecord transactionActivity =
+                    objectMapper.readValue(message.getValue(), Records.GeneralLedgerMessageRecord.class);
             // Process the message
             log.info("EventConsumer:: consumeTextEvent consumed events {}, {}", transactionActivity.tenantId(), transactionActivity.jobId());
             // No need to acknowledge here; @PulsarListener handles it

@@ -23,6 +23,12 @@ spec:
               port: 11211
             initialDelaySeconds: 5
             periodSeconds: 10
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              memory: "256Mi"
 ---
 apiVersion: v1
 kind: Service

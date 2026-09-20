@@ -1,6 +1,5 @@
 package com.fyntrac.common.service;
 
-import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.AccountingPeriod;
@@ -43,7 +42,6 @@ public class ExcelModelExecutionService {
     private final CommonAggregationService commonAggregationService;
     private final ExecutionStateService executionStateService;
     private final InstrumentAttributeService instrumentAttributeService;
-    private final TransactionActivityQueue transactionActivityQueue;
     public ExcelModelExecutionService(ModelDataService modelDataService
             , MemcachedRepository memcachedRepository
             , AccountingPeriodDataUploadService accountingPeriodService
@@ -52,8 +50,7 @@ public class ExcelModelExecutionService {
             , ErrorService errorService
             , CommonAggregationService commonAggregationService
             , ExecutionStateService executionStateService
-            , InstrumentAttributeService instrumentAttributeService
-            , TransactionActivityQueue transactionActivityQueue) {
+            , InstrumentAttributeService instrumentAttributeService) {
         this.modelDataService = modelDataService;
         this.memcachedRepository = memcachedRepository;
         this.accountingPeriodService = accountingPeriodService;
@@ -63,7 +60,6 @@ public class ExcelModelExecutionService {
         this.commonAggregationService = commonAggregationService;
         this.executionStateService = executionStateService;
         this.instrumentAttributeService = instrumentAttributeService;
-        this.transactionActivityQueue = transactionActivityQueue;
 
     }
 

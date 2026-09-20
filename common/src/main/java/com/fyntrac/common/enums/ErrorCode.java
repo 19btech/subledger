@@ -2,6 +2,8 @@ package com.fyntrac.common.enums;
 
 public enum ErrorCode {
     Model_Execution_Error("Model Execution Error"),
+    Aggregation_Execution_Error("Aggregation Execution Error"),
+    Event_Generation_Error("Event Generation Error"),
     ERR_BOOL_01("INVALID_BOOLEAN"),
     WRN_DEF_01("MISSING_FLAG_DEFAULT"),
     WRN_LOGIC_01("NULL_ACTION_WARNING"),

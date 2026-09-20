@@ -71,7 +71,15 @@ spec:
           resources:
             requests:
               cpu: "250m"
-              memory: "768Mi"
+              # Must stay above PULSAR_MEM's -Xmx512m + MaxDirectMemorySize=1g (1.5Gi already,
+              # before JVM metaspace/thread-stack overhead), or the scheduler under-provisions
+              # this pod relative to what the JVM is actually configured to use.
+              memory: "1.5Gi"
+            limits:
+              # No limit previously meant this container had no cgroup cap of its own,
+              # leaving it able to contribute to node-wide OOM pressure instead of hitting
+              # its own ceiling and restarting cleanly.
+              memory: "2Gi"
       volumes:
         - name: data
           persistentVolumeClaim:

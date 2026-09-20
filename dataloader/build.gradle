@@ -12,7 +12,7 @@ version = System.getenv('FYNTRAC_VERSION') ?: '0.0.3-SNAPSHOT'
 ext {
 	projectname = 'dataloader'
 	pulsarVersion = '3.3.4'
-	commonsVersion = '0.0.2-SNAPSHOT'
+	commonsVersion = System.getenv('FYNTRAC_VERSION') ?: '0.0.4-SNAPSHOT'
 	gituser = System.getenv('GIT_USER')
 	gittoken = System.getenv('GIT_KEY')
 }

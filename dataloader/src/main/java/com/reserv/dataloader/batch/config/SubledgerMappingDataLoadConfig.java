@@ -150,7 +150,7 @@ public class SubledgerMappingDataLoadConfig {
                     String cleanEntryType = rawEntryType.trim();
                     if (cleanEntryType.equalsIgnoreCase("DEBIT")) {
                         subledgerMapping.setEntryType(com.fyntrac.common.enums.EntryType.DEBIT);
-                    } else if (cleanEntryType.equalsIgnoreCase("CREDIT")) {
+                    } else if (cleanEntryType.equalsIgnoreCase("/")) {
                         subledgerMapping.setEntryType(com.fyntrac.common.enums.EntryType.CREDIT);
                     }
                 } else {

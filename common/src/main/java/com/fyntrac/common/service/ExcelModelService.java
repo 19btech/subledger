@@ -27,6 +27,8 @@ import java.math.BigDecimal;
 import java.text.ParseException;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -48,8 +50,32 @@ public class ExcelModelService {
     private List<TransactionActivity> transactionActivities;
     private List<InstrumentAttribute> instrumentAttributes;
 
-    @Value("${fyntrac.chunk.size}")
+    // InstrumentAttribute ROWS read per keyset page in generateEventAndDispatch — not instruments:
+    // an instrument has one active row per attributeId, so a page holds pageSize / avg-rows-per-
+    // instrument instruments. Deliberately its own property: fyntrac.chunk.size (the fallback) is
+    // shared with the LTD/GL/replay batch chunk sizes, which have nothing to do with how many rows
+    // one Mongo round trip should fetch here. Only one page is live in heap at a time and
+    // per-instrument work is bounded by maxConcurrentInstrumentGroups regardless of page size, so
+    // this can be raised well above the batch chunk sizes to cut round trips on large tenants.
+    @Value("${fyntrac.eventgen.page-size:${fyntrac.chunk.size}}")
     private int pageSize;
+
+    // Max instruments per batch handed to batchConsumer (i.e. per model-service dispatch). Split
+    // off from pageSize so the page can grow without growing the unit of work behind one
+    // correlationId / one BatchCompletionWaiter timeout. Defaults to the pre-split behaviour,
+    // where a dispatch was at most one page.
+    @Value("${fyntrac.batch.dispatch-batch-size:${fyntrac.chunk.size}}")
+    private int dispatchBatchSize;
+
+    // generateEventAndDispatch used to cap the WHOLE run's batch dispatches at a fixed 30 minutes.
+    // With batches processed maxConcurrentBatchDispatch at a time, total wall time grows linearly
+    // with instrument count, so past a few hundred batches every run failed at the 30-minute mark
+    // regardless of whether each batch was healthy. Each batch already has its own completion
+    // timeout inside batchConsumer (BatchCompletionWaiter), so the run-level guard only needs to
+    // catch a genuine stall: fail if NO batch completes within this window, not if the run as a
+    // whole takes longer than it.
+    @Value("${fyntrac.batch.dispatch-stall-timeout-minutes:30}")
+    private long dispatchStallTimeoutMinutes;
 
     // Caps how many batches' dispatch-to-model-service-and-await-completion can run at once.
     // Without a cap, a posting date with enough data dispatches every batch concurrently, and
@@ -63,7 +89,7 @@ public class ExcelModelService {
     private int maxConcurrentBatchDispatch;
 
     // Caps how many instrument groups within one page are processed concurrently. Without this,
-    // a full page (up to fyntrac.chunk.size instruments — 500 in dev) all ran at once via an
+    // a full page (up to fyntrac.eventgen.page-size rows — 500 in dev at the time) all ran at once via an
     // unbounded virtual-thread-per-task executor, and each does several MongoDB queries — live
     // currentOp() check found a single tenant's connection pool pinned at exactly 100/100 in-use
     // connections during event generation, with further operations queuing inside the driver
@@ -364,6 +390,8 @@ public class ExcelModelService {
         // progress counters) are responsible for their own serialization; see
         // DslExecutionWorkflow.generateAndProcessEvents for why and how.
         List<CompletableFuture<Void>> batchDispatchFutures = new ArrayList<>();
+        AtomicInteger completedDispatches = new AtomicInteger();
+        AtomicLong lastDispatchProgressNanos = new AtomicLong(System.nanoTime());
         // Bounds how many of the above run at once — see the field comment on
         // maxConcurrentBatchDispatch for why an unbounded thundering herd caused real timeouts.
         Semaphore batchDispatchLimiter = new Semaphore(Math.max(1, maxConcurrentBatchDispatch));
@@ -507,20 +535,24 @@ public class ExcelModelService {
                         .collect(Collectors.toCollection(LinkedHashSet::new));
 
                 if (!instrumentIdsWithEvents.isEmpty()) {
-                    // Dispatch this page's batch on its own virtual thread and keep paging
-                    // immediately — see the comment above batchDispatchFutures for why. The Set
-                    // is captured by this task rather than reused, so it's still only this page's
-                    // IDs kept alive until the task itself finishes. The permit acquire/release is
+                    // Dispatch this page's batches on their own virtual threads and keep paging
+                    // immediately — see the comment above batchDispatchFutures for why. Each Set
+                    // is captured by its task rather than reused, so only that batch's IDs are
+                    // kept alive until the task itself finishes. The permit acquire/release is
                     // inside the task (not around the submit) so paging/event-generation itself
                     // stays unthrottled — only the actual dispatch-and-await is bounded.
-                    batchDispatchFutures.add(CompletableFuture.runAsync(() -> {
-                        batchDispatchLimiter.acquireUninterruptibly();
-                        try {
-                            TenantContextHolder.runWithTenant(tenant, () -> batchConsumer.accept(instrumentIdsWithEvents));
-                        } finally {
-                            batchDispatchLimiter.release();
-                        }
-                    }, executor));
+                    for (Set<String> dispatchBatch : splitIntoBatches(instrumentIdsWithEvents, dispatchBatchSize)) {
+                        batchDispatchFutures.add(CompletableFuture.runAsync(() -> {
+                            batchDispatchLimiter.acquireUninterruptibly();
+                            try {
+                                TenantContextHolder.runWithTenant(tenant, () -> batchConsumer.accept(dispatchBatch));
+                            } finally {
+                                batchDispatchLimiter.release();
+                                completedDispatches.incrementAndGet();
+                                lastDispatchProgressNanos.set(System.nanoTime());
+                            }
+                        }, executor));
+                    }
                 } else {
                     log.info("No events generated for tenant {} page {} ({} instruments checked) — skipping dispatch",
                             tenant, currentPage, pageInstrumentIds.size());
@@ -531,15 +563,54 @@ public class ExcelModelService {
                 if (!mayHaveMore) break;   // short read — collection exhausted
             }
 
-            // Wait for every page's batch dispatch to finish (or fail) before returning — same
-            // contract as before, just no longer serialized with event generation itself.
-            CompletableFuture.allOf(batchDispatchFutures.toArray(new CompletableFuture[0]))
-                    .orTimeout(30, TimeUnit.MINUTES)
-                    .join();
+            // Wait for every batch dispatch to finish (or fail) before returning — same contract
+            // as before, just no longer serialized with event generation itself, and guarded by a
+            // stall watchdog rather than a fixed run-level cap (see dispatchStallTimeoutMinutes).
+            awaitDispatches(batchDispatchFutures, completedDispatches, lastDispatchProgressNanos,
+                    TimeUnit.MINUTES.toNanos(dispatchStallTimeoutMinutes), tenant);
 
         } catch (Exception ex) {
             log.error("Event generation failed for tenant {}", tenant, ex);
             throw new RuntimeException("Event generation failed for tenant " + tenant, ex);
+        }
+    }
+
+    static List<Set<String>> splitIntoBatches(Set<String> ids, int batchSize) {
+        int size = Math.max(1, batchSize);
+        List<Set<String>> batches = new ArrayList<>((ids.size() + size - 1) / size);
+        Set<String> current = new LinkedHashSet<>();
+        for (String id : ids) {
+            current.add(id);
+            if (current.size() == size) {
+                batches.add(current);
+                current = new LinkedHashSet<>();
+            }
+        }
+        if (!current.isEmpty()) batches.add(current);
+        return batches;
+    }
+
+    /**
+     * Blocks until every dispatch future completes. Fails only if no dispatch completes within
+     * {@code stallNanos} — the clock restarts on every completion, so a long but steadily
+     * progressing run is never cut off, while a hung one still surfaces as a timeout.
+     */
+    static void awaitDispatches(List<CompletableFuture<Void>> futures, AtomicInteger completed,
+                                AtomicLong lastProgressNanos, long stallNanos, String tenant) throws Exception {
+        CompletableFuture<Void> all = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+        while (true) {
+            long remaining = stallNanos - (System.nanoTime() - lastProgressNanos.get());
+            if (remaining <= 0) {
+                throw new TimeoutException(String.format(
+                        "Batch dispatch stalled for tenant %s: %d of %d batches completed, none in the last %d ms",
+                        tenant, completed.get(), futures.size(), TimeUnit.NANOSECONDS.toMillis(stallNanos)));
+            }
+            try {
+                all.get(remaining, TimeUnit.NANOSECONDS);
+                return;
+            } catch (TimeoutException stillWaiting) {
+                // Re-evaluate: a completion during the wait moved lastProgressNanos forward.
+            }
         }
     }
 

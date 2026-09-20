@@ -7,6 +7,8 @@ spec:
   # 4 replicas — safe to scale since both of its Pulsar consumers use ConsumerType.Shared
   # (verified in app/pulsar/manager.py), not Exclusive like the bug we hit and fixed in
   # dataloader's PythonModelCompletionListener.
+  # Change together with dataloader.yaml's FYNTRAC_BATCH_MAX_CONCURRENT_DISPATCH — each pod
+  # works one batch at a time, so replicas beyond that value sit idle.
   replicas: 4
   selector:
     matchLabels:
@@ -70,6 +72,13 @@ spec:
               value: "http://localhost:3030"
             - name: LOG_LEVEL
               value: INFO
+            # Size of the per-batch ProcessPoolExecutor. Unset, the app falls back to
+            # os.cpu_count(), which inside a cgroup still reports every HOST core (20 here) — so
+            # each pod ran a 20-process pool against a 1-core quota and spent ~80% of scheduler
+            # periods throttled (cpu.stat measured over a full Hearst_GHK run). Keep this equal
+            # to the CPU limit below: more workers than quota just adds contention and memory.
+            - name: MAX_PROCESS_WORKERS
+              value: "3"
           readinessProbe:
             httpGet:
               path: /health
@@ -85,10 +94,12 @@ spec:
             periodSeconds: 20
           resources:
             requests:
-              cpu: "250m"
+              cpu: "1"
               memory: "1Gi"
             limits:
-              cpu: "1"
+              # Model execution is CPU-bound and was the run's dominant wall-clock cost; paired
+              # with MAX_PROCESS_WORKERS above. 4 replicas x 3 = 12 of the node's 20 cores.
+              cpu: "3"
               memory: "2Gi"
 ---
 apiVersion: v1
