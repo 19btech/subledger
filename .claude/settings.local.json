@@ -17,7 +17,9 @@
       "Bash(kill 30374)",
       "Bash(ps -p 30374 -o pid,cmd --no-headers)",
       "Bash(docker exec *)",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(sudo -n k3s kubectl get pods -A)",
+      "Bash(systemctl status *)"
     ]
   }
 }

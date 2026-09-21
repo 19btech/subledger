@@ -3,7 +3,6 @@ package com.reserv.dataloader.batch.config;
 
 import com.fyntrac.common.cache.collection.CacheMap;
 import com.fyntrac.common.component.TenantDataSourceProvider;
-import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.InstrumentLevelLtd;
@@ -42,7 +41,6 @@ public class InstrumentLevelLtdBatchConfig {
 
     private final MongoTemplate mongoTemplate;
     private final MemcachedRepository memcachedRepository;
-    private final TransactionActivityQueue transactionActivityQueue;
     private final JobRepository jobRepository;
     private final TenantContextHolder tenantContextHolder;
     private final TenantDataSourceProvider dataSourceProvider;
@@ -55,11 +53,9 @@ public class InstrumentLevelLtdBatchConfig {
                                         TenantContextHolder tenantContextHolder,
                                         TenantDataSourceProvider dataSourceProvider,
                                         MemcachedRepository memcachedRepository,
-                                        TransactionActivityQueue transactionActivityQueue,
                                         AggregationService aggregationService,
                                          InstrumentLevelAggregationService instrumentLevelAggregationService) {
         this.memcachedRepository = memcachedRepository;
-        this.transactionActivityQueue = transactionActivityQueue;
         this.jobRepository = jobRepository;
         this.tenantContextHolder = tenantContextHolder;
         this.dataSourceProvider = dataSourceProvider;

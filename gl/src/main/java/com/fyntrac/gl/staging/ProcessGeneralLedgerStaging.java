@@ -1,10 +1,11 @@
 package com.fyntrac.gl.staging;
 
-import com.fyntrac.common.component.TransactionActivityQueue;
+import com.fyntrac.common.cache.collection.CacheMap;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.*;
 import com.fyntrac.common.enums.AccountType;
 import com.fyntrac.common.enums.EntryType;
+import com.fyntrac.common.enums.Sign;
 import com.fyntrac.common.service.DataService;
 import com.fyntrac.common.service.GeneralLedgerAccountService;
 import com.fyntrac.common.utils.StringUtil;
@@ -40,7 +41,6 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
     private final GeneralLedgerCommonService glCommonService;
     private final DatasourceService datasourceService;
     private final GeneralLedgerAccountService generalLedgerAccountService;
-    private final TransactionActivityQueue transactionActivityQueue;
 
     @Value("${fyntrac.chunk.size}")
     private int chunkSize;
@@ -59,13 +59,11 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
     public ProcessGeneralLedgerStaging(DatasourceService datasourceService,
                                        DataService<GeneralLedgerEnteryStage> dataService,
                                        GeneralLedgerCommonService glCommonService,
-                                       GeneralLedgerAccountService generalLedgerAccountService,
-                                        TransactionActivityQueue transactionActivityQueue) {
+                                       GeneralLedgerAccountService generalLedgerAccountService) {
         this.datasourceService = datasourceService;
         this.dataService = dataService;
         this.glCommonService = glCommonService;
         this.generalLedgerAccountService = generalLedgerAccountService;
-        this.transactionActivityQueue = transactionActivityQueue;
     }
 
     /**
@@ -138,74 +136,85 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
                         continue;
                     }
 
-                    Map<EntryType, SubledgerMapping> mapping = this.glCommonService.getSubledgerMapping(tenantId, StringUtil.removeSpaces(transactionActivity.getTransactionName()), transactionActivity.getAmount());
-                    for (Map.Entry<EntryType, SubledgerMapping> entry : mapping.entrySet()) {
-                        try {
-                            SubledgerMapping slMapping = entry.getValue();
-                            if (slMapping == null) {
-                                log.error(String.format("Skipping GL booking for [%s] SubledgerMapping is null for entryType: [%s]", transactionActivity.toString(), entry.getKey()));
-                                continue;
-                            }
-                            AccountTypes accountType = this.glCommonService.getAccountType(tenantId, slMapping.getAccountSubType());
-                            String accountSubType = slMapping.getAccountSubType();
-                            Map<String, Object> attributes = transactionActivity.getAttributes();
-                            ChartOfAccount chartOfAccount = this.glCommonService.getChartOfAccount(tenantId, accountSubType, attributes);
+                    CacheMap<SubledgerMapping> mapping = this.glCommonService.loadSubledgerMappingCache(tenantId);
 
-                            BigDecimal debitAmount = BigDecimal.valueOf(0L);
-                            BigDecimal creditAmount = BigDecimal.valueOf(0L);
-                            int sign = (transactionActivity.getAmount().compareTo(BigDecimal.ZERO) > 0) ? -1 : 1;
-                            if (slMapping.getEntryType() == EntryType.DEBIT) {
-                                debitAmount = transactionActivity.getAmount();
-                            } else if (slMapping.getEntryType() == EntryType.CREDIT) {
-                                double signedValue = transactionActivity.getAmount().doubleValue();
-                                signedValue = signedValue * sign;
-                                creditAmount = BigDecimal.valueOf(signedValue);
-                            }
-
-                            GeneralLedgerEnteryStage gleStage = GeneralLedgerEnteryStage.builder()
-                                    .attributeId(transactionActivity.getAttributeId())
-                                    .instrumentId(transactionActivity.getInstrumentId())
-                                    .transactionName(transactionActivity.getTransactionName())
-                                    .postingDate(transactionActivity.getPostingDate())
-                                    .periodId(transactionActivity.getPeriodId())
-                                    .glAccountNumber(chartOfAccount.getAccountNumber())
-                                    .glAccountName(chartOfAccount.getAccountName())
-                                    .glAccountSubType(chartOfAccount.getAccountSubtype())
-                                    .glAccountType(accountType.getAccountType().name())
-                                    .isReclass(0)
-                                    .debitAmount(debitAmount)
-                                    .creditAmount(creditAmount)
-                                    .attributes(attributes)
-                                    .batchId(transactionActivity.getBatchId())
-                                    .build();
-
-                            gleList.add(gleStage);
-
-                            if (accountType.getAccountType() == AccountType.BALANCESHEET) {
-                                GeneralLedgerAccountBalanceStage accountBalanceStage =
-                                        GeneralLedgerAccountBalanceStage.builder()
-                                                .accountType(AccountType.BALANCESHEET)
-                                                .attributeId(transactionActivity.getAttributeId())
-                                                .instrumentId(transactionActivity.getInstrumentId())
-                                                .periodId(transactionActivity.getPeriodId())
-                                                .amount(transactionActivity.getAmount())
-                                                .transactionName(transactionActivity.getTransactionName())
-                                                .accountNumber(chartOfAccount.getAccountNumber())
-                                                .accountName(chartOfAccount.getAccountName())
-                                                .accountSubtype(chartOfAccount.getAccountSubtype())
-                                                .batchId(transactionActivity.getBatchId()).build();
-                                accountBalanceStage.setCode(accountBalanceStage.hashCode());
-                                accountBalanceStage.setSubCode(accountBalanceStage.subCode());
-
-                                accountBalanceList.add(accountBalanceStage);
-
-                            }
-
-                        } catch (Exception e) {
-                            log.error("Error processing subledger mapping: {}", entry.getValue(), e);
-                            throw new RuntimeException("Error processing subledger mapping", e);
+                    List<SubledgerMapping> subledgerMappings = new ArrayList<>(0);
+                    for(Map.Entry<String , SubledgerMapping> entry : mapping.getMap().entrySet()) {
+                        SubledgerMapping m = entry.getValue();
+                        if(transactionActivity.getTransactionName().equalsIgnoreCase(m.getTransactionName())) {
+                            subledgerMappings.add(m);
                         }
                     }
+
+                        for(SubledgerMapping slMapping : subledgerMappings) {
+                            try {
+                             if (slMapping == null) {
+                                 log.error(String.format("Skipping GL booking for [%s] SubledgerMapping is null for entryType: [%s]", transactionActivity.toString(), slMapping.toString()));
+                                 continue;
+                             }
+                             AccountTypes accountType = this.glCommonService.getAccountType(tenantId, slMapping.getAccountSubType());
+                             String accountSubType = slMapping.getAccountSubType();
+                             Map<String, Object> attributes = transactionActivity.getAttributes();
+                             ChartOfAccount chartOfAccount = this.glCommonService.getChartOfAccount(tenantId, accountSubType, attributes);
+
+                             BigDecimal debitAmount = BigDecimal.valueOf(0L);
+                             BigDecimal creditAmount = BigDecimal.valueOf(0L);
+                             Sign entrySign = transactionActivity.getAmount().signum() >=0 ? Sign.POSITIVE : Sign.NEGATIVE;
+
+                             if (entrySign == Sign.POSITIVE && slMapping.getEntryType() == EntryType.DEBIT) {
+                                 debitAmount = transactionActivity.getAmount().abs();
+                             } else if (entrySign == Sign.POSITIVE && slMapping.getEntryType() == EntryType.CREDIT) {
+                                 creditAmount = transactionActivity.getAmount().abs();
+                             } else if (entrySign == Sign.NEGATIVE && slMapping.getEntryType() == EntryType.DEBIT) {
+                                 creditAmount = transactionActivity.getAmount().abs();
+                             } else if (entrySign == Sign.NEGATIVE && slMapping.getEntryType() == EntryType.CREDIT) {
+                                 debitAmount = transactionActivity.getAmount().abs();
+                             }
+
+                             GeneralLedgerEnteryStage gleStage = GeneralLedgerEnteryStage.builder()
+                                     .attributeId(transactionActivity.getAttributeId())
+                                     .instrumentId(transactionActivity.getInstrumentId())
+                                     .transactionName(transactionActivity.getTransactionName())
+                                     .postingDate(transactionActivity.getPostingDate())
+                                     .periodId(transactionActivity.getPeriodId())
+                                     .glAccountNumber(chartOfAccount.getAccountNumber())
+                                     .glAccountName(chartOfAccount.getAccountName())
+                                     .glAccountSubType(chartOfAccount.getAccountSubtype())
+                                     .glAccountType(accountType.getAccountType().name())
+                                     .isReclass(0)
+                                     .debitAmount(debitAmount.abs())
+                                     .creditAmount(creditAmount.abs())
+                                     .attributes(attributes)
+                                     .batchId(transactionActivity.getBatchId())
+                                     .build();
+
+                             gleList.add(gleStage);
+
+                             if (accountType.getAccountType() == AccountType.BALANCESHEET) {
+                                 GeneralLedgerAccountBalanceStage accountBalanceStage =
+                                         GeneralLedgerAccountBalanceStage.builder()
+                                                 .accountType(AccountType.BALANCESHEET)
+                                                 .attributeId(transactionActivity.getAttributeId())
+                                                 .instrumentId(transactionActivity.getInstrumentId())
+                                                 .periodId(transactionActivity.getPeriodId())
+                                                 .amount(transactionActivity.getAmount())
+                                                 .transactionName(transactionActivity.getTransactionName())
+                                                 .accountNumber(chartOfAccount.getAccountNumber())
+                                                 .accountName(chartOfAccount.getAccountName())
+                                                 .accountSubtype(chartOfAccount.getAccountSubtype())
+                                                 .batchId(transactionActivity.getBatchId()).build();
+                                 accountBalanceStage.setCode(accountBalanceStage.hashCode());
+                                 accountBalanceStage.setSubCode(accountBalanceStage.subCode());
+
+                                 accountBalanceList.add(accountBalanceStage);
+
+                             }
+                         }catch (Exception e) {
+                                log.error("Error processing subledger mapping: {}", slMapping, e);
+                                throw new RuntimeException("Error processing subledger mapping", e);
+                            }
+
+                        }
                 } catch (Exception e) {
                     log.error("Error processing transaction activity key: {}", transactionActivity.toString(), e);
                     throw new RuntimeException("Error processing transaction activity", e);

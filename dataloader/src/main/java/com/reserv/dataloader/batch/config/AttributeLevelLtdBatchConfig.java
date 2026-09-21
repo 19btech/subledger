@@ -2,7 +2,6 @@ package com.reserv.dataloader.batch.config;
 
 import com.fyntrac.common.cache.collection.CacheMap;
 import com.fyntrac.common.component.TenantDataSourceProvider;
-import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.AttributeLevelLtd;
@@ -40,7 +39,6 @@ import java.util.Set;
 public class AttributeLevelLtdBatchConfig {
 
     private final MemcachedRepository memcachedRepository;
-    private final TransactionActivityQueue transactionActivityQueue;
     private final JobRepository jobRepository;
     private final TenantContextHolder tenantContextHolder;
     private final TenantDataSourceProvider dataSourceProvider;
@@ -54,14 +52,12 @@ public class AttributeLevelLtdBatchConfig {
                                         TenantContextHolder tenantContextHolder,
                                         TenantDataSourceProvider dataSourceProvider,
                                         MemcachedRepository memcachedRepository,
-                                        TransactionActivityQueue transactionActivityQueue,
                                         AggregationService aggregationService,
                                         AttributeLevelAggregationService attributeLevelAggregationService) {
         this.jobRepository = jobRepository;
         this.tenantContextHolder = tenantContextHolder;
         this.dataSourceProvider = dataSourceProvider;
         this.memcachedRepository = memcachedRepository;
-        this.transactionActivityQueue = transactionActivityQueue;
         this.aggregationService = aggregationService;
         this.attributeLevelAggregationService = attributeLevelAggregationService;
     }
@@ -121,6 +117,11 @@ public class AttributeLevelLtdBatchConfig {
 
         String metricKey = Key.allMetricList(tenantId);
         CacheMap<Set<String>> metrics = memcachedRepository.getFromCache(metricKey, CacheMap.class);
+
+        if (metrics == null || metrics.getMap() == null) {
+            throw new IllegalStateException(
+                    "Metrics cache not found for tenantId=" + tenantId + ", cacheKey=" + metricKey);
+        }
 
         return new AttributeLevelLtdProcessor(
                 metrics.getMap()

@@ -4,19 +4,26 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
+import com.fyntrac.common.entity.Errors;
 import com.fyntrac.common.entity.ExecutionInstance;
 import com.fyntrac.common.entity.ExecutionState;
+import com.fyntrac.common.enums.ErrorCategory;
+import com.fyntrac.common.enums.ErrorCode;
+import com.fyntrac.common.enums.ErrorType;
 import com.fyntrac.common.repository.ExecutionInstanceRepository;
 import com.fyntrac.common.service.BatchCompletionWaiter;
+import com.fyntrac.common.service.ErrorService;
 import com.fyntrac.common.service.ExcelModelService;
 import com.fyntrac.common.service.ExecutionStateService;
 import com.fyntrac.common.service.NativeJsonParserService;
 import com.fyntrac.common.utils.DateUtil;
+import com.fyntrac.common.utils.StringUtil;
 import com.reserv.dataloader.pulsar.producer.GeneralLedgerMessageProducer;
 import com.reserv.dataloader.pulsar.producer.PythonModelExecutionProducer;
 import com.reserv.dataloader.service.AggregationExecutionService;
 import com.reserv.dataloader.service.model.ModelExecutionService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.JobParameters;
 import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
@@ -37,6 +44,7 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
     private final AggregationExecutionService aggregationExecutionService;
     private final ExecutionStateService executionStateService;
     private final GeneralLedgerMessageProducer generalLedgerMessageProducer;
+    private final ErrorService errorService;
 
     public DslExecutionWorkflow(ExecutionInstanceRepository executionInstanceRepository,
                                 ModelExecutionService modelExecutionService,
@@ -46,7 +54,8 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
                                 ObjectMapper objectMapper,
                                 AggregationExecutionService aggregationExecutionService,
                                 ExecutionStateService executionStateService,
-                                GeneralLedgerMessageProducer generalLedgerMessageProducer) {
+                                GeneralLedgerMessageProducer generalLedgerMessageProducer,
+                                ErrorService errorService) {
         super(executionInstanceRepository);
         this.modelExecutionService = modelExecutionService;
         this.excelModelService = excelModelService;
@@ -56,6 +65,7 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
         this.aggregationExecutionService = aggregationExecutionService;
         this.executionStateService = executionStateService;
         this.generalLedgerMessageProducer = generalLedgerMessageProducer;
+        this.errorService = errorService;
     }
 
     @Override
@@ -73,17 +83,30 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
         Date executionDate = DateUtil.convertToDateFromYYYYMMDD(postingDate);
         AtomicInteger batchCounter = new AtomicInteger(0);
 
+        // Serializes the metric-level aggregation + GL sync + progress/failure bookkeeping across
+        // concurrently-processing batches — see the lock() call below for why.
+        java.util.concurrent.locks.ReentrantLock aggregationLock = new java.util.concurrent.locks.ReentrantLock();
+
         excelModelService.generateEventAndDispatch(postingDate, batch -> {
             int batchNumber = batchCounter.getAndIncrement();
             String correlationId = instance.getId() + "_batch_" + batchNumber;
+
+            // Dispatch-to-Python + awaitCompletion (the genuinely slow part) run outside the lock,
+            // fully concurrently across batches, same as before. Any failure here — dispatch,
+            // timeout, a Python-side error, a malformed payload — is captured instead of thrown,
+            // so one bad batch can no longer abort the other 48 via this callback's exception.
+            Exception batchFailure = null;
+            Records.JobResultResponseRecord jobResultResponseRecord = null;
+            JobParameters aggregationJobParameters = null;
             try {
                 log.info("Processing batch {} for instance {}. CorrelationId: {}", batchNumber, instance.getId(), correlationId);
 
                 // [Step 2A] Dispatch to Python
                 dispatchPythonBatchOrchestrated(executionDate, batch, correlationId, tenant);
 
-                // [Step 2B/C] SUSPEND and WAIT for callback
-                BatchCompletionWaiter.BatchResult result = batchCompletionWaiter.waitForCompletion(correlationId, 600000L); // 10min timeout
+                // [Step 2B] SUSPEND and WAIT for callback (polls Memcached — see BatchCompletionWaiter).
+                // Runs on this batch's own virtual thread, concurrently with every other batch's wait.
+                BatchCompletionWaiter.BatchResult result = batchCompletionWaiter.awaitCompletion(correlationId, 600000L); // 10min timeout
 
                 if (result == null || !"SUCCESS".equals(result.status())) {
                     throw new RuntimeException("Python processing failed for batch " + batchNumber + ": " +
@@ -91,38 +114,102 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
                 }
 
                 // Extract jobId from the result payload JSON
-                long pythonJobId = -1;
                 try {
                     JsonNode root = objectMapper.readTree(result.payload());
                     if (root != null && root.has("jobId")) {
-                        pythonJobId = root.get("jobId").asLong();
-                        log.info("Extracted Python jobId: {} for correlationId: {}", pythonJobId, correlationId);
+                        log.info("Extracted Python jobId: {} for correlationId: {}", root.get("jobId").asLong(), correlationId);
                     }
                 } catch (Exception e) {
                     log.error("Failed to parse jobId from Python result payload: {}. Payload: {}", e.getMessage(), result.payload());
                 }
 
-                // [Step 3] Immediate Financial Aggregation
-                Records.JobResultResponseRecord jobResultResponseRecord = NativeJsonParserService.parseJobResultSafely(result.payload());
-                Records.ExecuteAggregationMessageRecord executeAggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenant,
-                        jobResultResponseRecord.jobId(), Long.valueOf(postingDate));
-                ExecutionState executionState = executionStateService.getExecutionState();
-                aggregationExecutionService.execute(executeAggregationMessageRecord, executionState);
-                
-                // [Step 4] Real-Time General Ledger Sync
-                Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenant, jobResultResponseRecord.jobId());
-                generalLedgerMessageProducer.bookTempGL(glRec);
-                
-                // Update instance progress
-                incrementCompletedBatches(instance);
+                jobResultResponseRecord = NativeJsonParserService.parseJobResultSafely(result.payload());
 
+                // [Step 3a] Attribute- and instrument-level aggregation. Every row these jobs
+                // touch is keyed by instrument, and an instrument is in exactly one batch, so
+                // this is safe to run concurrently with other batches — and it's the part of
+                // aggregation whose cost grows with instrument count, so it must not sit behind
+                // the lock below.
+                aggregationJobParameters = aggregationExecutionService.executeInstrumentScoped(
+                        RecordFactory.createExecutionAggregationRecord(tenant, jobResultResponseRecord.jobId(), Long.valueOf(postingDate)),
+                        executionStateService.getExecutionState());
             } catch (Exception e) {
-                log.error("Critical failure in batch {} for instance {}: {}", batchNumber, instance.getId(), e.getMessage());
-                throw new RuntimeException(e);
+                batchFailure = e;
+            }
+
+            // Serializes the metric-level aggregation + GL sync + progress/failure bookkeeping
+            // across concurrently-processing batches (generateEventAndDispatch runs each batch's
+            // callback on its own virtual thread — see its own comment). Only this tail end needs
+            // it: MetricLevelLtdFlatteningWriter aggregates one MetricLevelLtd row across ALL
+            // instruments for (metric, postingDate), not per-instrument like the attribute/
+            // instrument-level writers, and its balance fields are stored as strings (no atomic
+            // $inc), so two batches' metric jobs racing here would read-modify-write the same row
+            // and silently drop one batch's contribution — and incrementCompletedBatches/
+            // incrementFailedBatches do the same read-modify-write on the shared `instance` object.
+            aggregationLock.lock();
+            try {
+                if (batchFailure == null) {
+                    try {
+                        // [Step 3b] Metric-level aggregation (cross-instrument row — must be serialized)
+                        Records.ExecuteAggregationMessageRecord executeAggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenant,
+                                jobResultResponseRecord.jobId(), Long.valueOf(postingDate));
+                        aggregationExecutionService.executeMetricLevel(aggregationJobParameters, executeAggregationMessageRecord);
+
+                        // [Step 4] Real-Time General Ledger Sync
+                        Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenant, jobResultResponseRecord.jobId());
+                        generalLedgerMessageProducer.bookTempGL(glRec);
+                    } catch (Exception e) {
+                        batchFailure = e;
+                    }
+                }
+
+                if (batchFailure != null) {
+                    // Logged + persisted to the Errors collection, but deliberately not rethrown:
+                    // one batch's failure shouldn't abort the other batches of this DSL run. The
+                    // instance still ends up PARTIAL_SUCCESS (not a silent COMPLETED) — see
+                    // AbstractExecutionWorkflow's final status check.
+                    recordBatchFailure(tenant, instance, batchNumber, correlationId, batchFailure);
+                    incrementFailedBatches(instance);
+                }
+
+                // Update instance progress — every batch reaches this point exactly once, whether
+                // it succeeded or failed, so completion tracking/UI progress never stalls.
+                incrementCompletedBatches(instance);
+            } finally {
+                aggregationLock.unlock();
             }
         });
     }
     
+    /**
+     * Logs a single batch's failure and persists it to the Errors collection so it survives past
+     * this JVM's log retention — same reasoning as AggregationExecutionService.recordJobFailure.
+     * Never throws: a problem persisting the error must not itself abort the batch.
+     */
+    private void recordBatchFailure(String tenant, ExecutionInstance instance, int batchNumber, String correlationId, Exception e) {
+        log.error("Batch {} failed for instance {} (tenant {}), correlationId {}: {}",
+                batchNumber, instance.getId(), tenant, correlationId, e.getMessage(), e);
+
+        try {
+            Errors error = Errors.builder()
+                    .jobId(correlationId)
+                    .modelId(instance.getId())
+                    .postingDate(DateUtil.convertToDateFromYYYYMMDD(instance.getPostingDate()))
+                    .executionDate(DateUtil.convertToDateFromYYYYMMDD(instance.getPostingDate()))
+                    .code(ErrorCode.Event_Generation_Error)
+                    .errorCategory(ErrorCategory.PROCESSING)
+                    .errorType(ErrorType.ERROR)
+                    .isWarning(Boolean.FALSE)
+                    .message("Batch " + batchNumber + " failed for tenant " + tenant + ": " + e.getMessage())
+                    .stacktrace(StringUtil.getStackTrace(e))
+                    .build();
+            errorService.save(error);
+        } catch (Exception persistError) {
+            log.error("Failed to persist batch {} failure to Errors collection for instance {}: {}",
+                    batchNumber, instance.getId(), persistError.getMessage(), persistError);
+        }
+    }
+
     private void dispatchPythonBatchOrchestrated(Date executionDate, Set<String> instrumentIds, String correlationId, String tenantId) {
         if (instrumentIds == null || instrumentIds.isEmpty()) return;
 

@@ -8,6 +8,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.io.Serial;
@@ -19,6 +20,10 @@ import java.util.Date;
 @AllArgsConstructor
 @NoArgsConstructor
 @Document(collection = "Errors")
+// Covers ErrorsRepository.findByInstrumentId/findByInstrumentIdAndAttributeId as index prefixes,
+// plus the full instrumentId+attributeId+postingDate combination. No index existed on this
+// collection at all before.
+@CompoundIndex(def = "{'instrumentId': 1, 'attributeId': 1, 'postingDate': 1}", name = "Errors_instrument_attribute_postingdate_index")
 public class Errors implements Serializable {
     @Serial
     private static final long serialVersionUID = -7374000552564642342L;

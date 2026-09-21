@@ -49,6 +49,11 @@ public class TransactionsDataLoadConfig {
     private final TenantDataSourceProvider dataSourceProvider;
     private MongoTemplate mongoTemplate;
 
+    // Stage 0 (docs/K8S_SCALING_STRATEGY.md): was a hardcoded chunk(10, ...) — 100k+ Mongo round
+    // trips for a million-row file. Externalized so it can be tuned without a redeploy.
+    @Value("${fyntrac.upload.chunk.size:1000}")
+    private int chunkSize;
+
     public TransactionsDataLoadConfig(JobRepository jobRepository, MongoTemplate mongoTemplate,
             TenantDataSourceProvider dataSourceProvider,
             TenantContextHolder tenantContextHolder) {
@@ -75,7 +80,7 @@ public class TransactionsDataLoadConfig {
             ItemWriter<Transactions> transactionWriter,
             com.reserv.dataloader.batch.listener.ValidationLoggingListener validationLoggingListener) {
         return new StepBuilder("transactionImportStep", jobRepository)
-                .<Transactions, Transactions>chunk(10, new ResourcelessTransactionManager())
+                .<Transactions, Transactions>chunk(chunkSize, new ResourcelessTransactionManager())
                 .reader(transactionFileReader)
                 .processor(transactionsItemProcessor)
                 .faultTolerant()

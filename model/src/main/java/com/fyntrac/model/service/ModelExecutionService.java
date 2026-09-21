@@ -1,7 +1,6 @@
 package com.fyntrac.model.service;
 
 import com.fyntrac.common.cache.collection.CacheList;
-import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
@@ -49,7 +48,6 @@ public class ModelExecutionService {
     private final ExecutionStateService executionStateService;
     private final AggregationMessageProducer aggregationMessageProducer;
     private final InstrumentAttributeService instrumentAttributeService;
-    private final TransactionActivityQueue transactionActivityQueue;
     private final EventRepository eventRepository;
     private final ModelCompletionProducer modelCompletionProducer;
 
@@ -64,7 +62,6 @@ public class ModelExecutionService {
             , ExecutionStateService executionStateService
             , AggregationMessageProducer aggregationMessageProducer
             , InstrumentAttributeService instrumentAttributeService
-            , TransactionActivityQueue transactionActivityQueue
             , EventRepository eventRepository
             , ModelCompletionProducer modelCompletionProducer) {
         this.modelDataService = modelDataService;
@@ -78,7 +75,6 @@ public class ModelExecutionService {
         this.executionStateService = executionStateService;
         this.aggregationMessageProducer = aggregationMessageProducer;
         this.instrumentAttributeService = instrumentAttributeService;
-        this.transactionActivityQueue = transactionActivityQueue;
         this.eventRepository = eventRepository;
         this.modelCompletionProducer = modelCompletionProducer;
 
@@ -148,6 +144,12 @@ public class ModelExecutionService {
 
                 int acctPeriod = com.fyntrac.common.utils.DateUtil.getAccountingPeriodId(executionDate);
                 AccountingPeriod accountingPeriod = this.accountingPeriodService.getAccountingPeriod(acctPeriod);
+                // Unguarded null here previously let populateMissingFields() persist TransactionActivity
+                // documents with accountingPeriod=null, which only surfaced later as an NPE in the LTD
+                // processors (AttributeLevelLtdProcessor etc.) reading them back.
+                if (accountingPeriod == null) {
+                    throw new IllegalStateException("Accounting period not found for period ID: " + acctPeriod);
+                }
 
                 // Step 4: Process each instrument
                 for (String instrumentId : cacheList.getList()) {

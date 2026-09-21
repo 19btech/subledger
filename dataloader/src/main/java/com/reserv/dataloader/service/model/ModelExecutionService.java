@@ -649,6 +649,13 @@ public class ModelExecutionService {
             Date executionDate = DateUtil.parseDate(date, formatter);
             java.util.concurrent.atomic.AtomicInteger batchCounter = new java.util.concurrent.atomic.AtomicInteger(0);
 
+            // See DslExecutionWorkflow.generateAndProcessEvents for why this lock exists: batches
+            // now run concurrently on their own virtual threads, but MetricLevelLtdFlatteningWriter
+            // and updateInstanceProgress both read-modify-write shared state across batches, so
+            // only aggregation + GL sync + progress-update need to be serialized, not the slow
+            // dispatch/await part.
+            java.util.concurrent.locks.ReentrantLock aggregationLock = new java.util.concurrent.locks.ReentrantLock();
+
             // 3. Core Execution Loop (Steps 2, 3, 4)
             // We use the existing event generator but a custom dispatcher
             excelModelService.generateEventAndDispatch(postingDate, batch -> {
@@ -660,9 +667,10 @@ public class ModelExecutionService {
                     // [Step 2A] Dispatch to Python
                     this.dispatchPythonBatchOrchestrated(executionDate, batch, correlationId);
 
-                    // [Step 2B/C] SUSPEND and WAIT for callback
+                    // [Step 2B] SUSPEND and WAIT for callback (polls Memcached — see BatchCompletionWaiter).
+                    // Runs on this batch's own virtual thread, concurrently with every other batch's wait.
                     com.fyntrac.common.service.BatchCompletionWaiter.BatchResult result =
-                            batchCompletionWaiter.waitForCompletion(correlationId, 600000L); // 10min timeout_ la la
+                            batchCompletionWaiter.awaitCompletion(correlationId, 600000L); // 10min timeout
 
                     if (result == null || !"SUCCESS".equals(result.status())) {
                         throw new RuntimeException("Python processing failed for batch " + batchNumber + ": " +
@@ -681,21 +689,25 @@ public class ModelExecutionService {
                         log.error("Failed to parse jobId from Python result payload: {}. Payload: {}", e.getMessage(), result.payload());
                     }
 
-                    // [Step 3] Immediate Financial Aggregation
-                    // aggregationService.aggregateBatch(result.payload(), tenant);
-                    // String tenantId, long jobId, Long aggregationDate
-                    // RecordFactory.createExecutionAggregationRecord(tenant, result.);
                     Records.JobResultResponseRecord jobResultResponseRecord = NativeJsonParserService.parseJobResultSafely(result.payload());
-                    Records.ExecuteAggregationMessageRecord executeAggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenant,
-                            jobResultResponseRecord.jobId(), Long.valueOf(postingDate) );
-                    ExecutionState executionState = executionStateService.getExecutionState();
-                    aggregationExecutionService.execute(executeAggregationMessageRecord, executionState);
-                    //go [Step 4] Real-Time General Ledger Sync
-                    // glAccountService.syncBatch(result.payload(), tenant);
-                    Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenant, jobResultResponseRecord.jobId());
-                    generalLedgerMessageProducer.bookTempGL(glRec);
-                    // Update instance progress
-                    updateInstanceProgress(instance);
+
+                    aggregationLock.lock();
+                    try {
+                        // [Step 3] Immediate Financial Aggregation
+                        Records.ExecuteAggregationMessageRecord executeAggregationMessageRecord = RecordFactory.createExecutionAggregationRecord(tenant,
+                                jobResultResponseRecord.jobId(), Long.valueOf(postingDate) );
+                        ExecutionState executionState = executionStateService.getExecutionState();
+                        aggregationExecutionService.execute(executeAggregationMessageRecord, executionState);
+
+                        // [Step 4] Real-Time General Ledger Sync
+                        Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenant, jobResultResponseRecord.jobId());
+                        generalLedgerMessageProducer.bookTempGL(glRec);
+
+                        // Update instance progress
+                        updateInstanceProgress(instance);
+                    } finally {
+                        aggregationLock.unlock();
+                    }
 
                 } catch (Exception e) {
                     log.error("Critical failure in batch {} for instance {}: {}", batchNumber, instance.getId(), e.getMessage());

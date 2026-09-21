@@ -1,7 +1,10 @@
 package com.reserv.dataloader.controller;
 
+import com.fyntrac.common.config.TenantContextHolder;
 import com.reserv.dataloader.exception.AccountingPeriodClosedException;
 import com.reserv.dataloader.exception.MultiplePostingDatesException;
+import com.reserv.dataloader.service.UploadStatusService;
+import com.reserv.dataloader.service.upload.AsyncUploadOrchestrator;
 import com.reserv.dataloader.service.upload.FileUploadService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,6 +13,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Map;
+import java.util.Set;
+
 @Slf4j
 @RestController
 @RequestMapping("/api/dataloader/accounting/rule")
@@ -17,6 +23,12 @@ public class AccountingRuleController {
 
     @Autowired
     FileUploadService fileUploadService;
+
+    @Autowired
+    UploadStatusService uploadStatusService;
+
+    @Autowired
+    AsyncUploadOrchestrator asyncUploadOrchestrator;
 
     @PostMapping("/upload")
     public ResponseEntity<String> handleFileUpload(@RequestParam("files") MultipartFile[] files) {
@@ -89,6 +101,46 @@ public class AccountingRuleController {
         } catch (Throwable e) {
             log.error(e.getLocalizedMessage());
             throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Async counterpart to {@code /upload}: stages the files synchronously (required — see
+     * {@link FileUploadService#stageMultipartFiles}), then hands CSV conversion / validation /
+     * batch-job execution to a background executor and returns immediately with a 202 + uploadId
+     * instead of blocking the request until the whole pipeline finishes. Poll
+     * {@code GET /api/dataloader/upload/status/{uploadId}} for completion.
+     * See docs/K8S_SCALING_STRATEGY.md (Stage 0).
+     */
+    @PostMapping("/upload-async")
+    public ResponseEntity<?> handleFileUploadAsync(@RequestParam("files") MultipartFile[] files) {
+        return submitAsyncUpload(Boolean.FALSE, files);
+    }
+
+    @PostMapping("/upload-overwrite-async")
+    public ResponseEntity<?> handleFileUploadOverwriteAsync(@RequestParam("files") MultipartFile[] files) {
+        return submitAsyncUpload(Boolean.TRUE, files);
+    }
+
+    private ResponseEntity<?> submitAsyncUpload(boolean isOverwrite, MultipartFile[] files) {
+        try {
+            long uploadId = FileUploadService.generateUploadId();
+            Set<String> validFileSet = fileUploadService.stageMultipartFiles(files);
+            String tenant = TenantContextHolder.getTenant();
+
+            uploadStatusService.markPending(uploadId, isOverwrite);
+            asyncUploadOrchestrator.processAsync(uploadId, isOverwrite, validFileSet, tenant);
+
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of(
+                    "uploadId", uploadId,
+                    "state", "PENDING",
+                    "statusUrl", "/api/dataloader/upload/status/" + uploadId
+            ));
+        } catch (Throwable e) {
+            String stackTrace = com.fyntrac.common.utils.StringUtil.getStackTrace(e);
+            log.error(stackTrace);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to stage files for upload: cause:" + stackTrace);
         }
     }
 

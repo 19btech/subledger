@@ -22,6 +22,10 @@ import java.util.Map;
 @AllArgsConstructor
 @Document(collection = "InstrumentAttribute")
 @CompoundIndex(def = "{'instrumentId': 1, 'attributeId': 1, 'versionId': 1}", name = "InstrumentAttribute_attribute_instrument_index")
+// Covers ExcelModelService.generateEventAndDispatch's core pagination query — filters
+// {endDate: null} sorted by instrumentId — which no existing index (single-field instrumentId,
+// or the compound above keyed on instrumentId+attributeId+versionId) can satisfy without a scan.
+@CompoundIndex(def = "{'endDate': 1, 'instrumentId': 1}", name = "InstrumentAttribute_active_by_instrument_index")
 public class InstrumentAttribute implements Serializable {
     @Serial
     private static final long serialVersionUID = -251193653214449266L;

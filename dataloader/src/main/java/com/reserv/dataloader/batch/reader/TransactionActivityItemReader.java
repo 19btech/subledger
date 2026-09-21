@@ -1,6 +1,5 @@
 package com.reserv.dataloader.batch.reader;
 
-import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.entity.TransactionActivity;
 import org.apache.pulsar.shade.javax.annotation.PostConstruct;
 import org.springframework.batch.item.ExecutionContext;

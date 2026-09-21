@@ -8,6 +8,7 @@ import com.fyntrac.common.entity.BaseLtd;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.aggregation.AttributeLevelAggregationService;
 import com.fyntrac.common.utils.DateUtil;
+import org.bson.types.ObjectId;
 import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
@@ -20,6 +21,8 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -97,8 +100,18 @@ public class AttributeLevelLtdFlatteningWriter implements ItemWriter<List<Record
                 })
                 .toList();
 
+        // Fetches every groupedRecords key's existing AttributeLevelLtd row in this posting
+        // date in ONE round trip instead of one findOne() per record — getFromMemcached() below
+        // is a disabled stub (always returns null), so every record used to fall through to its
+        // own individual query. With chunk sizes in the hundreds that was hundreds of sequential
+        // round-trips per chunk; confirmed directly as the cause of this aggregation step going
+        // from single-digit-ms to 14s+ as data volume grew. Same result, just fetched together.
+        Map<GroupKey, AttributeLevelLtd> existingByKey = batchFetchExisting(groupedRecords);
+
+        Set<String> touchedKeys = new LinkedHashSet<>();
         for (Records.AttributeLevelLtdRecord record : groupedRecords) {
             String key = buildKey(record, tenantId, jobId);
+            touchedKeys.add(key);
 
             // Check whether the value was already in localCache
             AttributeLevelLtd ltd = localCache.get(key);
@@ -107,7 +120,8 @@ public class AttributeLevelLtdFlatteningWriter implements ItemWriter<List<Record
                 // Load from Memcached or DB
                 ltd = getFromMemcached(key);
                 if (ltd == null) {
-                    ltd = attributeLevelAggregationService.getDataService().findOne(buildQuery(record), AttributeLevelLtd.class);
+                    ltd = existingByKey.get(new GroupKey(record.metricName().toUpperCase(),
+                            record.instrumentId().toUpperCase(), record.attributeId().toUpperCase()));
                 }
 
                 if (ltd == null) {
@@ -131,6 +145,11 @@ public class AttributeLevelLtdFlatteningWriter implements ItemWriter<List<Record
                             .accountingPeriodId(DateUtil.getAccountingPeriodId(record.postingDate()))
                             .balance(balance)
                             .build();
+                    // MongoItemWriter's upsert generates a fresh ObjectId for an id-less entity on EVERY
+                    // write and never sets it back, so a row created here and re-written on a later
+                    // chunk was inserted again as a new document. Fix the id now so later writes
+                    // replace this same document.
+                    ltd.setId(new ObjectId().toHexString());
                 } else {
                     // Found in DB or cache → add activity
                     BaseLtd bal = ltd.getBalance();
@@ -149,12 +168,14 @@ public class AttributeLevelLtdFlatteningWriter implements ItemWriter<List<Record
             }
         }
 
-// Collect and cache
-        List<AttributeLevelLtd> ltdChunk = new ArrayList<>();
-
-        for (Map.Entry<String, AttributeLevelLtd> entry : localCache.entrySet()) {
-            ltdChunk.add(entry.getValue());
-            putInMemcached(entry.getKey(), entry.getValue());
+        // Persist only the rows this chunk touched. localCache spans the whole step, and writing
+        // all of it on every chunk re-wrote (and, before ids were fixed above, re-inserted)
+        // rows that hadn't changed since an earlier chunk.
+        List<AttributeLevelLtd> ltdChunk = new ArrayList<>(touchedKeys.size());
+        for (String touchedKey : touchedKeys) {
+            AttributeLevelLtd touched = localCache.get(touchedKey);
+            ltdChunk.add(touched);
+            putInMemcached(touchedKey, touched);
         }
 
         Chunk<AttributeLevelLtd> convertedChunk = this.convertChunk(ltdChunk);
@@ -206,6 +227,33 @@ public class AttributeLevelLtdFlatteningWriter implements ItemWriter<List<Record
         } catch (Exception e) {
             // ignore caching failure
         }
+    }
+
+    // All records in a chunk share the same postingDate (see the comment above groupedRecords'
+    // construction), so this one query — postingDate equality plus an $or of this chunk's
+    // (metricName, instrumentId, attributeId) triples — covers what buildQuery() would have
+    // looked up one record at a time.
+    private Map<GroupKey, AttributeLevelLtd> batchFetchExisting(List<Records.AttributeLevelLtdRecord> records) {
+        if (records.isEmpty()) {
+            return Map.of();
+        }
+        Integer postingDate = records.get(0).postingDate();
+        List<Criteria> orCriteria = records.stream()
+                .map(r -> Criteria.where("metricName").is(r.metricName().toUpperCase())
+                        .and("instrumentId").is(r.instrumentId().toUpperCase())
+                        .and("attributeId").is(r.attributeId().toUpperCase()))
+                .toList();
+        Query batchQuery = new Query(new Criteria().andOperator(
+                Criteria.where("postingDate").is(postingDate),
+                new Criteria().orOperator(orCriteria)));
+
+        List<AttributeLevelLtd> existing =
+                attributeLevelAggregationService.getDataService().getMongoTemplate().find(batchQuery, AttributeLevelLtd.class);
+
+        return existing.stream().collect(Collectors.toMap(
+                e -> new GroupKey(e.getMetricName().toUpperCase(), e.getInstrumentId().toUpperCase(), e.getAttributeId().toUpperCase()),
+                e -> e,
+                (a, b) -> a));
     }
 
     private Query buildQuery(Records.AttributeLevelLtdRecord r) {

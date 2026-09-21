@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: fyntrac
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: gateway
+          # No local changes to fyntrac-gateway — pulled straight from GHCR (public), same
+          # image docker-compose itself references.
+          image: ghcr.io/19btech/fyntrac/docker/fyntrac-gateway:0.0.4-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8585
+          env:
+            - name: DATALOADER_SERVICE_URI
+              value: http://dataloader:8081
+            - name: REPORTING_SERVICE_URI
+              value: http://reporting:8084
+            - name: DSL_SERVICE_URI
+              value: http://dsl:8000
+            - name: INSIGHT_SERVICE_URI
+              value: http://insight:4000
+            - name: CORS_ALLOWED_ORIGINS
+              value: "http://localhost:3030,http://localhost:3000,http://localhost:3001"
+            - name: FRONTEND_BASE_URL
+              value: "http://localhost:3030"
+            - name: ZITADEL_CLIENT_ID
+              valueFrom:
+                secretKeyRef: { name: fyntrac-secrets, key: ZITADEL_CLIENT_ID }
+            - name: ZITADEL_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: { name: fyntrac-secrets, key: ZITADEL_CLIENT_SECRET }
+            - name: ZITADEL_ISSUER_URI
+              valueFrom:
+                secretKeyRef: { name: fyntrac-secrets, key: ZITADEL_ISSUER_URI }
+            - name: ZITADEL_PROJECT_ID
+              valueFrom:
+                secretKeyRef: { name: fyntrac-secrets, key: ZITADEL_PROJECT_ID }
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8585
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8585
+            initialDelaySeconds: 45
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: fyntrac
+spec:
+  type: LoadBalancer
+  selector:
+    app: gateway
+  ports:
+    - port: 8585
+      targetPort: 8585

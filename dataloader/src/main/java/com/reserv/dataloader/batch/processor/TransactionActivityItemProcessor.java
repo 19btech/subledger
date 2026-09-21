@@ -12,6 +12,7 @@ import com.reserv.dataloader.service.ActivityValidationLogService;
 import com.reserv.dataloader.validation.TransactionActivityValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.batch.core.ItemReadListener;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.annotation.BeforeStep;
@@ -29,27 +30,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 
 /**
  * Spring Batch ItemProcessor for TransactionActivity CSV rows.
  *
  * <p>Validation pattern matches {@link AggregateItemProcessor}:
  * <ol>
- *   <li>Pre-load reference data into in-memory Sets once per step (@BeforeStep).</li>
+ *   <li>Pre-load the (small) transaction-name reference set once per step (@BeforeStep); resolve
+ *       the chunk's instrument/attribute IDs against InstrumentAttribute in one query per field
+ *       (see {@link ActiveInstrumentAttributeIdLookup}).</li>
  *   <li>Validate each row — collect errors without failing the job.</li>
  *   <li>Persist errors to RefDataValidationLog (tenant-scoped).</li>
  *   <li>Return {@code null} to silently skip invalid rows.</li>
  * </ol>
  */
 public class TransactionActivityItemProcessor
-        implements ItemProcessor<Map<String, Object>, TransactionActivity>, StepExecutionListener {
+        implements ItemProcessor<Map<String, Object>, TransactionActivity>, StepExecutionListener,
+                   ItemReadListener<Map<String, Object>> {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionActivityItemProcessor.class);
 
     private final TransactionActivityValidator validator;
     private final TransactionService transactionService;
-    private final InstrumentAttributeRepository instrumentAttributeRepository;
+    private final ActiveInstrumentAttributeIdLookup idLookup;
     private final ActivityValidationLogService validationLogService;
 
     // Step-scoped state
@@ -57,9 +60,7 @@ public class TransactionActivityItemProcessor
     private String tenantId;
     private final AtomicLong rowCounter = new AtomicLong(0);
 
-    // Preloaded reference sets — populated once in @BeforeStep
-    private final Set<String> validInstrumentIds    = new HashSet<>();
-    private final Set<String> validAttributeIds     = new HashSet<>();
+    // Preloaded reference set — populated once in @BeforeStep
     private final Set<String> validTransactionNames = new HashSet<>();
 
     public TransactionActivityItemProcessor(
@@ -69,7 +70,7 @@ public class TransactionActivityItemProcessor
             ActivityValidationLogService validationLogService) {
         this.validator = validator;
         this.transactionService = transactionService;
-        this.instrumentAttributeRepository = instrumentAttributeRepository;
+        this.idLookup = new ActiveInstrumentAttributeIdLookup(instrumentAttributeRepository);
         this.validationLogService = validationLogService;
     }
 
@@ -84,8 +85,7 @@ public class TransactionActivityItemProcessor
         this.rowCounter.set(0);
         log.info("Initializing TransactionActivityItemProcessor for tenant: {} job: {}", tenantId, jobId);
 
-        validInstrumentIds.clear();
-        validAttributeIds.clear();
+        idLookup.reset();
         validTransactionNames.clear();
 
         if (tenantId == null || tenantId.isBlank()) {
@@ -94,7 +94,6 @@ public class TransactionActivityItemProcessor
         }
 
         TenantContextHolder.runWithTenant(tenantId, () -> {
-            // 1. Preload valid transaction names
             try {
                 transactionService.getAll().forEach(tx -> {
                     if (tx.getName() != null) {
@@ -105,25 +104,15 @@ public class TransactionActivityItemProcessor
             } catch (Exception e) {
                 log.error("Failed to preload transaction names", e);
             }
-
-            // 2. Preload valid instrumentIds from InstrumentAttribute collection
-            try {
-                instrumentAttributeRepository.findAll().forEach(ia -> {
-                    if (ia.getInstrumentId() != null) {
-                        validInstrumentIds.add(
-                                TransactionActivityValidator.normalizeId(ia.getInstrumentId()).toUpperCase());
-                    }
-                    if (ia.getAttributeId() != null) {
-                        validAttributeIds.add(
-                                TransactionActivityValidator.normalizeId(ia.getAttributeId()).toUpperCase());
-                    }
-                });
-                log.info("Preloaded {} instrumentIds and {} attributeIds.",
-                        validInstrumentIds.size(), validAttributeIds.size());
-            } catch (Exception e) {
-                log.error("Failed to preload instrument/attribute IDs", e);
-            }
         });
+    }
+
+    // Spring Batch reads the whole chunk before processing its first item, so by the time
+    // process() runs, every row of the chunk has been collected here. Registered explicitly as an
+    // ItemReadListener in the step config: StepBuilder.listener(Object) would not discover it.
+    @Override
+    public void afterRead(Map<String, Object> item) {
+        idLookup.collect(getRaw(item, "INSTRUMENTID"), getRaw(item, "ATTRIBUTEID", "ATRRIBUTEID"));
     }
 
     // ------------------------------------------------------------------
@@ -135,12 +124,19 @@ public class TransactionActivityItemProcessor
 
         // 1. Validate inside tenant context
         long row = rowCounter.incrementAndGet();
+        String rawInstrumentId = getRaw(item, "INSTRUMENTID");
+        String rawAttributeId  = getRaw(item, "ATTRIBUTEID", "ATRRIBUTEID");
         List<ItemValidationException.ValidationError> errors;
         if (tenantId != null) {
-            errors = TenantContextHolder.runWithTenant(tenantId,
-                    () -> validator.validate(item, validInstrumentIds, validAttributeIds, validTransactionNames));
+            errors = TenantContextHolder.runWithTenant(tenantId, () -> {
+                idLookup.ensureChecked(rawInstrumentId, rawAttributeId);
+                return validator.validate(item, idLookup.validInstrumentIds(), idLookup.validAttributeIds(),
+                        validTransactionNames);
+            });
         } else {
-            errors = validator.validate(item, validInstrumentIds, validAttributeIds, validTransactionNames);
+            idLookup.ensureChecked(rawInstrumentId, rawAttributeId);
+            errors = validator.validate(item, idLookup.validInstrumentIds(), idLookup.validAttributeIds(),
+                    validTransactionNames);
         }
 
         // 2. Persist errors to activity_data_validation_log and skip row
@@ -254,5 +250,16 @@ public class TransactionActivityItemProcessor
 
     private static String toStr(Object value) {
         return value != null ? String.valueOf(value).trim() : "";
+    }
+
+    private static String getRaw(Map<String, Object> item, String... keys) {
+        for (String key : keys) {
+            for (Map.Entry<String, Object> entry : item.entrySet()) {
+                if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(key)) {
+                    return entry.getValue() != null ? String.valueOf(entry.getValue()) : null;
+                }
+            }
+        }
+        return null;
     }
 }

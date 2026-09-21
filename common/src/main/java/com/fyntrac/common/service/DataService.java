@@ -1,5 +1,6 @@
 package com.fyntrac.common.service;
 
+import com.fyntrac.common.component.MongoIndexEnsurer;
 import com.fyntrac.common.component.TenantDataSourceProvider;
 import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.RecordFactory;
@@ -33,11 +34,14 @@ public class DataService<T> {
 
     private final TenantDataSourceProvider dataSourceProvider;
     private final TenantContextHolder tenantContextHolder;
+    private final MongoIndexEnsurer mongoIndexEnsurer;
 
     @Autowired
-    public DataService(TenantDataSourceProvider dataSourceProvider, TenantContextHolder tenantContextHolder) {
+    public DataService(TenantDataSourceProvider dataSourceProvider, TenantContextHolder tenantContextHolder,
+                        MongoIndexEnsurer mongoIndexEnsurer) {
         this.dataSourceProvider = dataSourceProvider;
         this.tenantContextHolder = tenantContextHolder;
+        this.mongoIndexEnsurer = mongoIndexEnsurer;
     }
 
     public MongoTemplate getMongoTemplate() {
@@ -211,6 +215,15 @@ public class DataService<T> {
         Set<String> collectionNames = mongoTemplate.getCollectionNames();
         for (String collectionName : collectionNames) {
             mongoTemplate.getDb().getCollection(collectionName).drop();
+        }
+        // drop() takes every index on the collection with it, not just its documents — without
+        // this, a tenant's indexes (created once, at first provisioning — see
+        // TenantDatasourceConfig) would vanish on the very next truncateDatabase() call and never
+        // come back until the app itself restarted. ExcelTestDriver.setUp() calls this at the
+        // start of every test run, so indexes would otherwise be gone for the entire run after
+        // the first.
+        if (mongoTemplate != null) {
+            mongoIndexEnsurer.ensureIndexes(tenant, mongoTemplate);
         }
     }
 

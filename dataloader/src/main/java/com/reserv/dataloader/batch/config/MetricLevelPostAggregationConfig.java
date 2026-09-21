@@ -14,6 +14,7 @@ import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
+import com.reserv.dataloader.batch.reader.StreamingAggregationItemReader;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.support.transaction.ResourcelessTransactionManager;
@@ -22,12 +23,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
-import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.aggregation.GroupOperation;
 import org.springframework.data.mongodb.core.aggregation.MatchOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -69,45 +68,31 @@ public class MetricLevelPostAggregationConfig {
 
     @Bean
     @StepScope
-    public ItemReader<? extends MetricLevelLtd> metricLevelPostAggregationReader(
+    public StreamingAggregationItemReader<MetricLevelLtd> metricLevelPostAggregationReader(
             @Value("#{jobParameters['fromDate']}") long fromDate,
             DataService<MetricLevelLtd> dataService) {
 
-        return new ItemReader<>() {
-            private Iterator<MetricLevelLtd> resultIterator;
+        MatchOperation matchStage = Aggregation.match(
+                Criteria.where("postingDate").gte(fromDate));
 
-            @Override
-            public MetricLevelLtd read() {
-                if (resultIterator == null) {
+        GroupOperation groupStage = Aggregation.group("metricName", "metricId")
+                .count().as("count")
+                .first("metricName").as("metricName")
+                .first("metricId").as("metricId")
+                .first("postingDate").as("postingDate")
+                .first("accountingPeriodId").as("accountingPeriodId")
+                .first("balance").as("balance");
 
-                    MatchOperation matchStage = Aggregation.match(
-                            Criteria.where("postingDate").gte(fromDate));
+        MatchOperation havingCountOneStage = Aggregation.match(
+                Criteria.where("count").is(1));
 
-                    GroupOperation groupStage = Aggregation.group("metricName", "metricId")
-                            .count().as("count")
-                            .first("metricName").as("metricName")
-                            .first("metricId").as("metricId")
-                            .first("postingDate").as("postingDate")
-                            .first("accountingPeriodId").as("accountingPeriodId")
-                            .first("balance").as("balance");
+        Aggregation aggregation = Aggregation.newAggregation(
+                matchStage, groupStage, havingCountOneStage);
 
-                    MatchOperation havingCountOneStage = Aggregation.match(
-                            Criteria.where("count").is(1));
-
-                    Aggregation aggregation = Aggregation.newAggregation(
-                            matchStage, groupStage, havingCountOneStage);
-
-                    AggregationResults<MetricLevelLtd> results = dataService.getMongoTemplate().aggregate(
-                            aggregation,
-                            "MetricLevelLtd",
-                            MetricLevelLtd.class);
-
-                    resultIterator = results.iterator();
-                }
-
-                return resultIterator.hasNext() ? resultIterator.next() : null;
-            }
-        };
+        // Streamed through a cursor: the materialized AggregationResults this replaced held every
+        // (metric, instrument[, attribute]) row in heap at once — see StreamingAggregationItemReader.
+        return new StreamingAggregationItemReader<>(
+                dataService::getMongoTemplate, aggregation, "MetricLevelLtd", MetricLevelLtd.class, chunkSize);
     }
 
 

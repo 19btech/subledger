@@ -47,9 +47,11 @@ public abstract class AbstractExecutionWorkflow {
             updateStatus(instance, "EOD_PROCESSING");
             performEOD(instance);
 
-            // Complete
+            // Complete — a batch that hit its own catch block (see DslExecutionWorkflow) doesn't
+            // throw here anymore, so this "success" path is also where a degraded run surfaces.
             instance.setEndTime(new Date());
-            updateStatus(instance, "COMPLETED");
+            boolean hadFailedBatches = instance.getFailedBatches() != null && instance.getFailedBatches() > 0;
+            updateStatus(instance, hadFailedBatches ? "PARTIAL_SUCCESS" : "COMPLETED");
 
         } catch (Exception e) {
             handleFailure(instance, e);
@@ -83,6 +85,11 @@ public abstract class AbstractExecutionWorkflow {
     
     protected void incrementCompletedBatches(ExecutionInstance instance) {
         instance.setCompletedBatches(instance.getCompletedBatches() == null ? 1 : instance.getCompletedBatches() + 1);
+        executionInstanceRepository.save(instance);
+    }
+
+    protected void incrementFailedBatches(ExecutionInstance instance) {
+        instance.setFailedBatches(instance.getFailedBatches() == null ? 1 : instance.getFailedBatches() + 1);
         executionInstanceRepository.save(instance);
     }
 

@@ -1,13 +1,8 @@
 package com.reserv.dataloader.batch.writer;
 
-import com.fyntrac.common.component.InstrumentReplayQueue;
-import com.fyntrac.common.component.InstrumentReplaySet;
 import com.fyntrac.common.component.TenantDataSourceProvider;
-import com.fyntrac.common.component.TransactionActivityQueue;
 import com.fyntrac.common.config.ReferenceData;
 import com.fyntrac.common.config.TenantContextHolder;
-import com.fyntrac.common.dto.record.RecordFactory;
-import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.*;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.*;
@@ -41,8 +36,6 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
     private Long runId;
     private final ExecutionStateService executionStateService;
     private ExecutionState executionState;
-    private final TransactionActivityQueue transactionActivityQueue;
-    private Long jobId;
 
     public TransactionActivityItemWriter(MongoItemWriter<TransactionActivity> delegate,
                                  TenantDataSourceProvider dataSourceProvider,
@@ -53,7 +46,6 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
             , AccountingPeriodService accountingPeriodService
             , TransactionService transactionService
     , ExecutionStateService executionStateService
-    , TransactionActivityQueue transactionActivityQueue
     ) {
         this.delegate = delegate;
         this.dataSourceProvider = dataSourceProvider;
@@ -64,8 +56,6 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
         this.accountingPeriodService = accountingPeriodService;
         this.transactionService = transactionService;
         this.executionStateService = executionStateService;
-        this.transactionActivityQueue = transactionActivityQueue;
-
     }
 
     @BeforeStep
@@ -76,7 +66,6 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
         this.tenantId = jobParameters.getString("tenantId");
         this.batchId = jobParameters.getLong("batchId");
         this.runId = jobParameters.getLong("run.id");
-        this.jobId = jobParameters.getLong("jobId");
         this.transactionActivityKey = com.fyntrac.common.utils.Key.aggregationKey(tenantId, runId);
         executionState = this.executionStateService.getExecutionState();
         if(this.transactionActivityKey == null) {
@@ -101,6 +90,16 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
 
         MongoTemplate mongoTemplate = dataSourceProvider.getDataSource(tenant);
 
+        // One query for the chunk's open InstrumentAttribute rows instead of one per activity.
+        // Nothing is written to InstrumentAttribute between here and the per-row enrichment
+        // below, so prefetching sees exactly the same state the per-row lookups did.
+        Set<String> chunkInstrumentIds = new HashSet<>();
+        for (TransactionActivity transactionActivity : activity) {
+            chunkInstrumentIds.add(transactionActivity.getInstrumentId().toUpperCase());
+        }
+        Map<String, List<InstrumentAttribute>> openAttributesByKey =
+                this.instrumentAttributeService.getOpenInstrumentAttributes(chunkInstrumentIds, this.tenantId);
+
         // Process each transaction activity
         for (TransactionActivity transactionActivity : activity) {
             int accountingPeriodId = DateUtil.getAccountingPeriodId(transactionActivity.getPostingDate());
@@ -118,7 +117,7 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
                 transactionActivity.setOriginalPeriodId(referenceData.getCurrentAccountingPeriodId());
             }
 
-            this.setAttributes(transactionActivity);
+            this.setAttributes(transactionActivity, openAttributesByKey);
 
             transactionActivity.setBatchId(batchId);
             Transactions transaction = this.transactionService.getTransaction(transactionActivity.getTransactionName().toUpperCase());
@@ -130,7 +129,6 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
                     transactionActivity.setEffectiveDate(transactionActivity.getPostingDate());
                 }
             }
-            this.transactionActivityQueue.add(tenantId, jobId, transactionActivity);
         }
 
         delegate.setTemplate(mongoTemplate);
@@ -140,8 +138,9 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
     }
 
 
-    private void setAttributes(TransactionActivity transactionActivity) {
-        InstrumentAttribute instrumentAttribute = this.getLatestInstrumentAttribute(transactionActivity);
+    private void setAttributes(TransactionActivity transactionActivity,
+                               Map<String, List<InstrumentAttribute>> openAttributesByKey) {
+        InstrumentAttribute instrumentAttribute = this.getLatestInstrumentAttribute(transactionActivity, openAttributesByKey);
         long instrumentAttributeVersionId = 0;
         if (instrumentAttribute != null) {
             instrumentAttributeVersionId = instrumentAttribute.getVersionId();
@@ -156,12 +155,13 @@ public class TransactionActivityItemWriter implements ItemWriter<TransactionActi
         }
     }
 
-    private InstrumentAttribute getLatestInstrumentAttribute(TransactionActivity transactionActivity) {
-        List<InstrumentAttribute> results = this.instrumentAttributeService
-                .getOpenInstrumentAttributesByInstrumentId(
-                        transactionActivity.getInstrumentId(),
-                        transactionActivity.getAttributeId(),
-                        this.tenantId);
+    private InstrumentAttribute getLatestInstrumentAttribute(TransactionActivity transactionActivity,
+                                                             Map<String, List<InstrumentAttribute>> openAttributesByKey) {
+        // Same "attributeId_instrumentId" key the bulk query groups by; upper-cased to match how
+        // the per-pair query used to match stored IDs.
+        List<InstrumentAttribute> results = openAttributesByKey.get(
+                transactionActivity.getAttributeId().toUpperCase() + "_"
+                        + transactionActivity.getInstrumentId().toUpperCase());
         return (results != null && !results.isEmpty()) ? results.getFirst() : null;
     }
 

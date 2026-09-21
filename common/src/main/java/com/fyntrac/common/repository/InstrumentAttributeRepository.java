@@ -7,6 +7,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 
@@ -57,6 +58,16 @@ public interface InstrumentAttributeRepository extends MongoRepository<Instrumen
     // otherwise straddle a page boundary.
     @Query("{ 'endDate': null, 'instrumentId': ?0 }")
     List<InstrumentAttribute> findActiveByInstrumentId(String instrumentId);
+
+    // Existence checks for a batch of IDs against ACTIVE rows, projected down to the one field
+    // asked about. Loader processors validate each chunk's IDs with these instead of preloading
+    // the whole collection (findAll) into heap, which grew with the instrument count and OOM'd.
+    // Only the projected field is populated on the returned entities.
+    @Query(value = "{ 'instrumentId': { $in: ?0 }, 'endDate': null }", fields = "{ 'instrumentId': 1 }")
+    List<InstrumentAttribute> findActiveInstrumentIdsIn(Collection<String> instrumentIds);
+
+    @Query(value = "{ 'attributeId': { $in: ?0 }, 'endDate': null }", fields = "{ 'attributeId': 1 }")
+    List<InstrumentAttribute> findActiveAttributeIdsIn(Collection<String> attributeIds);
 
     // Delete all InstrumentAttribute records for a given posting date
     long deleteByPostingDate(Integer postingDate);

@@ -10,6 +10,7 @@ import com.fyntrac.common.entity.MetricLevelLtd;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.aggregation.MetricLevelAggregationService;
 import com.fyntrac.common.utils.DateUtil;
+import org.bson.types.ObjectId;
 import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.MongoItemWriter;
@@ -22,6 +23,8 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -96,8 +99,14 @@ public class MetricLevelLtdFlatteningWriter implements ItemWriter<List<Records.M
                 .toList();
 
 
+        // See AttributeLevelLtdFlatteningWriter.batchFetchExisting for why — one round trip for
+        // the whole chunk instead of one findOne() per record.
+        Map<String, MetricLevelLtd> existingByKey = batchFetchExisting(groupedRecords);
+
+        Set<String> touchedKeys = new LinkedHashSet<>();
         for (Records.MetricLevelLtdRecord record : groupedRecords) {
             String key = buildKey(record, tenantId, jobId);
+            touchedKeys.add(key);
 
             // Check whether the value was already in localCache
             MetricLevelLtd ltd = localCache.get(key);
@@ -106,7 +115,7 @@ public class MetricLevelLtdFlatteningWriter implements ItemWriter<List<Records.M
                 // Load from Memcached or DB
                 ltd = getFromMemcached(key);
                 if (ltd == null) {
-                    ltd = this.metricLevelAggregationService.getDataService().findOne(buildQuery(record), MetricLevelLtd.class);
+                    ltd = existingByKey.get(record.metricName().toUpperCase());
                 }
 
                 if (ltd == null) {
@@ -128,6 +137,11 @@ public class MetricLevelLtdFlatteningWriter implements ItemWriter<List<Records.M
                             .accountingPeriodId(DateUtil.getAccountingPeriodId(record.postingDate()))
                             .balance(balance)
                             .build();
+                    // MongoItemWriter's upsert generates a fresh ObjectId for an id-less entity on EVERY
+                    // write and never sets it back, so a row created here and re-written on a later
+                    // chunk was inserted again as a new document. Fix the id now so later writes
+                    // replace this same document.
+                    ltd.setId(new ObjectId().toHexString());
                 } else {
                     // Found in DB or cache → add activity
                     BaseLtd bal = ltd.getBalance();
@@ -146,11 +160,14 @@ public class MetricLevelLtdFlatteningWriter implements ItemWriter<List<Records.M
             }
         }
 
-// Collect and cache
-        List<MetricLevelLtd> ltdChunk = new ArrayList<>();
-        for (Map.Entry<String, MetricLevelLtd> entry : localCache.entrySet()) {
-            ltdChunk.add(entry.getValue());
-            putInMemcached(entry.getKey(), entry.getValue());
+        // Persist only the rows this chunk touched. localCache spans the whole step, and writing
+        // all of it on every chunk re-wrote (and, before ids were fixed above, re-inserted)
+        // rows that hadn't changed since an earlier chunk.
+        List<MetricLevelLtd> ltdChunk = new ArrayList<>(touchedKeys.size());
+        for (String touchedKey : touchedKeys) {
+            MetricLevelLtd touched = localCache.get(touchedKey);
+            ltdChunk.add(touched);
+            putInMemcached(touchedKey, touched);
         }
 
         Chunk<MetricLevelLtd> convertedChunk = this.convertChunk(ltdChunk);
@@ -202,6 +219,27 @@ public class MetricLevelLtdFlatteningWriter implements ItemWriter<List<Records.M
         } catch (Exception e) {
             // ignore caching failure
         }
+    }
+
+    private Map<String, MetricLevelLtd> batchFetchExisting(List<Records.MetricLevelLtdRecord> records) {
+        if (records.isEmpty()) {
+            return Map.of();
+        }
+        Integer postingDate = records.get(0).postingDate();
+        List<String> metricNames = records.stream()
+                .map(r -> r.metricName().toUpperCase())
+                .distinct()
+                .toList();
+        Query batchQuery = new Query(Criteria.where("postingDate").is(postingDate)
+                .and("metricName").in(metricNames));
+
+        List<MetricLevelLtd> existing =
+                this.metricLevelAggregationService.getDataService().getMongoTemplate().find(batchQuery, MetricLevelLtd.class);
+
+        return existing.stream().collect(Collectors.toMap(
+                e -> e.getMetricName().toUpperCase(),
+                e -> e,
+                (a, b) -> a));
     }
 
     private Query buildQuery(Records.MetricLevelLtdRecord r) {

@@ -73,18 +73,31 @@ public class FileUploadService {
     }
 
     public long uploadFiles(boolean isOverwrite, MultipartFile... files) throws Throwable {
+        long uploadId = generateUploadId();
+        Set<String> validFileSet = stageMultipartFiles(files);
+        processFileUploadPipeline(isOverwrite, uploadId, validFileSet);
+        return uploadId;
+    }
 
+    /**
+     * Generates the yyyyMMddHHmmssSSS-based uploadId used to correlate a staged file set with its
+     * (sync or async) processing pipeline and its UploadStatus record.
+     */
+    public static long generateUploadId() {
+        return Long.parseLong(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS")));
+    }
+
+    /**
+     * Materializes uploaded MultipartFile(s) onto disk (unzipping archives as needed). Must run
+     * synchronously on the caller's thread — a MultipartFile's backing temp file is not guaranteed
+     * to survive past the HTTP request it arrived on, so this step cannot be deferred to an async
+     * executor. See docs/K8S_SCALING_STRATEGY.md (Stage 0 — async upload endpoint).
+     */
+    public Set<String> stageMultipartFiles(MultipartFile... files) throws Throwable {
         String FOLDER_PATH = System.getProperty("user.home") + File.separator + "tenants" + File.separator
                 + tenantContextHolder.getTenant() + File.separator;
-        String OUTPUT_FOLDER_PATH = System.getProperty("user.home") + File.separator + "output" + File.separator
-                + "tenants" + File.separator + tenantContextHolder.getTenant() + File.separator;
-        long uploadId = Long.parseLong(
-                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS")));
 
         Set<String> validFileSet = new HashSet<>(0);
-        Set<String> inValidFileSet = new HashSet<>(0);
-        boolean isValidFile = Boolean.FALSE;
-
         for (MultipartFile file : files) {
             if (ExcelFileUtil.isZipFile(file)) {
                 Set<File> dataFiles = ExcelFileUtil.unzip(file, FOLDER_PATH);
@@ -95,6 +108,19 @@ public class FileUploadService {
                 validFileSet.add(ExcelFileUtil.convertMultipartFileToFile(file, FOLDER_PATH));
             }
         }
+        return validFileSet;
+    }
+
+    /**
+     * CSV conversion, priority-ordered validation, and sequential Spring Batch job execution for an
+     * already-staged file set. Safe to run off the request thread — used by both the synchronous
+     * {@link #uploadFiles} and AsyncUploadOrchestrator's background dispatch. Caller is responsible
+     * for tenant context (ThreadLocal — see TenantContextHolder) being set on whichever thread this
+     * runs on.
+     */
+    public void processFileUploadPipeline(boolean isOverwrite, long uploadId, Set<String> validFileSet) throws Throwable {
+        String OUTPUT_FOLDER_PATH = System.getProperty("user.home") + File.separator + "output" + File.separator
+                + "tenants" + File.separator + tenantContextHolder.getTenant() + File.separator;
 
         this.convertIntoCSVFiles(validFileSet, Boolean.TRUE);
         List<Path> fileList = ExcelFileUtil.listCsvFiles(OUTPUT_FOLDER_PATH, ".csv");
@@ -164,8 +190,6 @@ public class FileUploadService {
                 uploadService.uploadData(isOverwrite, uploadId, file);
             }
         }
-
-        return uploadId;
     }
 
     /**

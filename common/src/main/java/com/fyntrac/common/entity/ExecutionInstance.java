@@ -29,9 +29,13 @@ public class ExecutionInstance implements Serializable {
     private Integer postingDate;
     private String modelType; // e.g., "DSL"
 
-    private String status; // INITIALIZING, GENERATING_EVENTS, PROCESSING, AGGREGATING, GL_SYNC, COMPLETED, FAILED
+    private String status; // INITIALIZING, GENERATING_EVENTS, PROCESSING, AGGREGATING, GL_SYNC, COMPLETED, PARTIAL_SUCCESS, FAILED
     private Integer totalBatches;
     private Integer completedBatches;
+    // Batches that hit their per-batch catch block instead of completing cleanly (see
+    // DslExecutionWorkflow). Non-null/positive flips the final status to PARTIAL_SUCCESS instead
+    // of COMPLETED; the failure detail itself lives on the Errors collection, this is just the tally.
+    private Integer failedBatches;
 
     private Date startTime;
     private Date endTime;

@@ -3,6 +3,7 @@ package com.fyntrac.common.entity;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.io.Serial;
@@ -22,6 +23,9 @@ public class GeneralLedgerAccountBalanceStage
     @Serial
     private static final long serialVersionUID = -7576822289278598528L;
 
+    // ProcessGeneralLedgerStaging.copyGeneralLedgerAccountBalanceData filters on exactly this
+    // field (Criteria.where("batchId").is(batch.getId())) — no index existed before.
+    @Indexed
     private long batchId;
 
     /** REQUIRED by Spring Data Mongo */

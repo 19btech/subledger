@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,8 @@ import java.math.BigDecimal;
 import java.text.ParseException;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -47,8 +50,74 @@ public class ExcelModelService {
     private List<TransactionActivity> transactionActivities;
     private List<InstrumentAttribute> instrumentAttributes;
 
-    @Value("${fyntrac.chunk.size}")
+    // InstrumentAttribute ROWS read per keyset page in generateEventAndDispatch — not instruments:
+    // an instrument has one active row per attributeId, so a page holds pageSize / avg-rows-per-
+    // instrument instruments. Deliberately its own property: fyntrac.chunk.size (the fallback) is
+    // shared with the LTD/GL/replay batch chunk sizes, which have nothing to do with how many rows
+    // one Mongo round trip should fetch here. Only one page is live in heap at a time and
+    // per-instrument work is bounded by maxConcurrentInstrumentGroups regardless of page size, so
+    // this can be raised well above the batch chunk sizes to cut round trips on large tenants.
+    @Value("${fyntrac.eventgen.page-size:${fyntrac.chunk.size}}")
     private int pageSize;
+
+    // Max instruments per batch handed to batchConsumer (i.e. per model-service dispatch). Split
+    // off from pageSize so the page can grow without growing the unit of work behind one
+    // correlationId / one BatchCompletionWaiter timeout. Defaults to the pre-split behaviour,
+    // where a dispatch was at most one page.
+    @Value("${fyntrac.batch.dispatch-batch-size:${fyntrac.chunk.size}}")
+    private int dispatchBatchSize;
+
+    // generateEventAndDispatch used to cap the WHOLE run's batch dispatches at a fixed 30 minutes.
+    // With batches processed maxConcurrentBatchDispatch at a time, total wall time grows linearly
+    // with instrument count, so past a few hundred batches every run failed at the 30-minute mark
+    // regardless of whether each batch was healthy. Each batch already has its own completion
+    // timeout inside batchConsumer (BatchCompletionWaiter), so the run-level guard only needs to
+    // catch a genuine stall: fail if NO batch completes within this window, not if the run as a
+    // whole takes longer than it.
+    @Value("${fyntrac.batch.dispatch-stall-timeout-minutes:30}")
+    private long dispatchStallTimeoutMinutes;
+
+    // Caps how many batches' dispatch-to-model-service-and-await-completion can run at once.
+    // Without a cap, a posting date with enough data dispatches every batch concurrently, and
+    // they all pile onto whatever fixed number of model-execution replicas exist downstream —
+    // observed directly: 29 batches dispatched at once against 4 dsl-model replicas meant some
+    // batches' turn in that queue exceeded BatchCompletionWaiter's 10-minute timeout even though
+    // the replicas never stopped working. Default matches today's dsl-model replica count
+    // (k8s/base/dsl-model.yaml) so batches process in a bounded, steady stream instead of a
+    // thundering herd; override via fyntrac.batch.max-concurrent-dispatch if that scales up.
+    @Value("${fyntrac.batch.max-concurrent-dispatch:4}")
+    private int maxConcurrentBatchDispatch;
+
+    // Caps how many instrument groups within one page are processed concurrently. Without this,
+    // a full page (up to fyntrac.eventgen.page-size rows — 500 in dev at the time) all ran at once via an
+    // unbounded virtual-thread-per-task executor, and each does several MongoDB queries — live
+    // currentOp() check found a single tenant's connection pool pinned at exactly 100/100 in-use
+    // connections during event generation, with further operations queuing inside the driver
+    // waiting for a free one. Paired with raising the pool size itself
+    // (TenantDatasourceConfig.tenantMaxPoolSize) — this keeps normal page processing from bursting
+    // wide enough to hit whatever the ceiling is in the first place, rather than just pushing that
+    // ceiling higher and growing back into it as data grows. Default leaves headroom under the
+    // pool for the concurrently-running batch-dispatch/aggregation phase (see
+    // maxConcurrentBatchDispatch) sharing the same tenant connection pool.
+    @Value("${fyntrac.eventgen.max-concurrent-instrument-groups:50}")
+    private int maxConcurrentInstrumentGroups;
+
+    // Threshold for the per-instrument slow-processInstrumentGroup warning below — instruments
+    // under this just add noise; ones over it are worth a log line with the trigger-type
+    // breakdown so the actual slow query is visible without flooding logs for the common case.
+    private static final long SLOW_INSTRUMENT_GROUP_THRESHOLD_MS = 100;
+
+    // getValuesFromCustomTable() queries user-uploaded custom-table collections (Billing_Schedule,
+    // PSDLogs, etc. — named dynamically from CustomTableDefinition, so no Java entity/@Indexed
+    // annotation can ever cover them) filtered by {instrumentId, attributeId, postingDate}, once
+    // per instrument for ON_CUSTOM_DATA_TRIGGER/ON_MODEL_EXECUTION configs. Confirmed directly:
+    // Billing_Schedule (12,139 docs) and PSDLogs (6,463 docs) had zero index beyond the default
+    // _id, so every one of those per-instrument queries was a full collection scan — this was the
+    // slow-processInstrumentGroup culprit (1-3s/instrument) once the TransactionActivity query
+    // path was already fixed. Tracks which collection names have already had their index ensured
+    // (in this pod's lifetime) so it's a cheap Set lookup on every call after the first, not a
+    // real ensureIndex round-trip every time.
+    private final Set<String> indexedCustomTables = ConcurrentHashMap.newKeySet();
 
     @Autowired
     public ExcelModelService(InstrumentAttributeRepository instrumentRepo,
@@ -81,20 +150,24 @@ public class ExcelModelService {
     private List<Event> processInstrumentGroup(
             String instrumentId,
             List<InstrumentAttribute> attributes,
-            int postingDate) throws ParseException {
-
-        String tenant = TenantContextHolder.getTenant();
-
-        // Load configs under tenant
-        List<EventConfiguration> configurationList =
-                TenantContextHolder.runWithTenant(tenant,
-                        () -> eventConfigurationRepo.findByIsActiveOrderByPriorityAsc(true)
-                );
+            int postingDate,
+            List<EventConfiguration> configurationList,
+            Map<String, CustomTableDefinition> tableDefinitionCache,
+            Map<String, Map<String, Map<String, Object>>> referenceDataValueMap) throws ParseException {
 
         List<Event> result = new ArrayList<>();
 
-        // Correct Type: Outer Key = TableName, Inner Key = RowID, Value = RowData
-        Map<String, Map<String, Map<String, Object>>> referenceDataValueMap = new HashMap<>();
+        // configurationList and referenceDataValueMap (outer key = table name, inner key = row ID,
+        // value = row data) are now shared across every instrument in this run — see the comment
+        // in generateEventAndDispatch where they're built — instead of being reloaded/recomputed
+        // fresh on every call as before.
+
+        // Per-trigger-type cumulative time for this one instrument's generateEvent() calls below —
+        // local to this call (one per instrument, run concurrently), so no synchronization needed.
+        // Logged only if this instrument's total processing is slow, to identify which trigger
+        // type's query is the actual cost without flooding logs for the common fast case.
+        Map<TriggerType, Long> triggerTypeNanos = new HashMap<>();
+        long groupStartNanos = System.nanoTime();
 
         for (EventConfiguration cfg : configurationList) {
             // 1. Skip if trigger type doesn't match
@@ -128,8 +201,10 @@ public class ExcelModelService {
             SourceMapping mapping = cfg.getSourceMappings().get(0);
             String sourceTable = mapping.getSourceTable();
 
-            // 3. Fetch Table Definition
-            CustomTableDefinition tableDefinition = customTableDefinitionService.getCustomTableDefinition(sourceTable);
+            // 3. Fetch Table Definition — same sourceTable resolves to the same definition for
+            // every instrument, so cache it instead of re-querying per instrument.
+            CustomTableDefinition tableDefinition = tableDefinitionCache.computeIfAbsent(sourceTable,
+                    customTableDefinitionService::getCustomTableDefinition);
             if (tableDefinition == null) {
                 continue;
             }
@@ -212,8 +287,10 @@ public class ExcelModelService {
         for (EventConfiguration cfg : configurationList) {
 
             Map<String, Map<String, Object>> valueMap = new HashMap<>();
-            boolean isDescendingOrder = cfg.getTriggerSetup().getTriggerType() == TriggerType.ON_REPLAY;
+            TriggerType triggerType = cfg.getTriggerSetup().getTriggerType();
+            boolean isDescendingOrder = triggerType == TriggerType.ON_REPLAY;
             for (InstrumentAttribute attr : attributes) {
+                long callStartNanos = System.nanoTime();
                 Map<String, Map<String, Object>> configVals =
                         generateEvent(
                                 attr,
@@ -222,6 +299,7 @@ public class ExcelModelService {
                                 DateUtil.dateInNumber(attr.getEffectiveDate()),
                                 cfg
                         );
+                triggerTypeNanos.merge(triggerType, System.nanoTime() - callStartNanos, Long::sum);
                 valueMap.putAll(configVals);
             }
 
@@ -249,6 +327,14 @@ public class ExcelModelService {
 
                 result.add(event);
             }
+        }
+
+        long groupElapsedMs = (System.nanoTime() - groupStartNanos) / 1_000_000;
+        if (groupElapsedMs >= SLOW_INSTRUMENT_GROUP_THRESHOLD_MS) {
+            Map<TriggerType, Long> breakdownMs = new HashMap<>();
+            triggerTypeNanos.forEach((type, nanos) -> breakdownMs.put(type, nanos / 1_000_000));
+            log.warn("Slow processInstrumentGroup for instrument {} (postingDate={}): totalMs={}, byTriggerType={}",
+                    instrumentId, postingDate, groupElapsedMs, breakdownMs);
         }
 
         return result;
@@ -293,6 +379,40 @@ public class ExcelModelService {
         final int pageSize = this.pageSize;
         String cursorInstrumentId = null;   // last instrumentId fully processed
 
+        // Batch dispatch used to run inline in this loop: batchConsumer.accept() (dispatch to
+        // Python/Excel model service, then block waiting for its completion — the genuinely slow
+        // part) had to finish before the next page could even start being read. Submitting it to
+        // this same virtual-thread executor instead lets pages keep streaming while earlier
+        // batches' model executions are still in flight, and joining all of them (below, after
+        // the loop) still guarantees generateEventAndDispatch doesn't return until every batch —
+        // including whatever aggregation/GL-sync/etc. the caller's callback does — has completed
+        // or failed. Callers that mutate shared state across batches (aggregation totals,
+        // progress counters) are responsible for their own serialization; see
+        // DslExecutionWorkflow.generateAndProcessEvents for why and how.
+        List<CompletableFuture<Void>> batchDispatchFutures = new ArrayList<>();
+        AtomicInteger completedDispatches = new AtomicInteger();
+        AtomicLong lastDispatchProgressNanos = new AtomicLong(System.nanoTime());
+        // Bounds how many of the above run at once — see the field comment on
+        // maxConcurrentBatchDispatch for why an unbounded thundering herd caused real timeouts.
+        Semaphore batchDispatchLimiter = new Semaphore(Math.max(1, maxConcurrentBatchDispatch));
+        // Bounds how many instrument groups within one page run concurrently — see the field
+        // comment on maxConcurrentInstrumentGroups for why unbounded page-wide concurrency
+        // exhausted the tenant's MongoDB connection pool.
+        Semaphore instrumentGroupLimiter = new Semaphore(Math.max(1, maxConcurrentInstrumentGroups));
+
+        // Both of these are the same for every instrument in this entire run (same tenant, same
+        // postingDate) — processInstrumentGroup() used to re-fetch/re-derive them from scratch on
+        // every single call, i.e. once per instrument. At scale that's the active EventConfiguration
+        // list and, for any reference-table-backed config, a full table scan — each repeated
+        // thousands of times for byte-identical results. Loading/caching them once here and handing
+        // them to every processInstrumentGroup() call instead doesn't change what gets computed,
+        // just how many times. tableDefinitionCache and referenceDataValueMap are ConcurrentHashMaps
+        // since processInstrumentGroup() runs concurrently across instruments (see the futures below).
+        final List<EventConfiguration> configurationList = TenantContextHolder.runWithTenant(tenant,
+                () -> eventConfigurationRepo.findByIsActiveOrderByPriorityAsc(true));
+        final Map<String, CustomTableDefinition> tableDefinitionCache = new ConcurrentHashMap<>();
+        final Map<String, Map<String, Map<String, Object>>> referenceDataValueMap = new ConcurrentHashMap<>();
+
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
             while (true) {
@@ -301,11 +421,19 @@ public class ExcelModelService {
                 final PageRequest limit =
                         PageRequest.of(0, pageSize, Sort.by(Sort.Direction.ASC, "instrumentId"));
 
+                // Page-level timing breakdown (fetch / event-gen / save) so a slowdown can be
+                // pinned to a specific phase instead of inferred from gaps between "Saved N
+                // events" log lines — that's how the append-only TransactionActivity growth issue
+                // (event-gen getting slower on each successive posting date in the same run) had
+                // to be diagnosed before this existed.
+                long pageStartNanos = System.nanoTime();
+
                 List<InstrumentAttribute> attributes = TenantContextHolder.runWithTenant(tenant,
                         () -> cursor == null
                                 ? instrumentRepo.findActiveOrderedByInstrumentId(limit)
                                 : instrumentRepo.findActiveAfterInstrumentId(cursor, limit)
                 );
+                long fetchDoneNanos = System.nanoTime();
 
                 if (attributes == null || attributes.isEmpty()) break;
 
@@ -341,16 +469,25 @@ public class ExcelModelService {
                 // can be read again, so no instrument can reach a second batch.
                 cursorInstrumentId = orderedInstrumentIds.get(orderedInstrumentIds.size() - 1);
 
-                // Generate events for this page concurrently
+                // Generate events for this page concurrently — bounded by instrumentGroupLimiter
+                // (see its field comment) so a page doesn't burst wide enough to exhaust the
+                // tenant's MongoDB connection pool.
                 List<CompletableFuture<List<Event>>> futures = groups.entrySet().stream()
-                        .map(entry -> CompletableFuture.supplyAsync(() ->
-                                TenantContextHolder.runWithTenant(tenant, () -> {
+                        .map(entry -> CompletableFuture.supplyAsync(() -> {
+                                    instrumentGroupLimiter.acquireUninterruptibly();
                                     try {
-                                        return processInstrumentGroup(entry.getKey(), entry.getValue(), postingDate);
-                                    } catch (ParseException e) {
-                                        throw new RuntimeException(e);
+                                        return TenantContextHolder.runWithTenant(tenant, () -> {
+                                            try {
+                                                return processInstrumentGroup(entry.getKey(), entry.getValue(), postingDate,
+                                                        configurationList, tableDefinitionCache, referenceDataValueMap);
+                                            } catch (ParseException e) {
+                                                throw new RuntimeException(e);
+                                            }
+                                        });
+                                    } finally {
+                                        instrumentGroupLimiter.release();
                                     }
-                                }), executor)
+                                }, executor)
                                 .exceptionally(ex -> {
                                     log.error("Failed to process instrument group {} for tenant {}",
                                             entry.getKey(), tenant, ex);
@@ -366,6 +503,7 @@ public class ExcelModelService {
                                 .filter(Objects::nonNull)
                                 .collect(Collectors.toList()))
                         .join();
+                long eventGenDoneNanos = System.nanoTime();
 
                 // Save events
                 if (!pageEvents.isEmpty()) {
@@ -375,6 +513,14 @@ public class ExcelModelService {
                     });
                     log.info("Saved {} events for tenant {} page {}", pageEvents.size(), tenant, currentPage);
                 }
+                long saveDoneNanos = System.nanoTime();
+
+                log.info("Page {} timing for tenant {}: {} instruments — fetch={}ms, eventGen={}ms, save={}ms, total={}ms",
+                        currentPage, tenant, groups.size(),
+                        (fetchDoneNanos - pageStartNanos) / 1_000_000,
+                        (eventGenDoneNanos - fetchDoneNanos) / 1_000_000,
+                        (saveDoneNanos - eventGenDoneNanos) / 1_000_000,
+                        (saveDoneNanos - pageStartNanos) / 1_000_000);
 
                 // ── Stream only the IDs that actually produced events ──────────────
                 // pageInstrumentIds is every "active" instrument in this page (endDate == null),
@@ -389,9 +535,24 @@ public class ExcelModelService {
                         .collect(Collectors.toCollection(LinkedHashSet::new));
 
                 if (!instrumentIdsWithEvents.isEmpty()) {
-                    // After callback returns, this set goes out of scope → GC-eligible.
-                    // Only this page's IDs are live in heap at any point.
-                    batchConsumer.accept(instrumentIdsWithEvents);
+                    // Dispatch this page's batches on their own virtual threads and keep paging
+                    // immediately — see the comment above batchDispatchFutures for why. Each Set
+                    // is captured by its task rather than reused, so only that batch's IDs are
+                    // kept alive until the task itself finishes. The permit acquire/release is
+                    // inside the task (not around the submit) so paging/event-generation itself
+                    // stays unthrottled — only the actual dispatch-and-await is bounded.
+                    for (Set<String> dispatchBatch : splitIntoBatches(instrumentIdsWithEvents, dispatchBatchSize)) {
+                        batchDispatchFutures.add(CompletableFuture.runAsync(() -> {
+                            batchDispatchLimiter.acquireUninterruptibly();
+                            try {
+                                TenantContextHolder.runWithTenant(tenant, () -> batchConsumer.accept(dispatchBatch));
+                            } finally {
+                                batchDispatchLimiter.release();
+                                completedDispatches.incrementAndGet();
+                                lastDispatchProgressNanos.set(System.nanoTime());
+                            }
+                        }, executor));
+                    }
                 } else {
                     log.info("No events generated for tenant {} page {} ({} instruments checked) — skipping dispatch",
                             tenant, currentPage, pageInstrumentIds.size());
@@ -402,9 +563,54 @@ public class ExcelModelService {
                 if (!mayHaveMore) break;   // short read — collection exhausted
             }
 
+            // Wait for every batch dispatch to finish (or fail) before returning — same contract
+            // as before, just no longer serialized with event generation itself, and guarded by a
+            // stall watchdog rather than a fixed run-level cap (see dispatchStallTimeoutMinutes).
+            awaitDispatches(batchDispatchFutures, completedDispatches, lastDispatchProgressNanos,
+                    TimeUnit.MINUTES.toNanos(dispatchStallTimeoutMinutes), tenant);
+
         } catch (Exception ex) {
             log.error("Event generation failed for tenant {}", tenant, ex);
             throw new RuntimeException("Event generation failed for tenant " + tenant, ex);
+        }
+    }
+
+    static List<Set<String>> splitIntoBatches(Set<String> ids, int batchSize) {
+        int size = Math.max(1, batchSize);
+        List<Set<String>> batches = new ArrayList<>((ids.size() + size - 1) / size);
+        Set<String> current = new LinkedHashSet<>();
+        for (String id : ids) {
+            current.add(id);
+            if (current.size() == size) {
+                batches.add(current);
+                current = new LinkedHashSet<>();
+            }
+        }
+        if (!current.isEmpty()) batches.add(current);
+        return batches;
+    }
+
+    /**
+     * Blocks until every dispatch future completes. Fails only if no dispatch completes within
+     * {@code stallNanos} — the clock restarts on every completion, so a long but steadily
+     * progressing run is never cut off, while a hung one still surfaces as a timeout.
+     */
+    static void awaitDispatches(List<CompletableFuture<Void>> futures, AtomicInteger completed,
+                                AtomicLong lastProgressNanos, long stallNanos, String tenant) throws Exception {
+        CompletableFuture<Void> all = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+        while (true) {
+            long remaining = stallNanos - (System.nanoTime() - lastProgressNanos.get());
+            if (remaining <= 0) {
+                throw new TimeoutException(String.format(
+                        "Batch dispatch stalled for tenant %s: %d of %d batches completed, none in the last %d ms",
+                        tenant, completed.get(), futures.size(), TimeUnit.NANOSECONDS.toMillis(stallNanos)));
+            }
+            try {
+                all.get(remaining, TimeUnit.NANOSECONDS);
+                return;
+            } catch (TimeoutException stillWaiting) {
+                // Re-evaluate: a completion during the wait moved lastProgressNanos forward.
+            }
         }
     }
 
@@ -724,6 +930,14 @@ public class ExcelModelService {
             return Collections.emptyMap();
         }
 
+        // See indexedCustomTables' field comment — this collection is named dynamically and has
+        // no Java entity, so it can never get an @Indexed/@CompoundIndex annotation. First call
+        // for a given collection name ensures the index this method's own query needs; every
+        // call after that is just the Set lookup (no-op). Only indexes whichever of
+        // instrumentId/attributeId/postingDate/effectiveDate this table's own declared columns
+        // (from customTableDefinition) actually include — see the method's own comment.
+        ensureCustomTableIndex(customTableDefinition);
+
         String referenceColumn = customTableDefinition.getReferenceColumn();
 
         // 3. Build Projection List (Mandatory + Source Columns)
@@ -807,7 +1021,55 @@ public class ExcelModelService {
         return resultMap;
     }
 
+    // See indexedCustomTables' field comment. getValuesFromCustomTable's own Criteria always
+    // filters on instrumentId/attributeId/postingDate and sorts on effectiveDate regardless of
+    // this table's actual schema, but blindly indexing all four on every custom table would
+    // build indexes over fields that plenty of tables (e.g. simple reference tables keyed by a
+    // single code column) don't actually have. customTableDefinition.getColumns() is this
+    // table's own declared schema — only the subset of those four fields it actually declares
+    // goes into the index; a table with none of them gets no index from this method at all.
+    private void ensureCustomTableIndex(CustomTableDefinition customTableDefinition) {
+        String collectionName = customTableDefinition.getTableName();
+        if (!indexedCustomTables.add(collectionName)) {
+            return;
+        }
 
+        Set<String> declaredColumns = customTableDefinition.getColumns() == null ? Set.of()
+                : customTableDefinition.getColumns().stream()
+                        .map(CustomTableColumn::getColumnName)
+                        .filter(Objects::nonNull)
+                        .map(c -> c.toLowerCase(Locale.ROOT))
+                        .collect(Collectors.toSet());
+
+        Index index = new Index();
+        boolean any = false;
+        if (declaredColumns.contains("instrumentid")) {
+            index.on("instrumentId", Sort.Direction.ASC);
+            any = true;
+        }
+        if (declaredColumns.contains("attributeid")) {
+            index.on("attributeId", Sort.Direction.ASC);
+            any = true;
+        }
+        if (declaredColumns.contains("postingdate")) {
+            index.on("postingDate", Sort.Direction.ASC);
+            any = true;
+        }
+        if (declaredColumns.contains("effectivedate")) {
+            index.on("effectiveDate", Sort.Direction.DESC);
+            any = true;
+        }
+        if (!any) {
+            return;
+        }
+
+        try {
+            this.dataService.getMongoTemplate().indexOps(collectionName).ensureIndex(
+                    index.named(collectionName + "_instrument_attribute_postingdate_idx"));
+        } catch (Exception e) {
+            log.warn("Failed to ensure index on custom table collection {}: {}", collectionName, e.getMessage());
+        }
+    }
 
     public Event generateEventFromModelExecution(String instrumentId,
                                                  String attributeId,

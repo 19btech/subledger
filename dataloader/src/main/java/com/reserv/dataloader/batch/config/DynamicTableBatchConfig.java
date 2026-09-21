@@ -12,6 +12,7 @@ import com.reserv.dataloader.service.ActivityValidationLogService;
 import com.reserv.dataloader.validation.DynamicTableValidator;
 import org.bson.Document;
 import org.springframework.batch.core.ItemProcessListener;
+import org.springframework.batch.core.ItemReadListener;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.StepExecutionListener;
@@ -102,7 +103,9 @@ public class DynamicTableBatchConfig {
                 .reader(dynamicReader(tableDef, filePath))
                 .processor(processor)
                 .writer(new DynamicMongoWriter(mongoTemplate, tableDef.getTableName()))
-                .listener(processor)   // @BeforeStep wiring — must be before faultTolerant()
+                // @BeforeStep + afterRead wiring — must be before faultTolerant()
+                .listener((StepExecutionListener) processor)
+                .listener((ItemReadListener<FieldSet>) processor)
                 .faultTolerant()
                 .skip(ItemValidationException.class)
                 .skipLimit(Integer.MAX_VALUE)
