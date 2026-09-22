@@ -1,0 +1,93 @@
+---
+title: Fyntrac event processing — detailed (replica-aware)
+---
+sequenceDiagram
+    autonumber
+    participant API as Caller (ExcelTestDriver / UI)
+    participant SVC as Service dataloader (LoadBalancer)
+    participant DLA as dataloader pod A (owns the run)
+    participant DLB as dataloader pod B (Failover listener)
+    participant DB as MongoDB (tenant db)
+    participant PS as Pulsar
+    participant PY as dsl-model pool (4 replicas, Shared)
+    participant MC as Memcached
+    participant GL as gl (1 replica)
+
+    API->>SVC: POST /model/execute {tenant, postingDate, DSL}
+    SVC->>DLA: round-robin picks ONE pod
+    Note over SVC,DLB: the Service balances new connections only — this run is now<br/>pinned to pod A end-to-end. Pod B contributes nothing to it<br/>except possibly owning the completion subscription.
+    DLA->>DB: AccountingPeriod lookup — reject if status = 1
+    DLA->>DB: save ExecutionInstance (INITIALIZING)
+
+    rect rgb(238, 243, 249)
+    Note over DLA,DB: status = PRE_PROCESSING
+    DLA->>DB: enforcePreProcessRules — closed-period guard
+    opt postingDate <= ExecutionState.executionDate (replay)
+        DLA->>DB: distinct batchId on TransactionActivity for this postingDate
+        DLA->>DB: cleanupDataForPostingDate
+        DLA->>DLA: re-run aggregation + bookTempGL for each prior batchId
+    end
+    end
+
+    rect rgb(240, 245, 238)
+    Note over DLA,GL: status = GENERATING_EVENTS — ExcelModelService.generateEventAndDispatch
+    DLA->>DB: load active EventConfigurations once (ordered by priority)
+    loop keyset page over InstrumentAttribute, fyntrac.eventgen.page-size
+        DLA->>DB: findActiveAfterInstrumentId(cursor, pageSize)
+        DLA->>DLA: group rows by instrumentId — a group is never split across pages
+        Note over DLA: processInstrumentGroup on virtual threads, bounded by<br/>fyntrac.eventgen.max-concurrent-instrument-groups (50) — all inside pod A
+        DLA->>DB: read custom / reference tables — cached per run
+        DLA->>DB: eventRepository.saveAll → EventHistory (status NOT_STARTED)
+        DLA->>DLA: keep only instruments that produced events,<br/>split into dispatch batches (fyntrac.batch.dispatch-batch-size)
+    end
+
+    loop per batch — FYNTRAC_BATCH_MAX_CONCURRENT_DISPATCH = 8 in flight (code default 4)
+        Note over DLA: correlationId = instanceId + "_batch_" + n
+        DLA->>PS: fyntrac-python-model-execution<br/>{tenantId, executionDate, instrumentIds, isLast} + correlationId
+        PS->>PY: Shared subscription, receiver_queue_size = 1<br/>a batch is handed only to a pod that is free
+        Note over PY: 4 pods x 1 batch each = 4 executing, the other 4 wait at the broker.<br/>Inside a pod: 4 worker PROCESSES (MAX_PROCESS_WORKERS, = its cpu limit)<br/>because model execution is CPU-bound and the GIL makes threads useless.
+        PY->>DB: load active Model + ModelFile, compile the generated Python
+        PY->>DB: find EventHistory {instrumentId in batch, postingDate} sort priority desc
+        PY->>DB: fetch Attributes defs + active InstrumentAttribute per instrument
+        PY->>DB: update EventHistory status → COMPLETED / ERROR_OUT
+        PY->>DB: insert TransactionActivity (zero-amount rows discarded)
+        PY->>DB: insert ModelExecutionBatchLog (EXECUTION_BATCH)
+        PY->>PS: fyntrac-python-model-completion {correlationId, status, jobId}
+        PS->>DLB: Failover — exactly one dataloader pod is the active consumer,<br/>and it is NOT necessarily the one waiting
+        DLB->>MC: putInCache batch-completion:{correlationId}, TTL 900s
+        DLA->>MC: BatchCompletionWaiter polls every 250 ms, 10 min timeout
+        MC-->>DLA: BatchResult {SUCCESS, payload = {jobId, successCount}}
+        Note over DLA,MC: Memcached is what makes the split above harmless — it used to be an<br/>in-process map, so a completion landing on pod B was dropped entirely
+
+        DLA->>DB: executeInstrumentScoped — attributeLevelLtdJob + instrumentLevelLtdJob<br/>(per-instrument rows, safe to run concurrently)
+        rect rgb(249, 244, 236)
+        Note over DLA,GL: aggregationLock — an in-process ReentrantLock, so it only serializes<br/>batches WITHIN pod A. Correct only because one pod owns the whole run.
+        DLA->>DB: executeMetricLevel — metricLevelLtdJob<br/>(one MetricLevelLtd row per metric across ALL instruments)
+        DLA->>PS: fyntrac-book-gl-staging {tenantId, jobId}
+        DLA->>DB: incrementCompletedBatches / incrementFailedBatches
+        end
+
+        PS->>GL: GLStagingEntryMessageConsumer (Schema.BYTES, Shared)
+        GL->>DB: read TransactionActivity by jobId in chunks
+        GL->>DB: write GeneralLedgerEnteryStage + GeneralLedgerAccountBalanceStage
+    end
+    Note over DLA: a batch that throws is recorded in Errors and counted as failed —<br/>it never aborts the other batches
+    DLA->>DLA: awaitDispatches — fail only if NO batch progresses for<br/>fyntrac.batch.dispatch-stall-timeout-minutes (30)
+    end
+
+    Note over DLA: status = POST_PROCESSING (no-op for DSL)
+
+    rect rgb(238, 243, 249)
+    Note over DLA,DB: status = EOD_PROCESSING — still pod A
+    DLA->>DB: executePostAggregation — attribute / instrument / metric post-aggregation jobs
+    DLA->>DB: ExecutionState.executionDate := postingDate
+    end
+
+    alt failedBatches > 0
+        DLA->>DB: ExecutionInstance status = PARTIAL_SUCCESS
+    else all batches clean
+        DLA->>DB: ExecutionInstance status = COMPLETED
+    end
+    DLA-->>API: execution result
+
+    Note over GL,DB: accounting-period close (separate trigger) copies<br/>GeneralLedgerEnteryStage → GeneralLedgerEntery via fyntrac-gl-accounting-period-close
