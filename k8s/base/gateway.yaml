@@ -23,6 +23,15 @@ spec:
           ports:
             - containerPort: 8585
           env:
+            # This image's JDK (21 GA, 21+35) does not detect the container ("container information
+            # not found"): without these flags it sizes itself from the 20-CPU / 32 GB host --
+            # MaxHeapSize 8.3 GB against a 1Gi memory limit (the kernel OOM-kills the pod before the
+            # heap is ever collected down) and GC/JIT threads plus the virtual-thread carrier pool for
+            # 20 CPUs against the CPU limit (CFS throttling). -Xmx and ActiveProcessorCount pin both
+            # to this pod's limits; keep ActiveProcessorCount equal to limits.cpu.
+            # UseG1GC: with one processor the JVM would otherwise fall back to the serial collector.
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Xmx512m -XX:MaxDirectMemorySize=128m -XX:ActiveProcessorCount=1 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError"
             - name: DATALOADER_SERVICE_URI
               value: http://dataloader:8081
             - name: REPORTING_SERVICE_URI

@@ -151,10 +151,15 @@ public class ModelExecutionService {
                     throw new IllegalStateException("Accounting period not found for period ID: " + acctPeriod);
                 }
 
+                // Reference-table events are stored once per posting date, not per instrument —
+                // fetch them once for the whole batch.
+                List<Event> sharedReferenceEvents = this.eventRepository.findSharedReferenceEvents(postingDate);
+
                 // Step 4: Process each instrument
                 for (String instrumentId : cacheList.getList()) {
 
-                    List<Event> events = this.eventRepository.findByPostingDateAndInstrumentId(postingDate, instrumentId);
+                    List<Event> events = EventRepository.withSharedReferenceEvents(sharedReferenceEvents,
+                            this.eventRepository.findByPostingDateAndInstrumentId(postingDate, instrumentId));
                     futures.add(executor.submit(() -> {
                         try {
                             // Set the tenant context for this virtual thread

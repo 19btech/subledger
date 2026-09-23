@@ -77,7 +77,7 @@ public class ExcelModelDiagnosticService {
 
         int postingDate = Integer.parseInt(requestRecord.postingDate());
         String instrumentId = requestRecord.instrumentId();
-        List<Event> events = this.eventRepository.findByPostingDateAndInstrumentId(postingDate, instrumentId);
+        List<Event> events = this.eventRepository.findEventsForInstrument(postingDate, instrumentId);
 
         Workbook workbook = this.excelModelExecutor.executeExcelModel(
         modelRecord,

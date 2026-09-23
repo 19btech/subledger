@@ -152,15 +152,14 @@ public class ExcelModelService {
             List<InstrumentAttribute> attributes,
             int postingDate,
             List<EventConfiguration> configurationList,
-            Map<String, CustomTableDefinition> tableDefinitionCache,
-            Map<String, Map<String, Map<String, Object>>> referenceDataValueMap) throws ParseException {
+            CustomTablePrefetch customTablePrefetch) throws ParseException {
 
         List<Event> result = new ArrayList<>();
 
-        // configurationList and referenceDataValueMap (outer key = table name, inner key = row ID,
-        // value = row data) are now shared across every instrument in this run — see the comment
-        // in generateEventAndDispatch where they're built — instead of being reloaded/recomputed
-        // fresh on every call as before.
+        // configurationList is shared across every instrument in this run — see the comment in
+        // generateEventAndDispatch where it's built — instead of being reloaded fresh on every call.
+        // Reference-table configs are NOT handled here any more: their event has no instrument tie,
+        // so buildSharedReferenceEvents() writes it once per run — see that method.
 
         // Per-trigger-type cumulative time for this one instrument's generateEvent() calls below —
         // local to this call (one per instrument, run concurrently), so no synchronization needed.
@@ -168,6 +167,86 @@ public class ExcelModelService {
         // type's query is the actual cost without flooding logs for the common fast case.
         Map<TriggerType, Long> triggerTypeNanos = new HashMap<>();
         long groupStartNanos = System.nanoTime();
+
+        // Existing logic for other event configurations
+        for (EventConfiguration cfg : configurationList) {
+
+            Map<String, Map<String, Object>> valueMap = new HashMap<>();
+            TriggerType triggerType = cfg.getTriggerSetup().getTriggerType();
+            boolean isDescendingOrder = triggerType == TriggerType.ON_REPLAY;
+            for (InstrumentAttribute attr : attributes) {
+                long callStartNanos = System.nanoTime();
+                Map<String, Map<String, Object>> configVals =
+                        generateEvent(
+                                attr,
+                                attr.getPostingDate(),
+                                postingDate,
+                                DateUtil.dateInNumber(attr.getEffectiveDate()),
+                                cfg,
+                                customTablePrefetch
+                        );
+                triggerTypeNanos.merge(triggerType, System.nanoTime() - callStartNanos, Long::sum);
+                valueMap.putAll(configVals);
+            }
+
+            if (!valueMap.isEmpty()) {
+
+                EventDetail detail = EventDetail.builder()
+                        .sourceKey("System")
+                        .sourceTable("System")
+                        .sourceType(SourceType.SYSTEM)
+                        .isAscendingOrder(isDescendingOrder)
+                        .values(valueMap)
+                        .build();
+
+                Event event = Event.builder()
+                        .eventId(cfg.getEventId())
+                        .eventName(cfg.getEventName())
+                        .priority(cfg.getPriority())
+                        .instrumentId(instrumentId)
+                        .postingDate(postingDate)
+                        .effectiveDate(postingDate)
+                        .lastPlayedPostingDate(postingDate)
+                        .status(EventStatus.NOT_STARTED)
+                        .eventDetail(detail)
+                        .build();
+
+                result.add(event);
+            }
+        }
+
+        long groupElapsedMs = (System.nanoTime() - groupStartNanos) / 1_000_000;
+        if (groupElapsedMs >= SLOW_INSTRUMENT_GROUP_THRESHOLD_MS) {
+            Map<TriggerType, Long> breakdownMs = new HashMap<>();
+            triggerTypeNanos.forEach((type, nanos) -> breakdownMs.put(type, nanos / 1_000_000));
+            log.warn("Slow processInstrumentGroup for instrument {} (postingDate={}): totalMs={}, byTriggerType={}",
+                    instrumentId, postingDate, groupElapsedMs, breakdownMs);
+        }
+
+        return result;
+    }
+
+    /**
+     * Builds the events for reference-table configs (triggerSource "reference_table", e.g.
+     * SSP_RULE -> Accounting_Policy) — ONE per config for the whole run, under
+     * {@link Event#SHARED_REFERENCE_INSTRUMENT_ID}.
+     *
+     * This used to run inside processInstrumentGroup(), producing a byte-identical copy of the whole
+     * table for every instrument: 515,344 SSP_RULE docs x 16 KB = 7.9 GB of Hearst's 10.2 GB
+     * EventHistory, for a 49-row table. Nothing needs the copy to be per-instrument: the table has
+     * no instrument column, the rows it carries already say instrumentId "system", and the model's
+     * loader (fyntrac-py-model data_transformer.build_event_data_from_import) keeps the first copy of each row and
+     * drops the rest. The model worker loads these docs alongside each batch's own events.
+     */
+    private List<Event> buildSharedReferenceEvents(
+            int postingDate,
+            List<EventConfiguration> configurationList) {
+
+        List<Event> result = new ArrayList<>();
+        // Two configs can share a source table / resolve to the same reference table — read each once.
+        Map<String, CustomTableDefinition> tableDefinitionCache = new HashMap<>();
+        // outer key = table name, inner key = row ID, value = row data
+        Map<String, Map<String, Map<String, Object>>> referenceDataValueMap = new HashMap<>();
 
         for (EventConfiguration cfg : configurationList) {
             // 1. Skip if trigger type doesn't match
@@ -180,8 +259,8 @@ public class ExcelModelService {
             // meant for configs backed by a REFERENCE table (triggerSource "reference_table"),
             // e.g. SSP_RULE -> Accounting_Policy — a global lookup table with no instrument tie.
             // Configs backed by an OPERATIONAL table (triggerSource "operational_table"), e.g.
-            // PROF_SERVICE_DELIVERY -> PSDLogs, are already handled per-instrument by the
-            // getValuesFromCustomTable() path below. Without this check, an operational-table
+            // PROF_SERVICE_DELIVERY -> PSDLogs, are handled per-instrument by the
+            // getValuesFromCustomTable() path in processInstrumentGroup(). Without this check, an operational-table
             // config also fell into this branch (CustomTableDefinition.tableType == OPERATIONAL
             // resolves to its referenceTable) and produced a second, redundant Event under the
             // same eventId — one instrument-specific, one a dump of the unrelated reference table.
@@ -201,8 +280,7 @@ public class ExcelModelService {
             SourceMapping mapping = cfg.getSourceMappings().get(0);
             String sourceTable = mapping.getSourceTable();
 
-            // 3. Fetch Table Definition — same sourceTable resolves to the same definition for
-            // every instrument, so cache it instead of re-querying per instrument.
+            // 3. Fetch Table Definition
             CustomTableDefinition tableDefinition = tableDefinitionCache.computeIfAbsent(sourceTable,
                     customTableDefinitionService::getCustomTableDefinition);
             if (tableDefinition == null) {
@@ -220,8 +298,6 @@ public class ExcelModelService {
             // 5. Fetch Data if Reference Table is valid
             if (referenceTableName != null && !referenceTableName.isEmpty()) {
 
-                // Check if we already fetched data for this table to avoid redundant DB calls
-                // This lambda correctly returns Map<String, Map<String, Object>> matching the inner Map type
                 Map<String, Map<String, Object>> tableDataRows =
                         referenceDataValueMap.computeIfAbsent(referenceTableName, k -> {
 
@@ -266,11 +342,14 @@ public class ExcelModelService {
                             .values(tableDataRows)
                             .build();
 
+                    // Deterministic id so a re-run of the same posting date overwrites (saveAll
+                    // upserts by _id) instead of appending a second copy.
                     Event event = Event.builder()
+                            .id(Event.SHARED_REFERENCE_INSTRUMENT_ID + ":" + cfg.getEventId() + ":" + postingDate)
                             .eventId(cfg.getEventId())
                             .eventName(cfg.getEventName())
                             .priority(cfg.getPriority())
-                            .instrumentId(instrumentId)
+                            .instrumentId(Event.SHARED_REFERENCE_INSTRUMENT_ID)
                             .postingDate(postingDate)
                             .effectiveDate(postingDate)
                             .lastPlayedPostingDate(postingDate)
@@ -281,60 +360,6 @@ public class ExcelModelService {
                     result.add(event);
                 }
             }
-        }
-
-        // Existing logic for other event configurations
-        for (EventConfiguration cfg : configurationList) {
-
-            Map<String, Map<String, Object>> valueMap = new HashMap<>();
-            TriggerType triggerType = cfg.getTriggerSetup().getTriggerType();
-            boolean isDescendingOrder = triggerType == TriggerType.ON_REPLAY;
-            for (InstrumentAttribute attr : attributes) {
-                long callStartNanos = System.nanoTime();
-                Map<String, Map<String, Object>> configVals =
-                        generateEvent(
-                                attr,
-                                attr.getPostingDate(),
-                                postingDate,
-                                DateUtil.dateInNumber(attr.getEffectiveDate()),
-                                cfg
-                        );
-                triggerTypeNanos.merge(triggerType, System.nanoTime() - callStartNanos, Long::sum);
-                valueMap.putAll(configVals);
-            }
-
-            if (!valueMap.isEmpty()) {
-
-                EventDetail detail = EventDetail.builder()
-                        .sourceKey("System")
-                        .sourceTable("System")
-                        .sourceType(SourceType.SYSTEM)
-                        .isAscendingOrder(isDescendingOrder)
-                        .values(valueMap)
-                        .build();
-
-                Event event = Event.builder()
-                        .eventId(cfg.getEventId())
-                        .eventName(cfg.getEventName())
-                        .priority(cfg.getPriority())
-                        .instrumentId(instrumentId)
-                        .postingDate(postingDate)
-                        .effectiveDate(postingDate)
-                        .lastPlayedPostingDate(postingDate)
-                        .status(EventStatus.NOT_STARTED)
-                        .eventDetail(detail)
-                        .build();
-
-                result.add(event);
-            }
-        }
-
-        long groupElapsedMs = (System.nanoTime() - groupStartNanos) / 1_000_000;
-        if (groupElapsedMs >= SLOW_INSTRUMENT_GROUP_THRESHOLD_MS) {
-            Map<TriggerType, Long> breakdownMs = new HashMap<>();
-            triggerTypeNanos.forEach((type, nanos) -> breakdownMs.put(type, nanos / 1_000_000));
-            log.warn("Slow processInstrumentGroup for instrument {} (postingDate={}): totalMs={}, byTriggerType={}",
-                    instrumentId, postingDate, groupElapsedMs, breakdownMs);
         }
 
         return result;
@@ -400,18 +425,25 @@ public class ExcelModelService {
         // exhausted the tenant's MongoDB connection pool.
         Semaphore instrumentGroupLimiter = new Semaphore(Math.max(1, maxConcurrentInstrumentGroups));
 
-        // Both of these are the same for every instrument in this entire run (same tenant, same
-        // postingDate) — processInstrumentGroup() used to re-fetch/re-derive them from scratch on
-        // every single call, i.e. once per instrument. At scale that's the active EventConfiguration
-        // list and, for any reference-table-backed config, a full table scan — each repeated
-        // thousands of times for byte-identical results. Loading/caching them once here and handing
-        // them to every processInstrumentGroup() call instead doesn't change what gets computed,
-        // just how many times. tableDefinitionCache and referenceDataValueMap are ConcurrentHashMaps
-        // since processInstrumentGroup() runs concurrently across instruments (see the futures below).
+        // The active EventConfiguration list is the same for every instrument in this entire run
+        // (same tenant, same postingDate) — processInstrumentGroup() used to re-fetch it on every
+        // single call, i.e. once per instrument. Loading it once here and handing it to every
+        // processInstrumentGroup() call instead doesn't change what gets computed, just how many times.
         final List<EventConfiguration> configurationList = TenantContextHolder.runWithTenant(tenant,
                 () -> eventConfigurationRepo.findByIsActiveOrderByPriorityAsc(true));
-        final Map<String, CustomTableDefinition> tableDefinitionCache = new ConcurrentHashMap<>();
-        final Map<String, Map<String, Map<String, Object>>> referenceDataValueMap = new ConcurrentHashMap<>();
+
+        // Reference-table events are written once for the run, before any batch is dispatched, so
+        // every batch's model execution finds them — see buildSharedReferenceEvents().
+        final List<Event> sharedReferenceEvents = TenantContextHolder.runWithTenant(tenant,
+                () -> buildSharedReferenceEvents(postingDate, configurationList));
+        if (!sharedReferenceEvents.isEmpty()) {
+            TenantContextHolder.runWithTenant(tenant, () -> {
+                eventRepository.saveAll(sharedReferenceEvents);
+                return null;
+            });
+            log.info("Saved {} shared reference-table events for tenant {} postingDate {}",
+                    sharedReferenceEvents.size(), tenant, postingDate);
+        }
 
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
@@ -469,6 +501,11 @@ public class ExcelModelService {
                 // can be read again, so no instrument can reach a second batch.
                 cursorInstrumentId = orderedInstrumentIds.get(orderedInstrumentIds.size() - 1);
 
+                // One query per custom-table mapping for the whole page, instead of one per
+                // (instrument, attribute) — see CustomTablePrefetch.
+                final CustomTablePrefetch customTablePrefetch = TenantContextHolder.runWithTenant(tenant,
+                        () -> buildCustomTablePrefetch(pageInstrumentIds, postingDate, configurationList));
+
                 // Generate events for this page concurrently — bounded by instrumentGroupLimiter
                 // (see its field comment) so a page doesn't burst wide enough to exhaust the
                 // tenant's MongoDB connection pool.
@@ -479,7 +516,7 @@ public class ExcelModelService {
                                         return TenantContextHolder.runWithTenant(tenant, () -> {
                                             try {
                                                 return processInstrumentGroup(entry.getKey(), entry.getValue(), postingDate,
-                                                        configurationList, tableDefinitionCache, referenceDataValueMap);
+                                                        configurationList, customTablePrefetch);
                                             } catch (ParseException e) {
                                                 throw new RuntimeException(e);
                                             }
@@ -505,9 +542,16 @@ public class ExcelModelService {
                         .join();
                 long eventGenDoneNanos = System.nanoTime();
 
-                // Save events
+                // Save events. The page's earlier events for this date are removed first, so
+                // generating a page twice (a retried or redelivered chunk once runs are distributed —
+                // TARGET_DESIGN_DISTRIBUTED_RUN.md) replaces them instead of adding duplicates the
+                // model would read twice. On a normal run there is nothing to remove: a re-run of a
+                // posting date has already cleared its events in preparePythonExecution.
                 if (!pageEvents.isEmpty()) {
                     TenantContextHolder.runWithTenant(tenant, () -> {
+                        this.dataService.getMongoTemplate().remove(new Query(
+                                Criteria.where("instrumentId").in(pageInstrumentIds)
+                                        .and("postingDate").is(postingDate)), Event.class);
                         eventRepository.saveAll(pageEvents);
                         return null;
                     });
@@ -529,7 +573,12 @@ public class ExcelModelService {
                 // when zero events were generated for it. Narrow it down to the instruments whose
                 // groups actually produced an Event, and skip the callback entirely if none did —
                 // there's nothing for the downstream model execution to process.
-                Set<String> instrumentIdsWithEvents = pageEvents.stream()
+                // A shared reference-table event applies to every instrument, exactly as the
+                // per-instrument copy it replaces did — so when one exists, every instrument on the
+                // page has an event, same as before that copy was deduplicated.
+                Set<String> instrumentIdsWithEvents = !sharedReferenceEvents.isEmpty()
+                        ? pageInstrumentIds
+                        : pageEvents.stream()
                         .map(Event::getInstrumentId)
                         .filter(Objects::nonNull)
                         .collect(Collectors.toCollection(LinkedHashSet::new));
@@ -616,6 +665,13 @@ public class ExcelModelService {
 
     public Map<String, Map<String, Object>> generateEvent(InstrumentAttribute currentInstrumentAttribute,
             int attributePostingDate, int postingDate, int effectiveDate, EventConfiguration configuration) throws ParseException {
+        return generateEvent(currentInstrumentAttribute, attributePostingDate, postingDate, effectiveDate,
+                configuration, null);
+    }
+
+    private Map<String, Map<String, Object>> generateEvent(InstrumentAttribute currentInstrumentAttribute,
+            int attributePostingDate, int postingDate, int effectiveDate, EventConfiguration configuration,
+            CustomTablePrefetch customTablePrefetch) throws ParseException {
 
         Map<String, Map<String, Object>> valueMap = new HashMap<>(0);
         String instrumentId = currentInstrumentAttribute.getInstrumentId();
@@ -688,7 +744,8 @@ public class ExcelModelService {
 
             }
             case TriggerType.ON_CUSTOM_DATA_TRIGGER -> {
-                valueMap = generateSourceMappingEventDetails(instrumentId, attributeId,postingDate, effectiveDate, configuration);
+                valueMap = generateSourceMappingEventDetails(instrumentId, attributeId,postingDate, effectiveDate, configuration,
+                        customTablePrefetch);
             }case TriggerType.ON_REPLAY -> {
 
                 InstrumentReplayState replayState =
@@ -729,19 +786,23 @@ public class ExcelModelService {
     Map<String, Map<String, Object>> generateSourceMappingEventDetails(String instrumentId, String attributeId,
                                                                        int postingDate,
                                                                        int effectiveDate,
-                                                                       EventConfiguration configuration) throws ParseException {
+                                                                       EventConfiguration configuration,
+                                                                       CustomTablePrefetch customTablePrefetch) throws ParseException {
         Map<String, Map<String, Object>> valueMap = new HashMap<>(0);
         //Custom Table event generation
         for (SourceMapping sourceMapping : configuration.getSourceMappings()) {
 
-
-            Map<String, Map<String, Object>> tmpValueMap = getValuesFromCustomTable(
-                    instrumentId,
-                    attributeId,
-                    postingDate,
-                    effectiveDate,
-                    sourceMapping
-            );
+            List<Document> prefetched = customTablePrefetch == null ? null
+                    : customTablePrefetch.rows(sourceMapping, instrumentId, attributeId);
+            Map<String, Map<String, Object>> tmpValueMap = prefetched != null
+                    ? customTableRowsToValueMap(prefetched)
+                    : getValuesFromCustomTable(
+                            instrumentId,
+                            attributeId,
+                            postingDate,
+                            effectiveDate,
+                            sourceMapping
+                    );
             valueMap.putAll(tmpValueMap);
         }
         return valueMap;
@@ -938,9 +999,25 @@ public class ExcelModelService {
         // (from customTableDefinition) actually include — see the method's own comment.
         ensureCustomTableIndex(customTableDefinition);
 
-        String referenceColumn = customTableDefinition.getReferenceColumn();
+        // 3. Build Query Criteria
+        Criteria criteria = Criteria.where("instrumentId").is(instrumentId)
+                .and("attributeId").is(attributeId)
+                .and("postingDate").is(postingDate);
+        addCustomTableReferenceFilter(criteria, mapping, customTableDefinition.getReferenceColumn());
 
-        // 3. Build Projection List (Mandatory + Source Columns)
+        Query query = new Query(criteria);
+        query.with(Sort.by(Sort.Direction.DESC, "effectiveDate"));
+        customTableProjection(mapping).forEach(field -> query.fields().include(field));
+
+        List<Document> documents = this.dataService
+                .getMongoTemplate()
+                .find(query, Document.class, collectionName);
+
+        return customTableRowsToValueMap(documents);
+    }
+
+    // Mandatory columns + the mapping's source columns.
+    private static Set<String> customTableProjection(SourceMapping mapping) {
         Set<String> projectionColumns = new LinkedHashSet<>();
         projectionColumns.add("instrumentId");
         projectionColumns.add("attributeId");
@@ -957,13 +1034,11 @@ public class ExcelModelService {
                     .filter(Objects::nonNull)
                     .forEach(projectionColumns::add);
         }
+        return projectionColumns;
+    }
 
-        // 4. Build Query Criteria
-        Criteria criteria = Criteria.where("instrumentId").is(instrumentId)
-                .and("attributeId").is(attributeId)
-                .and("postingDate").is(postingDate);
-
-        // Apply 'IN' clause for Reference Column if data mapping values exist
+    // Apply 'IN' clause for Reference Column if data mapping values exist
+    private static void addCustomTableReferenceFilter(Criteria criteria, SourceMapping mapping, String referenceColumn) {
         // Check for null to avoid NPE on mapping.getDataMapping()
         if (mapping.getDataMapping() != null && !mapping.getDataMapping().isEmpty()) {
             List<String> mappingValues = mapping.getDataMapping().stream()
@@ -976,21 +1051,10 @@ public class ExcelModelService {
                 criteria.and(referenceColumn).in(mappingValues);
             }
         }
+    }
 
-        Query query = new Query(criteria);
-
-        // 5. Apply Sort
-        query.with(Sort.by(Sort.Direction.DESC, "effectiveDate"));
-
-        // 6. Apply Projection
-        projectionColumns.forEach(field -> query.fields().include(field));
-
-        // 7. Execute Query
-        List<Document> documents = this.dataService
-                .getMongoTemplate()
-                .find(query, Document.class, collectionName);
-
-        // 8. Transform Results
+    // One row per document, keyed by _id, with int posting/effective dates converted to UTC dates.
+    private static Map<String, Map<String, Object>> customTableRowsToValueMap(List<Document> documents) throws ParseException {
         Map<String, Map<String, Object>> resultMap = new LinkedHashMap<>();
 
         for (Document doc : documents) {
@@ -1019,6 +1083,84 @@ public class ExcelModelService {
         }
 
         return resultMap;
+    }
+
+    /**
+     * One page's rows from every custom table an ON_CUSTOM_DATA_TRIGGER config maps, fetched with a
+     * single {@code instrumentId $in [page]} query per mapping and grouped by (instrumentId,
+     * attributeId). getValuesFromCustomTable() used to run once per attribute per mapping — each call
+     * also re-reading the table definition — so a ~550-instrument Hearst page made ~8,000 round
+     * trips, ~70% of event-generation time. Same filter, projection and effectiveDate-desc order as
+     * that method; ties are broken by _id so the batched order is deterministic.
+     */
+    static final class CustomTablePrefetch {
+        private final Map<SourceMapping, Map<String, List<Document>>> rowsByMapping = new IdentityHashMap<>();
+
+        /** This attribute's rows for the mapping; null when the mapping was not prefetched (caller queries itself). */
+        List<Document> rows(SourceMapping mapping, String instrumentId, String attributeId) {
+            Map<String, List<Document>> byKey = rowsByMapping.get(mapping);
+            if (byKey == null) {
+                return null;
+            }
+            return byKey.getOrDefault(key(instrumentId, attributeId), List.of());
+        }
+
+        private static String key(Object instrumentId, Object attributeId) {
+            return instrumentId + "\u0000" + attributeId;
+        }
+    }
+
+    private CustomTablePrefetch buildCustomTablePrefetch(Set<String> pageInstrumentIds, int postingDate,
+                                                        List<EventConfiguration> configurationList) {
+        CustomTablePrefetch prefetch = new CustomTablePrefetch();
+        Map<String, CustomTableDefinition> definitions = new HashMap<>();
+        for (EventConfiguration cfg : configurationList) {
+            if (cfg.getTriggerSetup() == null
+                    || cfg.getTriggerSetup().getTriggerType() != TriggerType.ON_CUSTOM_DATA_TRIGGER
+                    || cfg.getSourceMappings() == null) {
+                continue;
+            }
+            for (SourceMapping mapping : cfg.getSourceMappings()) {
+                if (mapping == null || mapping.getSourceTable() == null || mapping.getSourceTable().trim().isEmpty()) {
+                    continue;
+                }
+                String collectionName = mapping.getSourceTable();
+                CustomTableDefinition definition;
+                try {
+                    definition = definitions.computeIfAbsent(collectionName,
+                            customTableDefinitionService::getCustomTableDefinition);
+                } catch (RuntimeException e) {
+                    // Left un-prefetched: getValuesFromCustomTable() then runs per attribute and
+                    // fails exactly as it always did.
+                    continue;
+                }
+                if (definition == null) {
+                    continue;
+                }
+                ensureCustomTableIndex(definition);
+
+                Criteria criteria = Criteria.where("instrumentId").in(pageInstrumentIds)
+                        .and("postingDate").is(postingDate);
+                addCustomTableReferenceFilter(criteria, mapping, definition.getReferenceColumn());
+                Query query = new Query(criteria);
+                query.with(Sort.by(Sort.Direction.DESC, "effectiveDate").and(Sort.by(Sort.Direction.ASC, "_id")));
+                customTableProjection(mapping).forEach(field -> query.fields().include(field));
+
+                Map<String, List<Document>> byKey = new HashMap<>();
+                for (Document doc : this.dataService.getMongoTemplate().find(query, Document.class, collectionName)) {
+                    // The per-attribute query matches attributeId as a String and MongoDB compares
+                    // types strictly — a row storing it as a number never matched, so don't let
+                    // toString() make it match here.
+                    if (!(doc.get("attributeId") instanceof String)) {
+                        continue;
+                    }
+                    byKey.computeIfAbsent(CustomTablePrefetch.key(doc.get("instrumentId"), doc.get("attributeId")),
+                            k -> new ArrayList<>()).add(doc);
+                }
+                prefetch.rowsByMapping.put(mapping, byKey);
+            }
+        }
+        return prefetch;
     }
 
     // See indexedCustomTables' field comment. getValuesFromCustomTable's own Criteria always
