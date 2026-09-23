@@ -106,11 +106,14 @@ Neither remaining stage can go much further on one machine. Both have to scale o
   instruments are batched. Hearst only uses it on reference data. Narrowing to the instrument's own
   rows (plus reference rows) cuts ~45% of model CPU but changes semantics for any model that relies
   on it.
-- **Which `InstrumentAttribute` row the *model* sees.** Transactions are now stamped from their own
-  sub-instrument's row (fixed in `fyntrac-py-model` `2ac642b`: ~78% of Hearst transactions had carried
-  another sub-instrument's `instrumentAttributeVersionId`). The model's `ATTRIBUTE_*` input still comes
-  from one arbitrary active row per instrument, because the model runs once per instrument. Which
-  sub-instrument's values it should see is still open. No effect on Hearst (no reclassable attributes).
+
+Resolved: **attributes are per sub-instrument.** Each transaction is stamped with its own
+sub-instrument's active `InstrumentAttribute` version and reclassable attributes (`fyntrac-py-model`
+`2ac642b`; ~78% of Hearst transactions had carried another sub-instrument's version). Models read
+attribute values per sub-instrument through their event configuration (source `Attribute`). The
+worker's old instrument-level `ATTRIBUTE_*` input, taken from an arbitrary row and read by no stored
+model in any tenant, was removed together with its per-instrument lookup (`b1232d1`), and the
+`Attributes` definitions are cached per tenant in the worker.
 
 ## Not addressed
 
