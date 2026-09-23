@@ -66,9 +66,10 @@ public interface EventRepository extends MongoRepository<Event, String> {
      *   - one instrument may have multiple event rows
      *
      * Pipeline: $match postingDate → $group by instrumentId → $count
+     * Excludes the shared reference-table events (Event.SHARED_REFERENCE_INSTRUMENT_ID) — not an instrument.
      */
     @Aggregation(pipeline = {
-        "{ '$match': { 'postingDate': ?0 } }",
+        "{ '$match': { 'postingDate': ?0, 'instrumentId': { '$ne': '__SHARED_REFERENCE__' } } }",
         "{ '$group': { '_id': '$instrumentId' } }",
         "{ '$count': 'total' }"
     })
@@ -96,7 +97,8 @@ public interface EventRepository extends MongoRepository<Event, String> {
     @Query("{ 'postingDate': ?0, 'instrumentId': ?1 }")
     Page<Event> findByPostingDateAndInstrumentId(Integer postingDate, String instrumentId, Pageable pageable);
 
-    @Query(value = "{ 'postingDate': ?0, 'status': 'NOT_STARTED' }",
+    // Excludes the shared reference-table events (Event.SHARED_REFERENCE_INSTRUMENT_ID) — not an instrument.
+    @Query(value = "{ 'postingDate': ?0, 'status': 'NOT_STARTED', 'instrumentId': { '$ne': '__SHARED_REFERENCE__' } }",
             fields = "{ 'instrumentId': 1 }")
     Page<Event> findInstrumentIdsByPostingDateAndStatusNotStarted(
             Integer postingDate, Pageable pageable);
@@ -105,5 +107,32 @@ public interface EventRepository extends MongoRepository<Event, String> {
 
     @Query("{ 'postingDate': ?0, 'instrumentId': ?1 }")
     List<Event> findByPostingDateAndInstrumentId(Integer postingDate, String instrumentId);
+
+    /**
+     * The shared reference-table events for a posting date — written once per run instead of once
+     * per instrument, see Event.SHARED_REFERENCE_INSTRUMENT_ID.
+     */
+    default List<Event> findSharedReferenceEvents(Integer postingDate) {
+        return findByPostingDateAndInstrumentId(postingDate, Event.SHARED_REFERENCE_INSTRUMENT_ID);
+    }
+
+    /**
+     * Every event an instrument's model execution sees: its own plus the shared reference-table
+     * events. Use this, not findByPostingDateAndInstrumentId, wherever a model or diagnostic needs
+     * an instrument's full event set. Shared events come first, matching the order the
+     * per-instrument copies they replace were written in.
+     */
+    default List<Event> findEventsForInstrument(Integer postingDate, String instrumentId) {
+        return withSharedReferenceEvents(findSharedReferenceEvents(postingDate),
+                findByPostingDateAndInstrumentId(postingDate, instrumentId));
+    }
+
+    /** For loops over many instruments: fetch findSharedReferenceEvents once, then combine per instrument. */
+    static List<Event> withSharedReferenceEvents(List<Event> sharedReferenceEvents, List<Event> instrumentEvents) {
+        List<Event> events = new java.util.ArrayList<>(sharedReferenceEvents.size() + instrumentEvents.size());
+        events.addAll(sharedReferenceEvents);
+        events.addAll(instrumentEvents);
+        return events;
+    }
 
 }

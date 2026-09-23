@@ -69,7 +69,7 @@ public class EventService {
     }
 
     List<Event> getEvents(String instrumentId, Integer postingDate) {
-        return this.eventRepository.findByPostingDateAndInstrumentId(postingDate, instrumentId);
+        return this.eventRepository.findEventsForInstrument(postingDate, instrumentId);
     }
 
     Map<String, Map<String, Object>> getEventValueMap(String instrumentId, Integer postingDate) {
