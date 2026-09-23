@@ -1,0 +1,54 @@
+---
+title: Fyntrac event processing — high level
+---
+flowchart TD
+    START(["POST /model/execute<br/>tenant · postingDate · modelType"]) --> GATE{"Accounting period<br/>open?"}
+    GATE -- "status = 1 (closed)" --> CLOSED(["AccountingPeriodClosedException"])
+    GATE -- open --> FACTORY["WorkflowExecutionFactory<br/>DSL → DslExecutionWorkflow<br/>EXCEL → ExcelExecutionWorkflow"]
+    FACTORY --> INIT["ExecutionInstance saved<br/>status = INITIALIZING<br/><i>one dataloader pod owns the whole run</i>"]
+
+    INIT --> PRE
+    subgraph PRE["1 · PRE_PROCESSING"]
+        direction TB
+        R1["enforcePreProcessRules"]
+        R1 --> R2{"postingDate ≤<br/>ExecutionState.executionDate?"}
+        R2 -- "yes — replay" --> R3["cleanupDataForPostingDate<br/>re-aggregate + re-book each prior batchId"]
+        R2 -- no --> R4["nothing to undo"]
+    end
+    PRE --> HALT{"preProcess<br/>says continue?"}
+    HALT -- no --> HALTED(["COMPLETED — halted by rules"])
+    HALT -- yes --> GEN
+
+    subgraph GEN["2 · GENERATING_EVENTS"]
+        direction TB
+        G1["Page InstrumentAttribute by instrumentId<br/>keyset cursor, whole instrument groups"]
+        G1 --> G2["Evaluate active EventConfigurations<br/>per instrument, by priority"]
+        G2 --> G3[("EventHistory<br/>Event docs · status NOT_STARTED")]
+        G3 --> G4["Batch the instruments that produced events<br/>dispatch each batch to the model service"]
+        G4 --> G5["dsl-model pool executes the model per instrument<br/><i>4 replicas x 4 processes, Shared subscription</i>"]
+        G5 --> G6[("TransactionActivity")]
+        G6 --> G7["LTD aggregation<br/>attribute · instrument · metric level"]
+        G7 --> G8["General ledger sync<br/>staging entries + account balances<br/><i>gl, 1 replica</i>"]
+    end
+    GEN --> POST
+
+    subgraph POST["3 · POST_PROCESSING"]
+        P1["no-op for DSL today"]
+    end
+    POST --> EOD
+
+    subgraph EOD["4 · EOD_PROCESSING"]
+        direction TB
+        E1["executePostAggregation<br/>attribute · instrument · metric post-aggregation"]
+        E1 --> E2["ExecutionState.executionDate := postingDate"]
+    end
+
+    EOD --> FIN{"instance.failedBatches > 0?"}
+    FIN -- no --> OK(["COMPLETED"])
+    FIN -- yes --> PARTIAL(["PARTIAL_SUCCESS<br/>per-batch errors in the Errors collection"])
+    GEN -. "unhandled exception<br/>escapes the workflow" .-> FAILED(["FAILED"])
+
+    classDef store fill:#e8eef7,stroke:#5b7fa6,color:#1c2b3a
+    classDef bad fill:#f7e9e9,stroke:#a65b5b,color:#3a1c1c
+    class G3,G6 store
+    class CLOSED,FAILED bad

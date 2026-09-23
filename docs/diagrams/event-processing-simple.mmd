@@ -1,0 +1,44 @@
+---
+title: How a model run actually works
+---
+flowchart TB
+    U(["You start a run<br/>tenant + business date"])
+
+    U -- "1 · request" --> DL["<b>Main app</b><br/>runs and coordinates the whole job"]
+
+    DB[("<b>Database</b><br/>contracts, events,<br/>accounting entries, balances")]
+
+    DL -- "2 · read every contract<br/>a page at a time" --> DB
+    DL -- "3 · apply the rules and save<br/>the events it found" --> DB
+
+    DL -- "4 · post the work<br/>in small bundles" --> Q[["<b>Work queue</b><br/>one message per bundle of contracts"]]
+
+    subgraph W["<b>Model workers</b> — 4 copies running side by side"]
+        direction LR
+        W1["worker 1"]
+        W2["worker 2"]
+        W3["worker 3"]
+        W4["worker 4"]
+    end
+
+    Q -- "5 · each worker takes a bundle<br/>only when it is free" --> W
+
+    W -- "6 · read the events,<br/>run the model,<br/>write the accounting entries" --> DB
+    W -- "7 · report the bundle as done" --> DL
+
+    DL -- "8 · roll the entries up<br/>into running balances" --> DB
+    DL -- "9 · hand the finished batch over" --> GL["<b>Ledger service</b><br/>turns entries into<br/>general ledger postings"]
+    GL -- "10 · write the ledger" --> DB
+
+    DL --> R(["<b>Run finishes</b><br/>clean, or with a list<br/>of the bundles that failed"])
+
+    NOTE["<b>The part worth knowing</b><br/>Step 6 is where nearly all the time goes, so that is the part that is split up.<br/>The main app does steps 1–4 and 8–9 on its own, in order — adding more<br/>copies of it does not make a single run faster. Adding more workers does."]
+
+    classDef store fill:#e8f0ea,stroke:#5f8a6c,color:#16281c
+    classDef queue fill:#eef2f8,stroke:#6b86ab,color:#1c2b3a
+    classDef note fill:#fdf8ec,stroke:#b8985a,color:#3a2e15
+    classDef ends fill:#e8eef7,stroke:#5b7fa6,color:#1c2b3a
+    class DB store
+    class Q queue
+    class NOTE note
+    class U,R ends

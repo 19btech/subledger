@@ -1,0 +1,49 @@
+---
+title: Fyntrac event processing — replica topology and where parallelism comes from
+---
+flowchart TB
+    C["ExcelTestDriver / UI<br/>POST :8081/api/dataloader/model/execute"]
+    C --> SVC{{"Service dataloader — type LoadBalancer<br/>round-robins NEW CONNECTIONS, nothing else"}}
+
+    subgraph DLDEP["Deployment dataloader — replicas: 2"]
+        direction LR
+        DLA["pod A<br/><b>owns this whole run</b><br/>paging · event gen · dispatch<br/>Spring Batch LTD jobs · EOD"]
+        DLB["pod B<br/>idle for this run<br/>serves other requests"]
+    end
+
+    SVC == "this request pins here<br/>for the entire workflow" ==> DLA
+    SVC -. "a different user's request" .-> DLB
+
+    DLA --> T1[["topic fyntrac-python-model-execution<br/>one message per batch of instrumentIds"]]
+    DLA -. "at most FYNTRAC_BATCH_MAX_CONCURRENT_DISPATCH = 8<br/>batches in flight (code default 4, k8s sets 8)" .-> T1
+
+    subgraph PYDEP["Deployment dsl-model — replicas: 4 · cpu limit 4 · MAX_PROCESS_WORKERS 4"]
+        direction LR
+        P1["pod 1<br/>1 batch at a time<br/>4 worker processes"]
+        P2["pod 2<br/>1 batch at a time<br/>4 worker processes"]
+        P3["pod 3<br/>1 batch at a time<br/>4 worker processes"]
+        P4["pod 4<br/>1 batch at a time<br/>4 worker processes"]
+    end
+
+    T1 == "ConsumerType.Shared<br/>receiver_queue_size = 1 — no prefetch,<br/>so a batch only goes to a pod that is free" ==> PYDEP
+
+    PYDEP --> DBW[("MongoDB<br/>EventHistory status · TransactionActivity<br/>ModelExecutionBatchLog")]
+    PYDEP --> T2[["topic fyntrac-python-model-completion"]]
+
+    T2 == "SubscriptionType.Failover<br/>exactly ONE of the 2 pods is the active consumer" ==> DLB
+    DLB --> MC[("Memcached<br/>batch-completion:{correlationId} · TTL 900s")]
+    MC == "pod A polls every 250 ms<br/>until its own correlationId appears" ==> DLA
+
+    DLA --> T3[["topic fyntrac-book-gl-staging"]]
+    T3 == "Shared" ==> GLP["Deployment gl — replicas: 1<br/>GeneralLedgerEnteryStage<br/>GeneralLedgerAccountBalanceStage"]
+
+    NOTE["<b>Where the parallelism actually is</b><br/>· 2 dataloader replicas parallelize <i>separate</i> requests, never one run<br/>· one run's concurrency = 8 in-flight batches → 4 executing + 4 queued at the broker<br/>· real CPU fan-out = 4 pods × 4 processes = 16 cores of model execution<br/>· LTD aggregation + GL publish run back on pod A, under an in-process ReentrantLock"]
+
+    classDef topic fill:#eef2f8,stroke:#6b86ab,color:#1c2b3a
+    classDef store fill:#e8f0ea,stroke:#5f8a6c,color:#16281c
+    classDef note fill:#fdf8ec,stroke:#b8985a,color:#3a2e15
+    classDef idle fill:#f2f2f2,stroke:#999,color:#444
+    class T1,T2,T3 topic
+    class DBW,MC store
+    class NOTE note
+    class DLB idle
