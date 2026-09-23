@@ -106,10 +106,11 @@ Neither remaining stage can go much further on one machine. Both have to scale o
   instruments are batched. Hearst only uses it on reference data. Narrowing to the instrument's own
   rows (plus reference rows) cuts ~45% of model CPU but changes semantics for any model that relies
   on it.
-- **Which `InstrumentAttribute` row the worker uses.** `_fetch_instrument_attributes` does
-  `find_one({instrumentId, endDate: null})`, assuming one active row per instrument. Hearst has one per
-  sub-instrument, so it takes whichever MongoDB returns first — and that row supplies each
-  transaction's `instrumentAttributeVersionId` and `attributes`.
+- **Which `InstrumentAttribute` row the *model* sees.** Transactions are now stamped from their own
+  sub-instrument's row (fixed in `fyntrac-py-model` `2ac642b`: ~78% of Hearst transactions had carried
+  another sub-instrument's `instrumentAttributeVersionId`). The model's `ATTRIBUTE_*` input still comes
+  from one arbitrary active row per instrument, because the model runs once per instrument. Which
+  sub-instrument's values it should see is still open. No effect on Hearst (no reclassable attributes).
 
 ## Not addressed
 

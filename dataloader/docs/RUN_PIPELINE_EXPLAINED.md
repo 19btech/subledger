@@ -73,10 +73,13 @@ A worker (`fyntrac-py-model/app/pulsar/manager.py`) handling a batch:
 2. loads the tenant's active model;
 3. reads `EventHistory` for the batch's instruments **plus the shared reference events**;
 4. transforms them into one data row per instrument (`data_transformer.transform`);
-5. looks up each instrument's active `InstrumentAttribute` (one query per instrument);
+5. looks up the batch's active `InstrumentAttribute` rows: once per batch keyed by
+   (instrumentId, attributeId) for stamping transactions, and per instrument for the model's
+   `ATTRIBUTE_*` input;
 6. runs the model per instrument across **4 worker processes**; each gets a fresh namespace, while the
    compiled template, parsed DSL expressions and date normalisation are cached per process;
-7. writes the batch's `TransactionActivity` in one `insert_many` (zero amounts discarded) and flips
+7. writes the batch's `TransactionActivity` in one `insert_many` (zero amounts discarded), each
+   stamped with its own sub-instrument's `instrumentAttributeVersionId` and attributes, and flips
    `EventHistory` status with one `update_many` per status;
 8. publishes a completion, which the owning pod picks up through Memcached.
 
@@ -144,7 +147,8 @@ lists each with its measured effect.
 
 - **No resume.** A run is owned by one pod; if it restarts, the run stops at its last status.
 - **`TransactionActivity` growth** across posting dates.
-- **Which `InstrumentAttribute` row** the worker uses when an instrument has one per sub-instrument
-  (step 3.5 takes whichever MongoDB returns first).
+- **Which `InstrumentAttribute` row the model sees** when an instrument has one per sub-instrument
+  (its `ATTRIBUTE_*` input still comes from whichever row MongoDB returns first; transactions are
+  stamped per sub-instrument).
 - **`collect_all` over activity events** sees the whole batch, not just the instrument (plan doc,
   open decisions).
