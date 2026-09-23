@@ -14,15 +14,19 @@ import org.bson.types.Decimal128;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.Collection;
+import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Metric-level LTD for one DSL run, computed once after every batch has finished.
@@ -42,6 +46,13 @@ import java.util.Set;
 @Service
 public class MetricLevelRollupService {
 
+    // One document per batch whose transactions belong in a run's roll-up: {_id: jobId, runId,
+    // postingDate, createdAt}. Kept in MongoDB rather than in the owning pod's memory so that whichever
+    // pod finishes a run can roll it up (TARGET_DESIGN_DISTRIBUTED_RUN.md, requirement 5). _id is the
+    // job id, so recording a batch twice (a redelivered completion) is harmless.
+    static final String RUN_BATCH_COLLECTION = "ExecutionRunBatch";
+
+    private final Set<String> indexedTenants = ConcurrentHashMap.newKeySet();
     private final AggregationService aggregationService;
     private final MemcachedRepository memcachedRepository;
     private final TenantDataSourceProvider dataSourceProvider;
@@ -52,6 +63,30 @@ public class MetricLevelRollupService {
         this.aggregationService = aggregationService;
         this.memcachedRepository = memcachedRepository;
         this.dataSourceProvider = dataSourceProvider;
+    }
+
+    /** Records that this batch's transactions belong in the run's metric roll-up. */
+    public void recordRunBatch(String tenant, String runId, int postingDate, long jobId) {
+        MongoTemplate mongo = dataSourceProvider.getDataSource(tenant);
+        if (indexedTenants.add(tenant)) {
+            mongo.indexOps(RUN_BATCH_COLLECTION).ensureIndex(new Index().on("runId", Sort.Direction.ASC));
+        }
+        mongo.upsert(new Query(Criteria.where("_id").is(jobId)),
+                new org.springframework.data.mongodb.core.query.Update()
+                        .set("runId", runId)
+                        .set("postingDate", postingDate)
+                        .setOnInsert("createdAt", new Date()),
+                RUN_BATCH_COLLECTION);
+    }
+
+    /** Rolls up every batch recorded for this run (see {@link #recordRunBatch}). */
+    public void rollUp(String tenant, int postingDate, String runId) {
+        MongoTemplate mongo = dataSourceProvider.getDataSource(tenant);
+        List<Long> jobIds = mongo.find(new Query(Criteria.where("runId").is(runId)), Document.class, RUN_BATCH_COLLECTION)
+                .stream()
+                .map(d -> ((Number) d.get("_id")).longValue())
+                .toList();
+        rollUp(tenant, postingDate, jobIds);
     }
 
     /**

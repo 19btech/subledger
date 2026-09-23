@@ -29,9 +29,7 @@ import org.springframework.stereotype.Service;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
@@ -48,10 +46,6 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
     private final GeneralLedgerMessageProducer generalLedgerMessageProducer;
     private final ErrorService errorService;
     private final MetricLevelRollupService metricLevelRollupService;
-
-    // Per run (instance id): the batch job ids whose transactions go into the end-of-run metric
-    // roll-up. Filled by generateAndProcessEvents, consumed by postProcess.
-    private final Map<String, Set<Long>> metricRollupJobIds = new ConcurrentHashMap<>();
 
     public DslExecutionWorkflow(ExecutionInstanceRepository executionInstanceRepository,
                                 ModelExecutionService modelExecutionService,
@@ -95,8 +89,6 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
         // Serializes GL sync + progress/failure bookkeeping across concurrently-processing batches —
         // see the lock() call below for why.
         java.util.concurrent.locks.ReentrantLock aggregationLock = new java.util.concurrent.locks.ReentrantLock();
-        Set<Long> rollupJobIds = ConcurrentHashMap.newKeySet();
-        metricRollupJobIds.put(instance.getId(), rollupJobIds);
 
         excelModelService.generateEventAndDispatch(postingDate, batch -> {
             int batchNumber = batchCounter.getAndIncrement();
@@ -159,8 +151,10 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
                 if (batchFailure == null) {
                     try {
                         // [Step 3b] Metric-level aggregation: this batch's transactions are rolled up
-                        // with the rest of the run's in postProcess.
-                        rollupJobIds.add(jobResultResponseRecord.jobId());
+                        // with the rest of the run's in postProcess. Recorded in MongoDB, not in this
+                        // pod's memory, so any pod can run the roll-up.
+                        metricLevelRollupService.recordRunBatch(tenant, instance.getId(), postingDate,
+                                jobResultResponseRecord.jobId());
 
                         // [Step 4] Real-Time General Ledger Sync
                         Records.GeneralLedgerMessageRecord glRec = RecordFactory.createGeneralLedgerMessageRecord(tenant, jobResultResponseRecord.jobId());
@@ -232,9 +226,8 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
         // Metric-level LTD for the whole run, after every batch has finished and before
         // performEOD's post-aggregation carry-forward (which must see this posting date's rows,
         // or it treats every metric as inactive and writes a zero row for it).
-        Set<Long> jobIds = metricRollupJobIds.remove(instance.getId());
         try {
-            metricLevelRollupService.rollUp(tenant, postingDate, jobIds == null ? Set.of() : jobIds);
+            metricLevelRollupService.rollUp(tenant, postingDate, instance.getId());
         } catch (Exception e) {
             // Same outcome as a batch whose metric step failed used to have: recorded, and the
             // instance ends PARTIAL_SUCCESS rather than a silent COMPLETED.

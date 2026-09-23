@@ -52,8 +52,9 @@ answer for on this date (`ExcelModelService.generateEventAndDispatch`).
 - **Custom-table configs** (`ON_CUSTOM_DATA_TRIGGER`, e.g. PSDLogs, Billing_Schedule) are **prefetched
   per page**: one `instrumentId $in [page]` query per mapping, grouped by (instrumentId, attributeId),
   instead of one query per sub-instrument. (`attributeId` here is the sub-instrument id.)
-- Events are saved per page; the page's instruments are split into batches of up to 500 and
-  dispatched, while paging continues.
+- Events are saved per page — first removing that page's instruments' events for the date, so a
+  regenerated page replaces rather than duplicates — and the page's instruments are split into
+  batches of up to 500 and dispatched, while paging continues.
 
 Throughput depends heavily on the pod's CPU: at 4 CPUs (with `-XX:ActiveProcessorCount=4`, see the
 plan doc's JVM finding) ~800–980 instruments/s; at the old 1 CPU ~280.
@@ -97,7 +98,7 @@ the same row and these run concurrently.
 
 The owning pod publishes `{tenantId, jobId}` to `fyntrac-book-gl-staging`; the gl service stages that
 job's `TransactionActivity`. This and the progress counters (`incrementCompletedBatches` /
-`incrementFailedBatches`, a read-modify-write on the run record) are the only things still behind the
+`incrementFailedBatches`, atomic `$inc` on the run record) are the only things still behind the
 per-run `ReentrantLock`. GL staging finishes asynchronously, ~90–110 s after the last batch on Hearst.
 
 ## 5 — Metric roll-up (once per posting date)
@@ -115,8 +116,9 @@ Hearst date). It is now computed **once**, in `postProcess`, by `MetricLevelRoll
 Only batches that reached the old metric step contribute. A failure is recorded and the run ends
 `PARTIAL_SUCCESS`. Takes ~0.1 s per Hearst posting date.
 
-The run's job ids are held **in memory on the owning pod** (`DslExecutionWorkflow.metricRollupJobIds`)
-— fine while one pod owns a run, and a thing to persist before runs are distributed.
+The run's job ids are recorded in MongoDB as each batch finishes (`ExecutionRunBatch`: `_id` = job
+id, `runId`, `postingDate`) and read back by run id, so the roll-up does not depend on the pod that
+owns the run.
 
 ## 6 — End of day
 

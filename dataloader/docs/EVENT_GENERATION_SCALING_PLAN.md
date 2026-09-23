@@ -48,6 +48,7 @@ All numbers are Hearst P4 (two posting dates, ~69k instruments), measured on the
 | 9 | **Worker writes batched**: one status `update_many` per status and one `insert_many` per batch | worker `manager.py` | Save phase 0.56 → 0.22 s per batch; end-to-end within the dev box's run-to-run noise | `1580490` |
 | 10 | **gateway / gl / reporting JVMs sized** (`-Xmx512m`, `ActiveProcessorCount` = CPU limit; gl 2 CPUs) | `k8s/base/{gateway,gl,reporting}.yaml` | Heaps had been allowed 8.3 GB inside 1 GiB pods; gl throttling 160 s → 4.5 s per P4 | `2f989c3` |
 | 11 | **Metric roll-up once per posting date** instead of a locked Spring Batch job per batch | dataloader `MetricLevelRollupService`, `DslExecutionWorkflow` | ~240 locked launches per date → one 80–100 ms pass; per date 4.9–5.0 min. Removes the last single-JVM dependency in the batch path | `4eae0a7` |
+| 12 | **Distributed-run correctness groundwork**: run job ids persisted (`ExecutionRunBatch`), progress counters via `$inc` and status via targeted `$set`, a page's events replaced rather than appended | dataloader `AbstractExecutionWorkflow`, `MetricLevelRollupService`, `ExcelModelService` | No change in output or speed on one pod (verified: counters 225/246, one run-batch doc per batch, zero duplicate events); removes the single-owner assumptions the multi-pod design listed | (this commit) |
 
 ### The JVM finding
 
@@ -90,8 +91,10 @@ Neither remaining stage can go much further on one machine. Both have to scale o
 2. **Scale model execution across nodes.** Already queue-driven (Shared subscription, one batch per
    pod) — adding dsl-model replicas on more nodes scales it without code change. Keep
    `FYNTRAC_BATCH_MAX_CONCURRENT_DISPATCH` at roughly 2–4× the replica count.
-3. **Distribute event generation** — `TARGET_DESIGN_DISTRIBUTED_RUN.md`. Change 11 (metric roll-up) was
-   its prerequisite. Its remaining correctness requirements are listed there with their current status.
+3. **Distribute event generation** — `TARGET_DESIGN_DISTRIBUTED_RUN.md`. Its prerequisite (change 11)
+   and correctness requirements (change 12) are in place; what remains is the chunk queue, the
+   atomic chunk counter that elects the finisher, and the finalized flag. Only worth it with more than
+   one node.
 4. **Overlap pages within one pod** (cheaper interim step): today page N+1 is generated only after
    page N is saved.
 5. **Upgrade the Java base image** to a current 21.0.x so no service depends on the manifest flags.

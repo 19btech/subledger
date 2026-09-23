@@ -542,9 +542,16 @@ public class ExcelModelService {
                         .join();
                 long eventGenDoneNanos = System.nanoTime();
 
-                // Save events
+                // Save events. The page's earlier events for this date are removed first, so
+                // generating a page twice (a retried or redelivered chunk once runs are distributed —
+                // TARGET_DESIGN_DISTRIBUTED_RUN.md) replaces them instead of adding duplicates the
+                // model would read twice. On a normal run there is nothing to remove: a re-run of a
+                // posting date has already cleared its events in preparePythonExecution.
                 if (!pageEvents.isEmpty()) {
                     TenantContextHolder.runWithTenant(tenant, () -> {
+                        this.dataService.getMongoTemplate().remove(new Query(
+                                Criteria.where("instrumentId").in(pageInstrumentIds)
+                                        .and("postingDate").is(postingDate)), Event.class);
                         eventRepository.saveAll(pageEvents);
                         return null;
                     });

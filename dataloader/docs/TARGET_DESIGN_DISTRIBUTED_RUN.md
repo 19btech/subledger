@@ -1,8 +1,8 @@
 # Target design — distributing a model run across dataloader pods
 
 Written 2026-09-23, updated the same day after the single-pod work landed. Supersedes the
-range-based sketch; this is the version to build — **not started**. The prerequisite (metric roll-up
-out of the per-batch path) is done; see [Status](#status-2026-09-23).
+range-based sketch; this is the version to build — **not started**. Its prerequisites and correctness
+requirements are all in place; what remains is the fan-out itself. See [Status](#status-2026-09-23).
 
 Read `RUN_PIPELINE_EXPLAINED.md` first — it describes how the run works today and why the two
 bottlenecks are what they are. `EVENT_GENERATION_SCALING_PLAN.md` holds the sequencing.
@@ -41,10 +41,10 @@ What already exists on `branch-0.0.4`, and what this design still needs:
 |---|---|
 | Metric roll-up out of the per-chunk path | **Done** (`4eae0a7`): `MetricLevelRollupService` runs once in `postProcess` on the owning pod. In this design it moves to the finisher pod unchanged. |
 | Job ids unique across pods | **Done** (`1580490`). This was a live bug even with one dataloader pod: dsl-model pods starting batches in the same millisecond shared an id, and stage 4 then processed both batches' transactions under it. |
-| Run's job ids persisted, not in memory | **Not done.** The roll-up selects `batchId $in` the run's job ids, held today in `DslExecutionWorkflow.metricRollupJobIds` on the owning pod. The finisher must be able to read them — e.g. tag the `PythonJobIdReservation` doc (or the batch log) with the run id. |
-| Progress counters atomic | **Not done.** `incrementCompletedBatches` is still read-modify-write on the whole `ExecutionInstance`, guarded by the per-run in-process lock. |
-| Event writes idempotent | **Partly.** Shared reference-table events use a fixed `_id` (upsert). Per-instrument events are still inserted with fresh ids. |
-| Carry-forward writes idempotent | **Not done.** |
+| Run's job ids persisted, not in memory | **Done.** Each batch that belongs in the roll-up is recorded in `ExecutionRunBatch` (`_id` = job id, `runId`, `postingDate`); `MetricLevelRollupService.rollUp(tenant, postingDate, runId)` reads them, so any pod can run it. |
+| Progress counters atomic | **Done.** `AbstractExecutionWorkflow` updates counters with `$inc` (`findAndModify`) and status/`endTime`/`errorMessage` with targeted `$set`, and reloads the counters before deciding the final status. Only the initial insert of the run record uses `save()`. |
+| Event writes idempotent | **Done.** Shared reference-table events have a fixed `_id`. Per-instrument events: before a page is saved, that page's instruments' events for the posting date are removed, so a regenerated page replaces rather than duplicates (ObjectId `_id`s kept). |
+| Carry-forward writes idempotent | **Already true — no change needed.** The carry-forward reader only takes combinations with exactly one row since the previous posting date; writing the carried-forward row makes it two, so a repeated or resumed pass skips what is already written. It is **not** safe against two pods running it *at the same time* — the finalized compare-and-set below is what prevents that. |
 | JVM sized to the pod | **Done** for the dataloader (4 CPUs, `ActiveProcessorCount=4`); every pod added here needs the same, or the image upgraded — see the plan doc's JVM finding. |
 
 ## Why this is safe
@@ -138,7 +138,8 @@ Status of each is in the table above.
    pod. Keyed on instrument + event + date.
 3. **Metric roll-up must be out of the per-chunk path.** Not "with a distributed lock" — out. It is
    a prerequisite of this design, not a companion change.
-4. **Carry-forward must be an upsert** on its natural key, for the same redelivery reason as (2).
+4. **Carry-forward must be safe to repeat.** It already is (see the status table), provided only one
+   pod runs the tail at a time.
 5. **The run's job ids must be readable by the finisher.** The metric roll-up selects the run's
    transactions by `batchId $in` those ids; if the finisher cannot see every chunk's ids, their
    transactions silently drop out of `MetricLevelLtd`.
