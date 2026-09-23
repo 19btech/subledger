@@ -1,0 +1,62 @@
+---
+title: Target design — a run distributed across dataloader pods
+---
+flowchart TB
+    U(["Run starts<br/>tenant + business date"]) --> CO
+
+    subgraph COORD["Coordinator — the pod that took the request"]
+        direction TB
+        CO["1 · Plan the chunks over the sorted instrument list<br/>~500–2,000 instruments each<br/><i>boundaries fall on instrument ids, so one instrument<br/>is never split across two chunks</i>"]
+        CO --> CO2["2 · Record <b>totalChunks</b> on the run record<br/>and write the shared reference-table events once<br/><i>fixed _id, so a retry overwrites</i>"]
+    end
+
+    CO2 -- "3 · publish one message per chunk" --> Q1[["<b>Chunk queue</b> — Shared subscription, no prefetch<br/><i>a work queue: exactly one pod gets each message</i>"]]
+
+    subgraph POOL["Every dataloader pod — scale this out"]
+        direction LR
+        D1["pod 1"]
+        D2["pod 2"]
+        D3["pod 3"]
+        DN["pod N"]
+    end
+
+    Q1 == "4 · a pod claims a chunk<br/>only when it is free" ==> POOL
+
+    subgraph WORK["What a pod does for its own chunk — nothing shared with any other chunk"]
+        direction TB
+        S1["5 · generate events for its instruments<br/><b>upsert</b> — a redelivered chunk must not duplicate"]
+        S1 --> S2["6 · dispatch to the dsl-model workers and wait<br/><i>already pod-independent via the shared cache</i>"]
+        S2 --> S3["7 · <b>attribute-level + instrument-level roll-up</b><br/><i>every row is keyed by instrument, and an instrument<br/>is in exactly one chunk → no collisions, full parallelism</i>"]
+        S3 --> S4["8 · publish GL staging"]
+    end
+    POOL --> WORK
+
+    WORK --> INC["9 · <b>atomic</b> increment of chunksCompleted<br/><i>failed chunks increment too, or one bad chunk hangs the run</i>"]
+
+    INC --> GATE{"10 · did this increment<br/>return chunksCompleted<br/>== totalChunks?"}
+    GATE -- "no — another chunk is still out" --> Q1
+    GATE -- "yes — this pod closed out the last chunk" --> TAIL
+
+    subgraph TAIL["The tail — run once, by whichever pod won the count"]
+        direction TB
+        T0["compare-and-set a <b>finalized</b> flag<br/><i>redelivery can push the counter past total —<br/>exactly one pod may proceed</i>"]
+        T0 --> T1["11 · <b>metric-level roll-up</b> — one pass for the whole run<br/><i>a computation, not an accumulation: no lock, idempotent<br/>already built as MetricLevelRollupService — needs the run's<br/>job ids persisted so the finisher can select its transactions</i>"]
+        T1 --> T2["12 · EOD carry-forward<br/>attribute → instrument → <b>metric</b><br/><i>must follow step 11 — see note</i>"]
+        T2 --> T3["13 · advance ExecutionState.executionDate"]
+        T3 --> T4["14 · COMPLETED, or PARTIAL_SUCCESS<br/>if any chunk failed"]
+    end
+
+    TAIL --> DONE(["Finished"])
+
+    ORDER["<b>Why 11 must precede 12</b><br/>The metric carry-forward reads MetricLevelLtd and rolls forward anything with exactly one row<br/>since the last posting date. Run it first and every metric looks like it had no activity today —<br/>you get a bogus zero row, and then the roll-up lands and there are two rows for the same date."]
+
+    NOTE["<b>What is deliberately NOT here</b><br/>· No per-chunk metric roll-up — that was the ~16,000 serialized job launches at 8M, and the reason the lock existed.<br/>· No per-instrument messages — 8M messages and 16M Spring Batch job launches cost more than they save.<br/>· No coordinator polling for completion — the counter elects the finisher, so no pod is a single point of failure."]
+
+    classDef queue fill:#eef2f8,stroke:#6b86ab,color:#1c2b3a
+    classDef warn fill:#fdf1ec,stroke:#b8755a,color:#3a2115
+    classDef note fill:#fdf8ec,stroke:#b8985a,color:#3a2e15
+    classDef ends fill:#e8eef7,stroke:#5b7fa6,color:#1c2b3a
+    class Q1 queue
+    class ORDER warn
+    class NOTE note
+    class U,DONE ends
