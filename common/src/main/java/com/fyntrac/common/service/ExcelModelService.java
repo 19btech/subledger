@@ -385,6 +385,44 @@ public class ExcelModelService {
      */
     public void generateEventAndDispatch(int postingDate,
                                          java.util.function.Consumer<Set<String>> batchConsumer) throws Exception {
+        boolean sharedReferenceEventsExist = saveSharedReferenceEvents(postingDate);
+        generateEventAndDispatch(postingDate, null, null, sharedReferenceEventsExist, batchConsumer);
+    }
+
+    /**
+     * Writes the run's reference-table events once, before any batch is dispatched, so every batch's
+     * model execution finds them — see buildSharedReferenceEvents(). A distributed run
+     * (TARGET_DESIGN_DISTRIBUTED_RUN.md) calls this on the coordinator only, then hands the result
+     * to every chunk.
+     *
+     * @return whether any shared reference event exists for this posting date
+     */
+    public boolean saveSharedReferenceEvents(int postingDate) {
+        final String tenant = TenantContextHolder.getTenant();
+        final List<EventConfiguration> configurationList = TenantContextHolder.runWithTenant(tenant,
+                () -> eventConfigurationRepo.findByIsActiveOrderByPriorityAsc(true));
+        final List<Event> sharedReferenceEvents = TenantContextHolder.runWithTenant(tenant,
+                () -> buildSharedReferenceEvents(postingDate, configurationList));
+        if (!sharedReferenceEvents.isEmpty()) {
+            TenantContextHolder.runWithTenant(tenant, () -> {
+                eventRepository.saveAll(sharedReferenceEvents);
+                return null;
+            });
+            log.info("Saved {} shared reference-table events for tenant {} postingDate {}",
+                    sharedReferenceEvents.size(), tenant, postingDate);
+        }
+        return !sharedReferenceEvents.isEmpty();
+    }
+
+    /**
+     * Same as {@link #generateEventAndDispatch(int, java.util.function.Consumer)}, restricted to the
+     * active instruments with {@code fromExclusive < instrumentId <= toInclusive} (either bound null =
+     * unbounded) — one chunk of a distributed run. Shared reference events are not written here; the
+     * caller says whether they exist.
+     */
+    public void generateEventAndDispatch(int postingDate, String fromExclusive, String toInclusive,
+                                         boolean sharedReferenceEventsExist,
+                                         java.util.function.Consumer<Set<String>> batchConsumer) throws Exception {
         final String tenant = TenantContextHolder.getTenant();
 
         // ── Cursor (keyset) pagination by instrumentId ────────────────────────────
@@ -402,7 +440,7 @@ public class ExcelModelService {
         // once with its complete active attribute set.
         int pageNumber = 0;
         final int pageSize = this.pageSize;
-        String cursorInstrumentId = null;   // last instrumentId fully processed
+        String cursorInstrumentId = fromExclusive;   // last instrumentId fully processed
 
         // Batch dispatch used to run inline in this loop: batchConsumer.accept() (dispatch to
         // Python/Excel model service, then block waiting for its completion — the genuinely slow
@@ -419,11 +457,12 @@ public class ExcelModelService {
         AtomicLong lastDispatchProgressNanos = new AtomicLong(System.nanoTime());
         // Bounds how many of the above run at once — see the field comment on
         // maxConcurrentBatchDispatch for why an unbounded thundering herd caused real timeouts.
-        Semaphore batchDispatchLimiter = new Semaphore(Math.max(1, maxConcurrentBatchDispatch));
+        // Pod-wide, not per call: a distributed run processes several chunks on one pod at once.
+        Semaphore batchDispatchLimiter = batchDispatchLimiter();
         // Bounds how many instrument groups within one page run concurrently — see the field
         // comment on maxConcurrentInstrumentGroups for why unbounded page-wide concurrency
-        // exhausted the tenant's MongoDB connection pool.
-        Semaphore instrumentGroupLimiter = new Semaphore(Math.max(1, maxConcurrentInstrumentGroups));
+        // exhausted the tenant's MongoDB connection pool. Pod-wide for the same reason.
+        Semaphore instrumentGroupLimiter = instrumentGroupLimiter();
 
         // The active EventConfiguration list is the same for every instrument in this entire run
         // (same tenant, same postingDate) — processInstrumentGroup() used to re-fetch it on every
@@ -432,26 +471,11 @@ public class ExcelModelService {
         final List<EventConfiguration> configurationList = TenantContextHolder.runWithTenant(tenant,
                 () -> eventConfigurationRepo.findByIsActiveOrderByPriorityAsc(true));
 
-        // Reference-table events are written once for the run, before any batch is dispatched, so
-        // every batch's model execution finds them — see buildSharedReferenceEvents().
-        final List<Event> sharedReferenceEvents = TenantContextHolder.runWithTenant(tenant,
-                () -> buildSharedReferenceEvents(postingDate, configurationList));
-        if (!sharedReferenceEvents.isEmpty()) {
-            TenantContextHolder.runWithTenant(tenant, () -> {
-                eventRepository.saveAll(sharedReferenceEvents);
-                return null;
-            });
-            log.info("Saved {} shared reference-table events for tenant {} postingDate {}",
-                    sharedReferenceEvents.size(), tenant, postingDate);
-        }
-
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
             while (true) {
                 final int currentPage = pageNumber;
                 final String cursor = cursorInstrumentId;
-                final PageRequest limit =
-                        PageRequest.of(0, pageSize, Sort.by(Sort.Direction.ASC, "instrumentId"));
 
                 // Page-level timing breakdown (fetch / event-gen / save) so a slowdown can be
                 // pinned to a specific phase instead of inferred from gaps between "Saved N
@@ -461,10 +485,7 @@ public class ExcelModelService {
                 long pageStartNanos = System.nanoTime();
 
                 List<InstrumentAttribute> attributes = TenantContextHolder.runWithTenant(tenant,
-                        () -> cursor == null
-                                ? instrumentRepo.findActiveOrderedByInstrumentId(limit)
-                                : instrumentRepo.findActiveAfterInstrumentId(cursor, limit)
-                );
+                        () -> findActivePage(cursor, toInclusive, pageSize));
                 long fetchDoneNanos = System.nanoTime();
 
                 if (attributes == null || attributes.isEmpty()) break;
@@ -576,7 +597,7 @@ public class ExcelModelService {
                 // A shared reference-table event applies to every instrument, exactly as the
                 // per-instrument copy it replaces did — so when one exists, every instrument on the
                 // page has an event, same as before that copy was deduplicated.
-                Set<String> instrumentIdsWithEvents = !sharedReferenceEvents.isEmpty()
+                Set<String> instrumentIdsWithEvents = sharedReferenceEventsExist
                         ? pageInstrumentIds
                         : pageEvents.stream()
                         .map(Event::getInstrumentId)
@@ -622,6 +643,48 @@ public class ExcelModelService {
             log.error("Event generation failed for tenant {}", tenant, ex);
             throw new RuntimeException("Event generation failed for tenant " + tenant, ex);
         }
+    }
+
+    // One keyset page of active InstrumentAttribute rows: instrumentId > afterExclusive (null = from
+    // the start) and <= toInclusive (null = to the end), ascending. Same filter and order as
+    // findActiveOrderedByInstrumentId / findActiveAfterInstrumentId, plus the chunk's upper bound.
+    private List<InstrumentAttribute> findActivePage(String afterExclusive, String toInclusive, int limit) {
+        Criteria criteria = Criteria.where("endDate").is(null);
+        if (afterExclusive != null || toInclusive != null) {
+            Criteria range = Criteria.where("instrumentId");
+            if (afterExclusive != null) range = range.gt(afterExclusive);
+            if (toInclusive != null) range = range.lte(toInclusive);
+            criteria = new Criteria().andOperator(criteria, range);
+        }
+        Query query = new Query(criteria)
+                .with(Sort.by(Sort.Direction.ASC, "instrumentId"))
+                .limit(limit);
+        return this.dataService.getMongoTemplate().find(query, InstrumentAttribute.class);
+    }
+
+    private volatile Semaphore batchDispatchLimiter;
+    private volatile Semaphore instrumentGroupLimiter;
+
+    private Semaphore batchDispatchLimiter() {
+        if (batchDispatchLimiter == null) {
+            synchronized (this) {
+                if (batchDispatchLimiter == null) {
+                    batchDispatchLimiter = new Semaphore(Math.max(1, maxConcurrentBatchDispatch));
+                }
+            }
+        }
+        return batchDispatchLimiter;
+    }
+
+    private Semaphore instrumentGroupLimiter() {
+        if (instrumentGroupLimiter == null) {
+            synchronized (this) {
+                if (instrumentGroupLimiter == null) {
+                    instrumentGroupLimiter = new Semaphore(Math.max(1, maxConcurrentInstrumentGroups));
+                }
+            }
+        }
+        return instrumentGroupLimiter;
     }
 
     static List<Set<String>> splitIntoBatches(Set<String> ids, int batchSize) {

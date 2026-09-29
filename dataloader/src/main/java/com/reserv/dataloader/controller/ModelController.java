@@ -15,6 +15,8 @@ import com.reserv.dataloader.service.DataloaderExcelFileService;
 import com.reserv.dataloader.service.ModelUploadService;
 import com.reserv.dataloader.service.model.EventConfigurationValidator;
 import com.reserv.dataloader.service.model.ModelExecutionService;
+import com.reserv.dataloader.service.model.run.DistributedRunService;
+import com.reserv.dataloader.service.model.run.TenantExecutionLock;
 import com.reserv.dataloader.service.model.workflow.WorkflowExecutionFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +45,8 @@ public class ModelController {
     private final com.fyntrac.common.service.ExecutionStateService executionStateService;
     private final com.fyntrac.common.repository.ModelExecutionBatchLogRepository modelExecutionBatchLogRepository;
     private final WorkflowExecutionFactory workflowExecutionFactory;
+    private final TenantExecutionLock tenantExecutionLock;
+    private final DistributedRunService distributedRunService;
 
     @Autowired
     public ModelController(DataloaderExcelFileService fileService
@@ -52,7 +56,9 @@ public class ModelController {
             , ExcelModelService excelModelService
             , com.fyntrac.common.service.ExecutionStateService executionStateService
             , com.fyntrac.common.repository.ModelExecutionBatchLogRepository modelExecutionBatchLogRepository
-            , WorkflowExecutionFactory workflowExecutionFactory) {
+            , WorkflowExecutionFactory workflowExecutionFactory
+            , TenantExecutionLock tenantExecutionLock
+            , DistributedRunService distributedRunService) {
         this.fileService = fileService;
         this.modelService = modelServicen;
         this.modelUploadService = modelUploadService;
@@ -61,6 +67,8 @@ public class ModelController {
         this.executionStateService = executionStateService;
         this.modelExecutionBatchLogRepository = modelExecutionBatchLogRepository;
         this.workflowExecutionFactory = workflowExecutionFactory;
+        this.tenantExecutionLock = tenantExecutionLock;
+        this.distributedRunService = distributedRunService;
     }
 
     // Upload endpoint
@@ -247,7 +255,8 @@ public class ModelController {
     @PostMapping("/execute")
     public ResponseEntity<String> executeModel(@RequestBody Records.DateRequestRecord dateRequestRecord) throws Exception {
         String tenant = TenantContextHolder.getTenant();
-        if (!modelExecutionService.tryAcquireExecutionLock(tenant)) {
+        Optional<String> lockToken = tenantExecutionLock.tryAcquire(tenant);
+        if (lockToken.isEmpty()) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body("A model execution is already running for tenant [" + tenant + "]. Please wait for it to complete.");
         }
@@ -269,24 +278,68 @@ public class ModelController {
         } catch (Throwable e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } finally {
-            modelExecutionService.releaseExecutionLock(tenant);
+            tenantExecutionLock.release(tenant, lockToken.get());
         }
     }
 
+    /**
+     * Runs the DSL model for one posting date.
+     *
+     * <p>By default the request returns when the run has finished, as it always has. With
+     * {@code async=true} it returns 202 with the run id straight away; poll
+     * {@code GET /execution/{runId}}. Use async for large tenants: an 8M-instrument run takes hours,
+     * longer than any load balancer or ingress keeps an idle request open.
+     *
+     * <p>With {@code fyntrac.run.distributed=true} the run's chunks are processed by every dataloader
+     * pod and finished by whichever completes the last one; this pod only plans the run (and, when
+     * synchronous, waits for it).
+     */
     @PostMapping("/execute/dsl")
-    public ResponseEntity<String> executeDslModel(@RequestBody Records.DateRequestRecord dateRequestRecord) throws Exception {
+    public ResponseEntity<?> executeDslModel(@RequestBody Records.DateRequestRecord dateRequestRecord,
+                                             @RequestParam(name = "async", defaultValue = "false") boolean async) throws Exception {
         String tenant = TenantContextHolder.getTenant();
-        if (!modelExecutionService.tryAcquireExecutionLock(tenant)) {
+        Optional<String> lockToken = tenantExecutionLock.tryAcquire(tenant);
+        if (lockToken.isEmpty()) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body("A model execution is already running for tenant [" + tenant + "]. Please wait for it to complete.");
         }
+        String runId = UUID.randomUUID().toString();
+        boolean handedOff = false;
         try {
+            tenantExecutionLock.attachRun(tenant, lockToken.get(), runId);
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
             Date executionDate = DateUtil.parseDate(dateRequestRecord.date(), formatter);
             int postingDate = DateUtil.dateInNumber(executionDate);
 
-            workflowExecutionFactory.execute("DSL", tenant, postingDate);
+            if (async) {
+                String token = lockToken.get();
+                Thread.ofVirtual().name("dsl-run-" + runId).start(() -> TenantContextHolder.runWithTenant(tenant, () -> {
+                    try {
+                        workflowExecutionFactory.start("DSL", tenant, postingDate, runId);
+                    } catch (Throwable e) {
+                        log.error("DSL run {} for tenant {} failed to start: {}", runId, tenant, e.getMessage(), e);
+                    } finally {
+                        // A distributed run is released by the pod that finishes it; a single-pod run
+                        // is finished by now.
+                        if (!distributedRunService.isEnabled()) {
+                            tenantExecutionLock.release(tenant, token);
+                        }
+                    }
+                }));
+                handedOff = true;
+                return ResponseEntity.status(HttpStatus.ACCEPTED)
+                        .body(Map.of("runId", runId, "tenant", tenant, "postingDate", postingDate,
+                                "status", "/api/dataloader/model/execution/" + runId));
+            }
 
+            workflowExecutionFactory.start("DSL", tenant, postingDate, runId);
+            String status = distributedRunService.isEnabled()
+                    ? distributedRunService.awaitFinalStatus(tenant, runId)
+                    : distributedRunService.runStatus(tenant, runId).getString("status");
+            if ("FAILED".equals(status)) {
+                return ResponseEntity.badRequest().body("Error: dsl model execution " + runId + " failed for: "
+                        + dateRequestRecord.date() + " - " + distributedRunService.runStatus(tenant, runId).getString("errorMessage"));
+            }
             return ResponseEntity.ok("dsl model execution initiated and completed for: " + dateRequestRecord.date());
         } catch (IllegalArgumentException e) {
             log.error(StringUtil.getStackTrace(e));
@@ -298,8 +351,29 @@ public class ModelController {
         } catch (Throwable e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } finally {
-            modelExecutionService.releaseExecutionLock(tenant);
+            if (!handedOff) {
+                tenantExecutionLock.release(tenant, lockToken.get());
+            }
         }
+    }
+
+    /** A run's record: status, batch counters and, for a distributed run, chunk counters. */
+    @GetMapping("/execution/{runId}")
+    public ResponseEntity<?> getExecution(@PathVariable String runId) {
+        org.bson.Document run = distributedRunService.runStatus(TenantContextHolder.getTenant(), runId);
+        return run == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(run);
+    }
+
+    /**
+     * Clears the tenant's execution lock. Only for a run that will never finish (all its pods died);
+     * a lock frees itself when its run reaches a final status.
+     */
+    @DeleteMapping("/execution-lock")
+    public ResponseEntity<String> forceReleaseExecutionLock() {
+        String tenant = TenantContextHolder.getTenant();
+        boolean released = tenantExecutionLock.forceRelease(tenant);
+        log.warn("Execution lock for tenant {} force-released by request (held: {})", tenant, released);
+        return ResponseEntity.ok(released ? "released" : "not held");
     }
 
 

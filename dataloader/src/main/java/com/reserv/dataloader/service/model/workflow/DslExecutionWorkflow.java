@@ -2,6 +2,7 @@ package com.reserv.dataloader.service.model.workflow;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fyntrac.common.config.TenantContextHolder;
 import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.Errors;
@@ -23,13 +24,19 @@ import com.reserv.dataloader.pulsar.producer.PythonModelExecutionProducer;
 import com.reserv.dataloader.service.AggregationExecutionService;
 import com.reserv.dataloader.service.MetricLevelRollupService;
 import com.reserv.dataloader.service.model.ModelExecutionService;
+import com.reserv.dataloader.service.model.run.DistributedRunService;
+import com.reserv.dataloader.service.model.run.RunChunkMessage;
+import com.reserv.dataloader.service.model.run.RunChunkQueue;
+import com.reserv.dataloader.service.model.run.TenantExecutionLock;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
@@ -46,6 +53,8 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
     private final GeneralLedgerMessageProducer generalLedgerMessageProducer;
     private final ErrorService errorService;
     private final MetricLevelRollupService metricLevelRollupService;
+    private final DistributedRunService distributedRunService;
+    private final TenantExecutionLock tenantExecutionLock;
 
     public DslExecutionWorkflow(ExecutionInstanceRepository executionInstanceRepository,
                                 ModelExecutionService modelExecutionService,
@@ -57,7 +66,9 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
                                 ExecutionStateService executionStateService,
                                 GeneralLedgerMessageProducer generalLedgerMessageProducer,
                                 ErrorService errorService,
-                                MetricLevelRollupService metricLevelRollupService) {
+                                MetricLevelRollupService metricLevelRollupService,
+                                DistributedRunService distributedRunService,
+                                TenantExecutionLock tenantExecutionLock) {
         super(executionInstanceRepository);
         this.modelExecutionService = modelExecutionService;
         this.excelModelService = excelModelService;
@@ -69,6 +80,8 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
         this.generalLedgerMessageProducer = generalLedgerMessageProducer;
         this.errorService = errorService;
         this.metricLevelRollupService = metricLevelRollupService;
+        this.distributedRunService = distributedRunService;
+        this.tenantExecutionLock = tenantExecutionLock;
     }
 
     @Override
@@ -82,17 +95,140 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
     }
 
     @Override
-    protected void generateAndProcessEvents(ExecutionInstance instance, String tenant, int postingDate) throws Throwable {
-        Date executionDate = DateUtil.convertToDateFromYYYYMMDD(postingDate);
-        AtomicInteger batchCounter = new AtomicInteger(0);
+    protected boolean tailRunsElsewhere() {
+        return distributedRunService.isEnabled();
+    }
 
+    @Override
+    protected void generateAndProcessEvents(ExecutionInstance instance, String tenant, int postingDate) throws Throwable {
+        if (distributedRunService.isEnabled()) {
+            startDistributedRun(instance, tenant, postingDate);
+            return;
+        }
+        BatchProcessor batches = new BatchProcessor(instance, tenant, postingDate, "");
+        excelModelService.generateEventAndDispatch(postingDate, batches::process);
+    }
+
+    // ── Distributed run (TARGET_DESIGN_DISTRIBUTED_RUN.md) ─────────────────────
+    // The coordinator — this pod — writes the shared reference events, cuts the instruments into
+    // chunks and publishes them. Any dataloader pod (this one included) takes chunks and, for its
+    // instruments only, generates events, dispatches batches to the model workers and runs the
+    // per-batch roll-up and GL sync — the same BatchProcessor as a single-pod run. The pod whose
+    // chunk completes the run runs the tail: metric roll-up, EOD, final status.
+
+    private void startDistributedRun(ExecutionInstance instance, String tenant, int postingDate) throws Exception {
+        boolean sharedReferenceEventsExist = excelModelService.saveSharedReferenceEvents(postingDate);
+        List<RunChunkMessage> chunks = distributedRunService.plan(tenant, instance.getId(), postingDate,
+                sharedReferenceEventsExist);
+        if (chunks.isEmpty()) {
+            // Nothing to hand out; the tail (carry-forward, date advance) still runs.
+            if (distributedRunService.tryFinalize(tenant, instance.getId())) {
+                finishRun(tenant, instance.getId());
+            }
+            return;
+        }
+        distributedRunService.publish(chunks);
+    }
+
+    /** Handles one chunk of a distributed run, on whichever pod received it. */
+    public RunChunkQueue.Outcome processChunk(RunChunkMessage chunk) {
+        return TenantContextHolder.runWithTenant(chunk.tenantId(), () -> processChunkInTenant(chunk));
+    }
+
+    private RunChunkQueue.Outcome processChunkInTenant(RunChunkMessage chunk) {
+        String tenant = chunk.tenantId();
+        switch (distributedRunService.claim(chunk)) {
+            case ALREADY_FINISHED:
+                return RunChunkQueue.Outcome.ACK;
+            case OWNED_ELSEWHERE:
+                return RunChunkQueue.Outcome.RETRY_LATER;
+            case OWNER_LOST: {
+                // Its batches may have been partly processed (transactions written, some rolled up
+                // and booked). Re-running the chunk would count those twice, so it is failed: the run
+                // ends PARTIAL_SUCCESS and the posting date needs a re-run, which cleans it first.
+                String error = "Chunk " + chunk.seq() + " was abandoned by the pod processing it; its instruments ("
+                        + chunk.fromExclusive() + ", " + chunk.toInclusive() + "] may be partially processed "
+                        + "- re-run the posting date";
+                executionInstanceRepository.findById(chunk.runId()).ifPresent(instance ->
+                        recordBatchFailure(tenant, instance, -1, chunk.runId() + "_chunk_" + chunk.seq(),
+                                new IllegalStateException(error)));
+                if (distributedRunService.finishChunk(chunk, false, true, error)) {
+                    finishRun(tenant, chunk.runId());
+                }
+                return RunChunkQueue.Outcome.ACK;
+            }
+            default:
+                break;
+        }
+
+        ExecutionInstance instance = executionInstanceRepository.findById(chunk.runId()).orElse(null);
+        boolean failed = false;
+        String error = null;
+        long startNanos = System.nanoTime();
+        if (instance == null) {
+            failed = true;
+            error = "Run " + chunk.runId() + " not found";
+            log.error("Chunk {}: {}", chunk.chunkId(), error);
+        } else {
+            try {
+                BatchProcessor batches = new BatchProcessor(instance, tenant, chunk.postingDate(), "c" + chunk.seq() + "_");
+                excelModelService.generateEventAndDispatch(chunk.postingDate(), chunk.fromExclusive(),
+                        chunk.toInclusive(), chunk.sharedReferenceEventsExist(), batches::process);
+            } catch (Exception e) {
+                failed = true;
+                error = e.getMessage();
+                recordBatchFailure(tenant, instance, -1, chunk.runId() + "_chunk_" + chunk.seq(), e);
+            }
+        }
+        log.info("Run {} chunk {} processed on {} in {} ms{}", chunk.runId(), chunk.seq(),
+                distributedRunService.podName(), TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos),
+                failed ? " (FAILED: " + error + ")" : "");
+        if (distributedRunService.finishChunk(chunk, true, failed, error)) {
+            finishRun(tenant, chunk.runId());
+        }
+        return RunChunkQueue.Outcome.ACK;
+    }
+
+    // Runs the tail on the pod that won the run's finalization, then frees the tenant's lock.
+    private void finishRun(String tenant, String runId) {
+        ExecutionInstance instance = executionInstanceRepository.findById(runId).orElse(null);
+        if (instance == null) {
+            log.error("Run {} not found when finishing it", runId);
+            return;
+        }
+        log.info("Finishing run {} (tenant {}, postingDate {}) on {}", runId, tenant, instance.getPostingDate(),
+                distributedRunService.podName());
+        completeRun(instance);
+        tenantExecutionLock.releaseForRun(tenant, runId);
+    }
+
+    /**
+     * Per-batch work for one run (single-pod) or one chunk (distributed): dispatch to the model
+     * workers, await the result, instrument-scoped roll-up, then GL sync and progress bookkeeping.
+     */
+    private final class BatchProcessor {
+        private final ExecutionInstance instance;
+        private final String tenant;
+        private final int postingDate;
+        private final Date executionDate;
+        // Distinguishes batch correlation ids across the chunks of one run.
+        private final String batchPrefix;
+        private final AtomicInteger batchCounter = new AtomicInteger(0);
         // Serializes GL sync + progress/failure bookkeeping across concurrently-processing batches —
         // see the lock() call below for why.
-        java.util.concurrent.locks.ReentrantLock aggregationLock = new java.util.concurrent.locks.ReentrantLock();
+        private final java.util.concurrent.locks.ReentrantLock aggregationLock = new java.util.concurrent.locks.ReentrantLock();
 
-        excelModelService.generateEventAndDispatch(postingDate, batch -> {
+        BatchProcessor(ExecutionInstance instance, String tenant, int postingDate, String batchPrefix) {
+            this.instance = instance;
+            this.tenant = tenant;
+            this.postingDate = postingDate;
+            this.executionDate = DateUtil.convertToDateFromYYYYMMDD(postingDate);
+            this.batchPrefix = batchPrefix;
+        }
+
+        void process(Set<String> batch) {
             int batchNumber = batchCounter.getAndIncrement();
-            String correlationId = instance.getId() + "_batch_" + batchNumber;
+            String correlationId = instance.getId() + "_batch_" + batchPrefix + batchNumber;
 
             // Dispatch-to-Python + awaitCompletion (the genuinely slow part) run outside the lock,
             // fully concurrently across batches, same as before. Any failure here — dispatch,
@@ -179,9 +315,9 @@ public class DslExecutionWorkflow extends AbstractExecutionWorkflow {
             } finally {
                 aggregationLock.unlock();
             }
-        });
+        }
     }
-    
+
     /**
      * Logs a single batch's failure and persists it to the Errors collection so it survives past
      * this JVM's log retention — same reasoning as AggregationExecutionService.recordJobFailure.

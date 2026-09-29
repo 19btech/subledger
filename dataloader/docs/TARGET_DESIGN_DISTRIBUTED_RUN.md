@@ -1,8 +1,8 @@
 # Target design — distributing a model run across dataloader pods
 
 Written 2026-09-23, updated the same day after the single-pod work landed. Supersedes the
-range-based sketch; this is the version to build — **not started**. Its prerequisites and correctness
-requirements are all in place; what remains is the fan-out itself. See [Status](#status-2026-09-23).
+range-based sketch. **Built 2026-09-29** — see [Implementation](#implementation-2026-09-29); the
+prerequisites and correctness requirements it relies on are in [Status](#status-2026-09-23).
 
 Read `RUN_PIPELINE_EXPLAINED.md` first — it describes how the run works today and why the two
 bottlenecks are what they are. `EVENT_GENERATION_SCALING_PLAN.md` holds the sequencing.
@@ -32,6 +32,30 @@ coordinator pod
 **The unit of work is a chunk of instruments (~500–2,000), not one instrument.** An instrument is
 the right *partition key* — it is what makes steps 1–3 safe to run anywhere — but it is the wrong
 *message granularity*. See "Why chunks, not single instruments" below.
+
+## Implementation (2026-09-29)
+
+Enabled by `fyntrac.run.distributed` (env `FYNTRAC_RUN_DISTRIBUTED`; `true` in `k8s/base/dataloader.yaml`,
+default `false` in code). Code in `dataloader/.../service/model/run/`:
+
+| piece | what it does |
+|---|---|
+| `DistributedRunService` | coordinator: one ordered pass over active `InstrumentAttribute` ids cuts `fyntrac.run.chunk-size` (5,000) instruments per chunk, records them in `ExecutionRunChunk` and `totalChunks` on the run **before** publishing; owner: `claim` (PLANNED→IN_PROGRESS CAS), 30 s heartbeat, `finishChunk` (→DONE/FAILED CAS, then `$inc completedChunks` — a failed chunk also `$inc failedBatches`); `tryFinalize` CAS elects the finisher |
+| `RunChunkQueue` / `RunChunkConsumer` | topic `fyntrac-run-chunk`, Shared, zero-size receiver queue, `fyntrac.run.chunks-per-pod` (2) consumers per pod; **producer batching off** (a zero-queue consumer is closed by the client on a batched message); ack only after the chunk is finished |
+| `TenantExecutionLock` | one run per tenant across pods (`ExecutionLock`); frees itself when its run reaches a final status |
+| `DslExecutionWorkflow` | coordinator plans + publishes; `processChunk` runs the same per-batch processing as a single-pod run for its instrument range (`ExcelModelService.generateEventAndDispatch(postingDate, from, to, …)`); the finisher runs `completeRun` (metric roll-up, EOD, final status) |
+
+`POST /execute/dsl?async=true` returns the run id at once (poll `GET /execution/{runId}`); without it the
+request still returns when the run is finished. Dispatch and instrument-group limits are pod-wide.
+
+A chunk whose owner stops heartbeating (`fyntrac.run.chunk-stale-seconds`, 300) is **failed, not retried**:
+its batches may be partly written, so the run ends `PARTIAL_SUCCESS` and the posting date needs a re-run.
+A coordinator dying mid-publish leaves the run open until the lock's max age (24 h) or
+`DELETE /execution-lock`.
+
+Verified 2026-09-29 on Hearst P4 with 2 dataloader replicas: all output collections and EventHistory
+identical to the single-pod baseline; 13/14 chunks per date split 6/7 and 7/7 across the pods. No
+speed-up on the one-node dev box, where the dsl-model workers were already the limit.
 
 ## Status (2026-09-23)
 

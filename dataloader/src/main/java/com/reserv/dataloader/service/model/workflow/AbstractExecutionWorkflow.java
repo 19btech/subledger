@@ -34,7 +34,17 @@ public abstract class AbstractExecutionWorkflow {
      * The Template Method governing the execution flow.
      */
     public final void executeWorkflow(String tenant, int postingDate) throws Throwable {
-        ExecutionInstance instance = initializeInstance(tenant, postingDate);
+        startWorkflow(tenant, postingDate, UUID.randomUUID().toString());
+    }
+
+    /**
+     * Runs the workflow under the given run id. When {@link #tailRunsElsewhere()} is true, this
+     * returns once the run's work has been handed out: post-processing, EOD and the final status
+     * are then done by whichever pod completes the run's last chunk, through {@link #completeRun}
+     * (TARGET_DESIGN_DISTRIBUTED_RUN.md). Otherwise the whole run happens here, as before.
+     */
+    public final ExecutionInstance startWorkflow(String tenant, int postingDate, String runId) throws Throwable {
+        ExecutionInstance instance = initializeInstance(runId, tenant, postingDate);
         log.info("Starting execution workflow: instanceId={} tenant={} postingDate={}", instance.getId(), tenant, postingDate);
 
         try {
@@ -45,27 +55,18 @@ public abstract class AbstractExecutionWorkflow {
                 instance.setEndTime(new Date());
                 updateStatus(instance, "COMPLETED");
                 log.info("Workflow execution halted gracefully by pre-process rules.");
-                return;
+                return instance;
             }
 
             // 2. Event Generation and Processing
             updateStatus(instance, "GENERATING_EVENTS");
             generateAndProcessEvents(instance, tenant, postingDate);
+            if (tailRunsElsewhere()) {
+                return instance;
+            }
 
-            // 3. Post Processing
-            updateStatus(instance, "POST_PROCESSING");
-            postProcess(instance, tenant, postingDate);
-
-            // 4. End Of Day
-            updateStatus(instance, "EOD_PROCESSING");
-            performEOD(instance);
-
-            // Complete — a batch that hit its own catch block (see DslExecutionWorkflow) doesn't
-            // throw here anymore, so this "success" path is also where a degraded run surfaces.
-            instance.setEndTime(new Date());
-            refreshCounters(instance);
-            boolean hadFailedBatches = instance.getFailedBatches() != null && instance.getFailedBatches() > 0;
-            updateStatus(instance, hadFailedBatches ? "PARTIAL_SUCCESS" : "COMPLETED");
+            runTail(instance, tenant, postingDate);
+            return instance;
 
         } catch (Exception e) {
             handleFailure(instance, e);
@@ -73,9 +74,44 @@ public abstract class AbstractExecutionWorkflow {
         }
     }
 
-    private ExecutionInstance initializeInstance(String tenant, int postingDate) {
+    /**
+     * Finishes a run whose batches were processed on other pods: post-processing, EOD and the final
+     * status. Called by exactly one pod — the one that completed the run's last chunk. Never throws;
+     * a failure marks the run FAILED.
+     */
+    public final void completeRun(ExecutionInstance instance) {
+        try {
+            runTail(instance, instance.getTenantId(), instance.getPostingDate());
+        } catch (Exception e) {
+            handleFailure(instance, e);
+        }
+    }
+
+    private void runTail(ExecutionInstance instance, String tenant, int postingDate) {
+        // 3. Post Processing
+        updateStatus(instance, "POST_PROCESSING");
+        postProcess(instance, tenant, postingDate);
+
+        // 4. End Of Day
+        updateStatus(instance, "EOD_PROCESSING");
+        performEOD(instance);
+
+        // Complete — a batch that hit its own catch block (see DslExecutionWorkflow) doesn't
+        // throw here anymore, so this "success" path is also where a degraded run surfaces.
+        instance.setEndTime(new Date());
+        refreshCounters(instance);
+        boolean hadFailedBatches = instance.getFailedBatches() != null && instance.getFailedBatches() > 0;
+        updateStatus(instance, hadFailedBatches ? "PARTIAL_SUCCESS" : "COMPLETED");
+    }
+
+    /** True when {@link #generateAndProcessEvents} hands the run to other pods instead of finishing it. */
+    protected boolean tailRunsElsewhere() {
+        return false;
+    }
+
+    private ExecutionInstance initializeInstance(String runId, String tenant, int postingDate) {
         ExecutionInstance instance = ExecutionInstance.builder()
-                .id(UUID.randomUUID().toString())
+                .id(runId)
                 .tenantId(tenant)
                 .postingDate(postingDate)
                 .modelType(getModelType())
@@ -94,7 +130,7 @@ public abstract class AbstractExecutionWorkflow {
         mongoTemplate.updateFirst(byId(instance), update, ExecutionInstance.class);
     }
 
-    private void handleFailure(ExecutionInstance instance, Exception e) {
+    protected void handleFailure(ExecutionInstance instance, Exception e) {
         log.error("Orchestration failed for instance {}: {}", instance.getId(), e.getMessage());
         instance.setStatus("FAILED");
         instance.setErrorMessage(e.getMessage());

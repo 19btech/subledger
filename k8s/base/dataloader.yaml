@@ -4,8 +4,8 @@ metadata:
   name: dataloader
   namespace: fyntrac
 spec:
-  # 2 replicas so a LoadBalancer Service actually has something to balance across —
-  # see docs/K8S_SCALING_STRATEGY.md for what this does and doesn't parallelize today.
+  # 2 replicas: requests are balanced across them, and with FYNTRAC_RUN_DISTRIBUTED (below) every
+  # replica also works each DSL run's chunks. Add replicas to spread event generation further.
   replicas: 2
   selector:
     matchLabels:
@@ -92,6 +92,19 @@ spec:
             # 3.9+/4 busy (Hearst P4, 2026-09-23).
             - name: FYNTRAC_BATCH_MAX_CONCURRENT_DISPATCH
               value: "16"
+            # Distributed DSL runs (dataloader/docs/TARGET_DESIGN_DISTRIBUTED_RUN.md): a run is cut
+            # into chunks of FYNTRAC_RUN_CHUNK_SIZE instruments that every dataloader replica takes
+            # from the fyntrac-run-chunk queue, FYNTRAC_RUN_CHUNKS_PER_POD at a time; the replica
+            # that completes the last chunk runs metric roll-up + EOD. Verified 2026-09-29 on Hearst
+            # P4 with 2 replicas: all output collections identical to the single-pod baseline,
+            # chunks split 6/7 and 7/7 across the pods. Dispatch slots (above) are per pod, so
+            # batches in flight = replicas x FYNTRAC_BATCH_MAX_CONCURRENT_DISPATCH.
+            - name: FYNTRAC_RUN_DISTRIBUTED
+              value: "true"
+            - name: FYNTRAC_RUN_CHUNK_SIZE
+              value: "5000"
+            - name: FYNTRAC_RUN_CHUNKS_PER_POD
+              value: "2"
             - name: ZITADEL_ISSUER_URI
               valueFrom:
                 secretKeyRef:
