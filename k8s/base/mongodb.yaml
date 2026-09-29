@@ -23,7 +23,15 @@ spec:
           # MONGO_INITDB_ROOT_* user bootstrap. Overriding it left mongod listening
           # only on 127.0.0.1 (unreachable from other pods, though the in-container
           # readiness probe still passed) and with no root user ever created.
-          args: ["--wiredTigerCacheSizeGB", "1.5"]
+          # Plan cache: the classic cache is capped only per collection (default 5000 entries);
+          # a Hearst case left ~1,900 one-off shapes (~1.8MB each, 3.4GB) on the LTD collections
+          # and mongod was OOMKilled. planCacheSize only bounds the SBE cache, so it doesn't help.
+          # tcmallocReleaseRate (8.x: bytes/sec) returns freed memory to the OS; the 8.x
+          # default of 0 kept RSS at its peak after every run.
+          args: ["--wiredTigerCacheSizeGB", "1.5",
+                 "--setParameter", "internalQueryCacheMaxEntriesPerCollection=100",
+                 "--setParameter", "internalQueryCacheMaxSizeBytesBeforeStripDebugInfo=67108864",
+                 "--setParameter", "tcmallocReleaseRate=20971520"]
           ports:
             - containerPort: 27017
           env:
