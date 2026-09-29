@@ -45,6 +45,28 @@ class SubledgerMappingValidatorTest {
         assertDoesNotThrow(() -> validator.validate(item, validTxNames, validAccSubTypes));
     }
 
+    // The step reads a whole chunk before validating it; each row must keep its own raw SIGN /
+    // ENTRYTYPE (they used to share one ThreadLocal holding the last-read row, turning every
+    // mapping in the chunk into that row's entry type).
+    @Test
+    void validate_ChunkReadBeforeValidation_EachRowKeepsItsOwnEntryType() {
+        SubledgerMapping debit = new SubledgerMapping();
+        debit.setTransactionName("TX1");
+        debit.setAccountSubType("ACC1");
+        debit.rawValues("POSITIVE", "Debit");
+        SubledgerMapping credit = new SubledgerMapping();
+        credit.setTransactionName("TX1");
+        credit.setAccountSubType("ACC2");
+        credit.rawValues("POSITIVE", "Credit");
+
+        assertDoesNotThrow(() -> validator.validate(debit, validTxNames, validAccSubTypes));
+        assertDoesNotThrow(() -> validator.validate(credit, validTxNames, validAccSubTypes));
+
+        assertEquals(EntryType.DEBIT, debit.getEntryType());
+        assertEquals(EntryType.CREDIT, credit.getEntryType());
+        assertEquals(Sign.POSITIVE, debit.getSign());
+    }
+
     @Test
     void validate_NullTransactionName_ThrowsMandatoryField() {
         SubledgerMapping item = new SubledgerMapping();

@@ -112,17 +112,14 @@ public class ValidationLoggingListener implements ItemProcessListener<Object, Ob
             return null;
         }
 
-        // Special case for SubledgerMapping unvalidated enum fields stored in ThreadLocal raw context
-        if (item instanceof com.fyntrac.common.entity.SubledgerMapping) {
-            com.reserv.dataloader.batch.config.SubledgerMappingDataLoadConfig.RawValidationContext ctx =
-                    com.reserv.dataloader.batch.config.SubledgerMappingDataLoadConfig.RAW_CONTEXT.get();
-            if (ctx != null) {
-                if (columnName.equalsIgnoreCase("sign")) {
-                    return ctx.rawSign;
-                }
-                if (columnName.equalsIgnoreCase("entryType")) {
-                    return ctx.rawEntryType;
-                }
+        // Special case for SubledgerMapping: report the SIGN / ENTRYTYPE cells as uploaded, since an
+        // invalid value never made it into the enum fields.
+        if (item instanceof com.fyntrac.common.entity.SubledgerMapping mapping) {
+            if (columnName.equalsIgnoreCase("sign") && mapping.rawSign() != null) {
+                return mapping.rawSign();
+            }
+            if (columnName.equalsIgnoreCase("entryType") && mapping.rawEntryType() != null) {
+                return mapping.rawEntryType();
             }
         }
 

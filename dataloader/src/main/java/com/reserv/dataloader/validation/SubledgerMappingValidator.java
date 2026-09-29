@@ -41,9 +41,7 @@ public class SubledgerMappingValidator {
         }
 
         // 2. sign validation
-        com.reserv.dataloader.batch.config.SubledgerMappingDataLoadConfig.RawValidationContext ctx =
-                com.reserv.dataloader.batch.config.SubledgerMappingDataLoadConfig.RAW_CONTEXT.get();
-        String rawSign = (ctx != null && ctx.rawSign != null) ? ctx.rawSign : (item.getSign() != null ? item.getSign().name() : null);
+        String rawSign = item.rawSign() != null ? item.rawSign() : (item.getSign() != null ? item.getSign().name() : null);
         if (rawSign == null || rawSign.trim().isEmpty()) {
             errors.add(new ItemValidationException.ValidationError("sign", rawSign, ErrorCode.ERR_REQ_01.getCode(), "Sign is required and cannot be empty.", "ERROR"));
         } else {
@@ -56,7 +54,7 @@ public class SubledgerMappingValidator {
         }
 
         // 3. entryType validation
-        String rawEntryType = (ctx != null && ctx.rawEntryType != null) ? ctx.rawEntryType : (item.getEntryType() != null ? item.getEntryType().name() : null);
+        String rawEntryType = item.rawEntryType() != null ? item.rawEntryType() : (item.getEntryType() != null ? item.getEntryType().name() : null);
         if (rawEntryType == null || rawEntryType.trim().isEmpty()) {
             errors.add(new ItemValidationException.ValidationError("entryType", rawEntryType, ErrorCode.ERR_REQ_01.getCode(), "Entry type is required and cannot be empty.", "ERROR"));
         } else {

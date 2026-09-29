@@ -28,6 +28,31 @@ public class SubledgerMapping implements Cloneable, Serializable {
     private String accountSubType;
     private boolean isDeleted;
 
+    // The SIGN / ENTRYTYPE cells exactly as uploaded, carried from the upload reader to its validator
+    // on the row itself, so an invalid value can be reported verbatim. Not persisted (@Transient), not
+    // Java-serialized or compared (transient), and without bean accessors so it stays out of JSON.
+    @org.springframework.data.annotation.Transient
+    @lombok.Getter(lombok.AccessLevel.NONE)
+    @lombok.Setter(lombok.AccessLevel.NONE)
+    private transient String rawSign;
+    @org.springframework.data.annotation.Transient
+    @lombok.Getter(lombok.AccessLevel.NONE)
+    @lombok.Setter(lombok.AccessLevel.NONE)
+    private transient String rawEntryType;
+
+    public String rawSign() {
+        return rawSign;
+    }
+
+    public String rawEntryType() {
+        return rawEntryType;
+    }
+
+    public void rawValues(String rawSign, String rawEntryType) {
+        this.rawSign = rawSign;
+        this.rawEntryType = rawEntryType;
+    }
+
     @Override
     public String toString() {
         StringBuilder json = new StringBuilder();

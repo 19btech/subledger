@@ -49,17 +49,12 @@ public class SubledgerMappingWriter implements ItemWriter<SubledgerMapping> {
         delegate.write(newchunk);
     }
 
+    // The same leg for amounts of the opposite sign: a negative amount reverses the entry, so
+    // POSITIVE/DEBIT X is paired with NEGATIVE/CREDIT X (and POSITIVE/CREDIT with NEGATIVE/DEBIT).
     private SubledgerMapping generateMapping(SubledgerMapping mapping) {
         SubledgerMapping newMapping =  mapping.clone();
-        Sign sign = Sign.POSITIVE;
-        if(mapping.getSign() == Sign.POSITIVE) {
-            sign = Sign.NEGATIVE;
-        }else if(mapping.getSign() == Sign.NEGATIVE) {
-            sign = Sign.POSITIVE;
-        }
-
-        newMapping.setSign(sign);
-
+        newMapping.setSign(mapping.getSign() == Sign.NEGATIVE ? Sign.POSITIVE : Sign.NEGATIVE);
+        newMapping.setEntryType(mapping.getEntryType() == EntryType.CREDIT ? EntryType.DEBIT : EntryType.CREDIT);
         return newMapping;
     }
 }

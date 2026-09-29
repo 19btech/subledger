@@ -49,13 +49,6 @@ import org.springframework.validation.BindException;
 @Slf4j
 public class SubledgerMappingDataLoadConfig {
 
-    public static final ThreadLocal<RawValidationContext> RAW_CONTEXT = ThreadLocal.withInitial(RawValidationContext::new);
-
-    public static class RawValidationContext {
-        public String rawSign;
-        public String rawEntryType;
-    }
-
     private final JobRepository jobRepository;
     private final TenantContextHolder tenantContextHolder;
     private final TenantDataSourceProvider dataSourceProvider;
@@ -131,32 +124,19 @@ public class SubledgerMappingDataLoadConfig {
                 
                 String rawSign = fieldSet.readString("SIGN");
                 String rawEntryType = fieldSet.readString("ENTRYTYPE");
-                
-                // Store raw values in thread-local context for robust validation in the validator phase
-                RawValidationContext ctx = RAW_CONTEXT.get();
-                ctx.rawSign = rawSign;
-                ctx.rawEntryType = rawEntryType;
-                
-                // Safe-map Sign enum
-                if (com.fyntrac.common.enums.Sign.isValid(rawSign)) {
-                    String cleanSign = rawSign.trim().toUpperCase();
-                    subledgerMapping.setSign(com.fyntrac.common.enums.Sign.valueOf(cleanSign));
-                } else {
-                    subledgerMapping.setSign(null);
-                }
-                
-                // Safe-map EntryType enum
-                if (com.fyntrac.common.enums.EntryType.isValid(rawEntryType)) {
-                    String cleanEntryType = rawEntryType.trim();
-                    if (cleanEntryType.equalsIgnoreCase("DEBIT")) {
-                        subledgerMapping.setEntryType(com.fyntrac.common.enums.EntryType.DEBIT);
-                    } else if (cleanEntryType.equalsIgnoreCase("/")) {
-                        subledgerMapping.setEntryType(com.fyntrac.common.enums.EntryType.CREDIT);
-                    }
-                } else {
-                    subledgerMapping.setEntryType(null);
-                }
-                
+
+                // Kept on the row for the validator's error messages. (These used to go into one
+                // ThreadLocal, but the step reads a whole chunk before processing it, so every row
+                // was validated against the LAST row's values — every mapping became CREDIT.)
+                subledgerMapping.rawValues(rawSign, rawEntryType);
+
+                subledgerMapping.setSign(com.fyntrac.common.enums.Sign.isValid(rawSign)
+                        ? com.fyntrac.common.enums.Sign.valueOf(rawSign.trim().toUpperCase())
+                        : null);
+                subledgerMapping.setEntryType(com.fyntrac.common.enums.EntryType.isValid(rawEntryType)
+                        ? com.fyntrac.common.enums.EntryType.valueOf(rawEntryType.trim().toUpperCase())
+                        : null);
+
                 subledgerMapping.setTransactionName(fieldSet.readString("TRANSACTIONNAME"));
                 subledgerMapping.setAccountSubType(fieldSet.readString("ACCOUNTSUBTYPE"));
                 return subledgerMapping;
