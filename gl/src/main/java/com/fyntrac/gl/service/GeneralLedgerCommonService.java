@@ -64,7 +64,7 @@ public class GeneralLedgerCommonService {
             CacheMap<SubledgerMapping> slMapping = new CacheMap<>();
             List<SubledgerMapping> allMappings = this.dataService.fetchAllData(tenantId, SubledgerMapping.class);
             for (SubledgerMapping mapping : allMappings) {
-                slMapping.put(subledgerMappingKey(tenantId, mapping.getTransactionName(), mapping.getEntryType(), mapping.getAccountSubType()), mapping);
+                slMapping.put(subledgerMappingKey(tenantId, mapping.getTransactionName(), mapping.getSign(), mapping.getEntryType(), mapping.getAccountSubType()), mapping);
             }
             this.memcachedRepository.putCollectionInCache(cacheKey, slMapping, 0);
             return slMapping;
@@ -72,8 +72,10 @@ public class GeneralLedgerCommonService {
         //return this.memcachedRepository.getFromCache(cacheKey, CacheMap.class);
     }
 
-    private String subledgerMappingKey(String tenantId, String transactionName, EntryType entryType, String accountSubType) {
-        return StringUtil.convertToUpperCaseAndRemoveSpaces(tenantId + transactionName + entryType.getValue() + accountSubType);
+    // Includes the sign: a mapping row and its opposite-sign twin share transaction and subtype and
+    // differ only in sign and entryType, and both must survive in the cache.
+    private String subledgerMappingKey(String tenantId, String transactionName, Sign sign, EntryType entryType, String accountSubType) {
+        return StringUtil.convertToUpperCaseAndRemoveSpaces(tenantId + transactionName + sign + entryType.getValue() + accountSubType);
     }
 
     /**
@@ -215,10 +217,13 @@ public class GeneralLedgerCommonService {
                 for (GeneralLedgerAccountBalance balance : balances) {
                     CacheMap<SubledgerMapping> mapping = this.loadSubledgerMappingCache(tenantId);
 
+                    // One row per account subtype: every mapping row has an opposite-sign twin on the same
+                    // subtype (SubledgerMappingWriter), and the reclass books per subtype, so take one sign.
                     List<SubledgerMapping> subledgerMappings = new ArrayList<>(0);
                     for(Map.Entry<String , SubledgerMapping> entry : mapping.getMap().entrySet()) {
                         SubledgerMapping m = entry.getValue();
-                        if(balance.getTransactionName().equalsIgnoreCase(m.getTransactionName())) {
+                        if(balance.getTransactionName().equalsIgnoreCase(m.getTransactionName())
+                                && m.getSign() == Sign.POSITIVE && !m.isDeleted()) {
                             subledgerMappings.add(m);
                         }
                     }

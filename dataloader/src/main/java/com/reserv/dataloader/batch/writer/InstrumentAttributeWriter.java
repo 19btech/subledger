@@ -69,9 +69,6 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
     // the full beforeStep()/TenantContextHolder/repository plumbing.
     final Map<String, Boolean> attributeVersionableMap = new HashMap<>();
 
-    private static final int LOCK_TIMEOUT_SECONDS = 10;
-    private static final int MAX_RETRIES = 10;
-    private static final long RETRY_DELAY_MS = 100;
 
     public InstrumentAttributeWriter(MongoItemWriter<InstrumentAttribute> delegate,
                                      TenantDataSourceProvider dataSourceProvider,
@@ -247,9 +244,7 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         Chunk<InstrumentAttribute> updatedChunk = this.setEndDate(batchId, combinedAttributes, localReclassMessages);
 
         String dataKey = Key.reclassMessageList(this.tenantId, this.runId);
-        String lockKey = "lock:" + dataKey;
-
-        updateCacheWithLock(lockKey, dataKey, localReclassMessages);
+        saveReclassMessages(dataKey, localReclassMessages);
 
         delegate.write(updatedChunk);
     }
@@ -274,53 +269,17 @@ public class InstrumentAttributeWriter implements ItemWriter<InstrumentAttribute
         return period;
     }
 
-    private <T> void updateCacheWithLock(String lockKey, String dataKey, CacheList<T> newItems) {
-        if (newItems == null || newItems.getList() == null || newItems.getList().isEmpty()) return;
-
-        boolean lockAcquired = false;
-        int attempts = 0;
-
-        try {
-            while (attempts < MAX_RETRIES) {
-                lockAcquired = memcachedRepository.add(lockKey, "LOCKED", LOCK_TIMEOUT_SECONDS);
-                if (lockAcquired) break;
-                Thread.sleep(RETRY_DELAY_MS);
-                attempts++;
-            }
-
-            if (!lockAcquired) {
-                throw new RuntimeException("Could not acquire lock for key: " + dataKey);
-            }
-
-            CacheList<T> existingList;
-            if (this.memcachedRepository.ifExists(dataKey)) {
-                existingList = this.memcachedRepository.getFromCache(dataKey, CacheList.class);
-            } else {
-                existingList = new CacheList<>();
-            }
-
-            if (existingList.getList() == null) {
-                existingList.addAll(new ArrayList<>());
-            }
-
-            if (newItems.getList() != null) {
-                existingList.getList().addAll(newItems.getList());
-            }
-
-            this.memcachedRepository.putInCache(dataKey, existingList);
-
-        } catch (Exception e) {
-            log.error("Error updating cache for key {}", dataKey, e);
-            throw new RuntimeException(e);
-        } finally {
-            if (lockAcquired) {
-                try {
-                    memcachedRepository.delete(lockKey);
-                } catch (Exception e) {
-                    log.warn("Failed to release lock {}", lockKey);
-                }
-            }
+    // Hands this chunk's attribute changes to gl's reclass processing (see ReclassMessage for why this
+    // is MongoDB and not the Memcached list it used to be). Chunks append independently, so no lock.
+    private void saveReclassMessages(String dataKey, CacheList<Records.InstrumentAttributeReclassMessageRecord> messages) {
+        if (messages == null || messages.getList() == null || messages.getList().isEmpty()) return;
+        Date now = new Date();
+        List<com.fyntrac.common.entity.ReclassMessage> docs = new ArrayList<>(messages.getList().size());
+        for (Records.InstrumentAttributeReclassMessageRecord message : messages.getList()) {
+            docs.add(com.fyntrac.common.entity.ReclassMessage.builder()
+                    .dataKey(dataKey).message(message).createdAt(now).build());
         }
+        this.dataSourceProvider.getDataSource(this.tenantId).insertAll(docs);
     }
 
     /**

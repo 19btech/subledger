@@ -1,8 +1,10 @@
 package com.fyntrac.gl.service;
 
 import com.fyntrac.common.cache.collection.CacheList;
+import com.fyntrac.common.dto.record.RecordFactory;
 import com.fyntrac.common.dto.record.Records;
 import com.fyntrac.common.entity.Attributes;
+import com.fyntrac.common.entity.ReclassMessage;
 import com.fyntrac.common.entity.ReclassValues;
 import com.fyntrac.common.repository.MemcachedRepository;
 import com.fyntrac.common.service.AttributeService;
@@ -16,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +39,7 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
     private final AttributeService attributeService;
     private Collection<Attributes> reclassAttributes;
     private final DatasourceService datasourceService;
+    private final com.fyntrac.gl.staging.ProcessGeneralLedgerStaging processGeneralLedgerStaging;
 
     @Value("${fyntrac.chunk.size}")
     private int chunkSize;
@@ -56,12 +60,14 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
     public GeneralLedgerReclassService(DataService dataService,
                                        MemcachedRepository memcachedRepository,
                                        AttributeService attributeService
-                                        , DatasourceService datasourceService) {
+                                        , DatasourceService datasourceService
+                                        , com.fyntrac.gl.staging.ProcessGeneralLedgerStaging processGeneralLedgerStaging) {
         this.dataService = dataService;
         this.memcachedRepository = memcachedRepository;
         this.attributeService = attributeService;
         this.reclassAttributes = new ArrayList<>(0);
         this.datasourceService = datasourceService;
+        this.processGeneralLedgerStaging = processGeneralLedgerStaging;
     }
 
     /**
@@ -90,16 +96,18 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
         ExecutorService executor = Executors.newFixedThreadPool(this.threadPoolSize);
         try {
             String dataKey = (String) executionContext.get("dataKey");
-            CacheList<Records.InstrumentAttributeReclassMessageRecord> reclassMessages = this.memcachedRepository.getFromCache(dataKey, CacheList.class);
+            CacheList<Records.InstrumentAttributeReclassMessageRecord> reclassMessages = loadReclassMessages(dataKey);
             if (reclassMessages == null) {
-                log.warn("No reclass messages found in cache for dataKey: {}", dataKey);
+                log.warn("No reclass messages found for dataKey: {}", dataKey);
                 return;
             }
 
             int totalChunks = reclassMessages.getTotalChunks(chunkSize);
             List<Future<?>> futures = new ArrayList<>();
+            Set<Long> batchIds = new LinkedHashSet<>();
             for (int i = 0; i < totalChunks; i++) {
                 List<Records.InstrumentAttributeReclassMessageRecord> reclassMessagesChunk = reclassMessages.getChunk(chunkSize, i);
+                reclassMessagesChunk.forEach(m -> batchIds.add(m.batchId()));
                 futures.add(executor.submit(() -> process(reclassMessagesChunk)));
             }
 
@@ -110,13 +118,43 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
                     log.error("Error processing reclassification chunk: {}", e.getMessage(), e);
                 }
             }
+
+            // The reclass entries are booked with their batch (ProcessGeneralLedgerStaging.bookReclass).
+            // The batch's activity may already have been booked before these changes were recorded, so
+            // book it again now; booking a batch replaces what it booked before.
+            for (Long batchId : batchIds) {
+                try {
+                    processGeneralLedgerStaging.process(RecordFactory.createGeneralLedgerMessageRecord(tenantId, batchId));
+                } catch (Exception e) {
+                    log.error("Failed to book reclass entries for batch {} (tenant {}): {}", batchId, tenantId, e.getMessage(), e);
+                }
+            }
         } catch (Exception e) {
             log.error("Error performing reclassification process: {}", e.getMessage(), e);
         } finally {
             executor.shutdown();
             String dataKey = (String) executionContext.get("dataKey");
             this.memcachedRepository.delete(dataKey);
+            this.dataService.getMongoTemplate(tenantId).remove(reclassMessagesQuery(dataKey), ReclassMessage.class);
         }
+    }
+
+    // The upload's attribute changes, from MongoDB (ReclassMessage); Memcached only for a message
+    // written before that change.
+    private CacheList<Records.InstrumentAttributeReclassMessageRecord> loadReclassMessages(String dataKey) {
+        List<ReclassMessage> stored = this.dataService.getMongoTemplate(tenantId)
+                .find(reclassMessagesQuery(dataKey), ReclassMessage.class);
+        if (!stored.isEmpty()) {
+            CacheList<Records.InstrumentAttributeReclassMessageRecord> messages = new CacheList<>();
+            stored.forEach(m -> messages.add(m.getMessage()));
+            return messages;
+        }
+        return this.memcachedRepository.getFromCache(dataKey, CacheList.class);
+    }
+
+    private static org.springframework.data.mongodb.core.query.Query reclassMessagesQuery(String dataKey) {
+        return new org.springframework.data.mongodb.core.query.Query(
+                org.springframework.data.mongodb.core.query.Criteria.where("dataKey").is(dataKey));
     }
 
     /**
@@ -209,6 +247,7 @@ public class GeneralLedgerReclassService extends BaseGeneralLedgerService {
                 .previousVersionId(previous.versionId())
                 .currentVersionId(current.versionId())
                 .currentPeriodId(current.periodId())
+                .effectiveDate(current.effectiveDate())
                 .oldValue(oldValue)
                 .newValue(newValue)
                 .attributes(reclassAttributes)

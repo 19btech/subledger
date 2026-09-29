@@ -26,6 +26,7 @@ import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.Executors;
 
 /**
@@ -81,38 +82,193 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
             this.datasourceService.addDatasource(tenantId);
             this.generalLedgerAccountService.setTenantId(tenantId);
 
-            ExecutorService executor = Executors.newFixedThreadPool(this.threadPoolSize);
-
-            Query countQuery = new Query(Criteria.where("batchId").is(jobId));
-            long totalRecords = this.dataService.getMongoTemplate(tenantId).count(countQuery, TransactionActivity.class);
-            int totalChunks = (int) Math.ceil((double) totalRecords / chunkSize);
-
-            for (int i = 0; i < totalChunks; i++) {
-                final int chunkIndex = i;
-                executor.submit(() -> {
-                    try {
-                        Query chunkQuery = new Query(Criteria.where("batchId").is(jobId));
-                        chunkQuery.skip((long) chunkIndex * chunkSize).limit(chunkSize);
-                        List<TransactionActivity> chunk = this.dataService.getMongoTemplate(tenantId).find(chunkQuery, TransactionActivity.class);
-                        processTransactionActivityChunk(tenantId, chunk);
-                    } catch (Exception e) {
-                        log.error("Error processing chunk: {}", chunkIndex, e);
-                        throw new RuntimeException("Error processing chunk", e);
-                    }
-                });
+            // A batch can be sent for booking more than once: an activity upload publishes it from each
+            // of its reversal jobs, and a model run on an already-executed date re-books every batch of
+            // that date — all asynchronously, so a re-book can land after the run's own cleanup. Booking
+            // therefore replaces the batch's staging rows rather than adding to them, one message per
+            // batch at a time.
+            ReentrantLock batchLock = BATCH_LOCKS[Math.floorMod((tenantId + ":" + jobId).hashCode(), BATCH_LOCKS.length)];
+            batchLock.lock();
+            try {
+                Query batchRows = new Query(Criteria.where("batchId").is(jobId));
+                long removedEntries = this.dataService.getMongoTemplate(tenantId).remove(batchRows, GeneralLedgerEnteryStage.class).getDeletedCount();
+                long removedBalances = this.dataService.getMongoTemplate(tenantId).remove(batchRows, GeneralLedgerAccountBalanceStage.class).getDeletedCount();
+                if (removedEntries > 0 || removedBalances > 0) {
+                    log.info("Re-booking batch {} for tenant {}: replaced {} staged entries and {} staged balances",
+                            jobId, tenantId, removedEntries, removedBalances);
+                }
+                bookBatch(tenantId, jobId);
+            } finally {
+                batchLock.unlock();
             }
-
-            executor.shutdown();
-            while (!executor.isTerminated()) {
-                log.info("Waiting for all threads to complete.");
-                Thread.sleep(1000);
-            }
-
-            log.info("All chunks processed successfully.");
         } catch (Exception e) {
             log.error("Error in process method for messageRecord: {}", messageRecord, e);
             throw new RuntimeException("Error in process method", e);
         }
+    }
+
+    // Striped: a batch always maps to the same lock, and the set stays bounded however many batches pass.
+    private static final ReentrantLock[] BATCH_LOCKS = new ReentrantLock[64];
+    static {
+        for (int i = 0; i < BATCH_LOCKS.length; i++) BATCH_LOCKS[i] = new ReentrantLock();
+    }
+
+    private void bookBatch(String tenantId, long jobId) throws InterruptedException {
+        ExecutorService executor = Executors.newFixedThreadPool(this.threadPoolSize);
+
+        Query countQuery = new Query(Criteria.where("batchId").is(jobId));
+        long totalRecords = this.dataService.getMongoTemplate(tenantId).count(countQuery, TransactionActivity.class);
+        int totalChunks = (int) Math.ceil((double) totalRecords / chunkSize);
+
+        for (int i = 0; i < totalChunks; i++) {
+            final int chunkIndex = i;
+            executor.submit(() -> {
+                try {
+                    Query chunkQuery = new Query(Criteria.where("batchId").is(jobId));
+                    chunkQuery.skip((long) chunkIndex * chunkSize).limit(chunkSize);
+                    List<TransactionActivity> chunk = this.dataService.getMongoTemplate(tenantId).find(chunkQuery, TransactionActivity.class);
+                    processTransactionActivityChunk(tenantId, chunk);
+                } catch (Exception e) {
+                    log.error("Error processing chunk: {}", chunkIndex, e);
+                    throw new RuntimeException("Error processing chunk", e);
+                }
+            });
+        }
+
+        executor.shutdown();
+        while (!executor.isTerminated()) {
+            log.info("Waiting for all threads to complete.");
+            Thread.sleep(1000);
+        }
+
+        log.info("All chunks processed successfully.");
+
+        bookReclass(tenantId, jobId);
+    }
+
+    /**
+     * Books the reclass entries for the attribute changes uploaded under this batch (ReclassValues,
+     * written by GeneralLedgerReclassService): each balance-sheet balance an instrument carried before
+     * the posting date is moved from the account its old attributes mapped to, to the account its new
+     * attributes map to — Dr new / Cr old for a debit balance, the reverse for a credit balance.
+     *
+     * <p>Booked as part of the batch, under its batchId, so the batch's replace-on-rebook covers it: a
+     * re-run of the posting date (which deletes the date's staging rows and re-books its batches)
+     * rebuilds it, and booking the batch twice never books it twice.
+     */
+    private void bookReclass(String tenantId, long jobId) {
+        List<ReclassValues> changes = this.dataService.getMongoTemplate(tenantId)
+                .find(new Query(Criteria.where("batchId").is(jobId)), ReclassValues.class);
+        if (changes.isEmpty()) {
+            return;
+        }
+        Integer batchPostingDate = batchPostingDate(tenantId, jobId);
+
+        // One change per sub-instrument: the same upload recorded twice must not move a balance twice.
+        Map<String, ReclassValues> byInstrument = new LinkedHashMap<>();
+        for (ReclassValues change : changes) {
+            byInstrument.putIfAbsent(change.getInstrumentId() + "|" + change.getAttributeId(), change);
+        }
+
+        List<GeneralLedgerEnteryStage> entries = new ArrayList<>();
+        for (ReclassValues change : byInstrument.values()) {
+            Integer postingDate = batchPostingDate != null ? batchPostingDate
+                    : change.getEffectiveDate() != null ? yyyymmdd(change.getEffectiveDate())
+                    : null;
+            if (postingDate == null) {
+                log.error("Reclass for instrument {} attribute {} in batch {} skipped: no posting date", change.getInstrumentId(),
+                        change.getAttributeId(), jobId);
+                continue;
+            }
+            entries.addAll(reclassEntries(tenantId, jobId, postingDate, change));
+        }
+        if (!entries.isEmpty()) {
+            this.dataService.saveAll(entries, tenantId, GeneralLedgerEnteryStage.class);
+        }
+        log.info("Booked {} reclass entries for {} attribute changes in batch {} (tenant {})", entries.size(),
+                byInstrument.size(), jobId, tenantId);
+    }
+
+    private List<GeneralLedgerEnteryStage> reclassEntries(String tenantId, long jobId, int postingDate, ReclassValues change) {
+        // Balance per (transaction, account) as of before this posting date, from what has been booked
+        // for this sub-instrument so far, earlier reclasses included.
+        Query booked = new Query(Criteria.where("instrumentId").is(change.getInstrumentId())
+                .and("attributeId").is(change.getAttributeId())
+                .and("postingDate").lt(postingDate));
+        Map<String, BigDecimal> balances = new LinkedHashMap<>();
+        Map<String, GeneralLedgerEnteryStage> accounts = new HashMap<>();
+        for (GeneralLedgerEnteryStage row : this.dataService.getMongoTemplate(tenantId).find(booked, GeneralLedgerEnteryStage.class)) {
+            if (!AccountType.BALANCESHEET.name().equals(row.getGlAccountType())) {
+                continue;
+            }
+            String key = row.getTransactionName() + "|" + row.getGlAccountNumber();
+            BigDecimal debit = row.getDebitAmount() == null ? BigDecimal.ZERO : row.getDebitAmount();
+            BigDecimal credit = row.getCreditAmount() == null ? BigDecimal.ZERO : row.getCreditAmount();
+            balances.merge(key, debit.subtract(credit), BigDecimal::add);
+            accounts.putIfAbsent(key, row);
+        }
+
+        List<GeneralLedgerEnteryStage> entries = new ArrayList<>();
+        for (Map.Entry<String, BigDecimal> balance : balances.entrySet()) {
+            BigDecimal net = balance.getValue();
+            if (net.signum() == 0) {
+                continue;
+            }
+            GeneralLedgerEnteryStage old = accounts.get(balance.getKey());
+            ChartOfAccount target = this.glCommonService.getChartOfAccount(tenantId, old.getGlAccountSubType(), change.getAttributes());
+            if (target == null) {
+                log.error("Reclass for instrument {} attribute {}: no chart of account for subtype {} and attributes {}",
+                        change.getInstrumentId(), change.getAttributeId(), old.getGlAccountSubType(), change.getAttributes());
+                continue;
+            }
+            if (Objects.equals(target.getAccountNumber(), old.getGlAccountNumber())) {
+                continue;   // the change does not move this account
+            }
+            BigDecimal amount = net.abs();
+            boolean debitBalance = net.signum() > 0;
+            entries.add(reclassEntry(change, jobId, postingDate, old.getTransactionName(), target.getAccountNumber(),
+                    target.getAccountName(), target.getAccountSubtype(), old.getGlAccountType(),
+                    debitBalance ? amount : BigDecimal.ZERO, debitBalance ? BigDecimal.ZERO : amount));
+            entries.add(reclassEntry(change, jobId, postingDate, old.getTransactionName(), old.getGlAccountNumber(),
+                    old.getGlAccountName(), old.getGlAccountSubType(), old.getGlAccountType(),
+                    debitBalance ? BigDecimal.ZERO : amount, debitBalance ? amount : BigDecimal.ZERO));
+        }
+        return entries;
+    }
+
+    private static GeneralLedgerEnteryStage reclassEntry(ReclassValues change, long jobId, int postingDate, String transactionName,
+                                                         String accountNumber, String accountName, String accountSubType,
+                                                         String accountType, BigDecimal debit, BigDecimal credit) {
+        return GeneralLedgerEnteryStage.builder()
+                .attributeId(change.getAttributeId())
+                .instrumentId(change.getInstrumentId())
+                .transactionName(transactionName)
+                .postingDate(postingDate)
+                .periodId(change.getCurrentPeriodId())
+                .glAccountNumber(accountNumber)
+                .glAccountName(accountName)
+                .glAccountSubType(accountSubType)
+                .glAccountType(accountType)
+                .isReclass(1)
+                .debitAmount(debit)
+                .creditAmount(credit)
+                .attributes(change.getAttributes())
+                .batchId(jobId)
+                .build();
+    }
+
+    // Dates are stored as UTC midnight.
+    private static int yyyymmdd(Date date) {
+        java.time.LocalDate day = date.toInstant().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+        return day.getYear() * 10000 + day.getMonthValue() * 100 + day.getDayOfMonth();
+    }
+
+    // The posting date of the batch's activity, when it has any.
+    private Integer batchPostingDate(String tenantId, long jobId) {
+        Query query = new Query(Criteria.where("batchId").is(jobId));
+        query.fields().include("postingDate");
+        TransactionActivity activity = this.dataService.getMongoTemplate(tenantId).findOne(query, TransactionActivity.class);
+        return activity == null ? null : activity.getPostingDate();
     }
 
     /**
@@ -129,6 +285,8 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
         try {
             log.info("Processing chunk: {}", chunk);
 
+            // Loaded once per chunk, not once per transaction (it reads every mapping from MongoDB).
+            CacheMap<SubledgerMapping> mapping = this.glCommonService.loadSubledgerMappingCache(tenantId);
             for (TransactionActivity transactionActivity : chunk) {
                 try {
                     if (transactionActivity == null) {
@@ -136,12 +294,15 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
                         continue;
                     }
 
-                    CacheMap<SubledgerMapping> mapping = this.glCommonService.loadSubledgerMappingCache(tenantId);
-
+                    // Each uploaded mapping row is stored with its opposite-sign twin (SubledgerMappingWriter:
+                    // POSITIVE/DEBIT X is paired with NEGATIVE/CREDIT X), so the legs for this amount are
+                    // exactly the rows whose sign matches the amount's sign, booked as their entryType says.
+                    Sign entrySign = transactionActivity.getAmount().signum() >= 0 ? Sign.POSITIVE : Sign.NEGATIVE;
                     List<SubledgerMapping> subledgerMappings = new ArrayList<>(0);
                     for(Map.Entry<String , SubledgerMapping> entry : mapping.getMap().entrySet()) {
                         SubledgerMapping m = entry.getValue();
-                        if(transactionActivity.getTransactionName().equalsIgnoreCase(m.getTransactionName())) {
+                        if(transactionActivity.getTransactionName().equalsIgnoreCase(m.getTransactionName())
+                                && m.getSign() == entrySign && !m.isDeleted()) {
                             subledgerMappings.add(m);
                         }
                     }
@@ -159,16 +320,10 @@ public class ProcessGeneralLedgerStaging extends BaseGeneralLedgerService {
 
                              BigDecimal debitAmount = BigDecimal.valueOf(0L);
                              BigDecimal creditAmount = BigDecimal.valueOf(0L);
-                             Sign entrySign = transactionActivity.getAmount().signum() >=0 ? Sign.POSITIVE : Sign.NEGATIVE;
-
-                             if (entrySign == Sign.POSITIVE && slMapping.getEntryType() == EntryType.DEBIT) {
+                             if (slMapping.getEntryType() == EntryType.DEBIT) {
                                  debitAmount = transactionActivity.getAmount().abs();
-                             } else if (entrySign == Sign.POSITIVE && slMapping.getEntryType() == EntryType.CREDIT) {
+                             } else if (slMapping.getEntryType() == EntryType.CREDIT) {
                                  creditAmount = transactionActivity.getAmount().abs();
-                             } else if (entrySign == Sign.NEGATIVE && slMapping.getEntryType() == EntryType.DEBIT) {
-                                 creditAmount = transactionActivity.getAmount().abs();
-                             } else if (entrySign == Sign.NEGATIVE && slMapping.getEntryType() == EntryType.CREDIT) {
-                                 debitAmount = transactionActivity.getAmount().abs();
                              }
 
                              GeneralLedgerEnteryStage gleStage = GeneralLedgerEnteryStage.builder()
