@@ -56,13 +56,15 @@ spec:
               subPath: mongo-init.js
               readOnly: true
           readinessProbe:
-            exec:
-              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+            # A TCP check, not `mongosh --eval ping`: mongosh is a Node.js process whose
+            # startup alone exceeded the probe timeout under batch load (87 failures in one
+            # Hearst_VER run, 2026-09-30, even at timeoutSeconds 5), which pulled this only
+            # pod out of the Service and made clients see "Connection refused" while mongod
+            # itself was healthy. Accepting on 27017 is enough to mean mongod is serving.
+            tcpSocket:
+              port: 27017
             initialDelaySeconds: 15
             periodSeconds: 10
-            # Default timeoutSeconds (1s) is shorter than mongosh's own Node.js startup
-            # time, so probes were failing even when mongod was healthy, pulling this pod
-            # out of the Service's endpoints.
             timeoutSeconds: 5
             failureThreshold: 6
           resources:
@@ -82,7 +84,8 @@ spec:
               # plus ~2.2Gi of per-connection/per-operation memory for ~400 open
               # connections (two dataloader pods with a 300-connection tenant pool each).
               # Host has 31Gi with ~12Gi free; 8Gi leaves the cache + connections room.
-              memory: "8Gi"
+              # Raised to 12Gi on the cluster; kept in sync here (2026-09-30).
+              memory: "12Gi"
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -114,6 +117,10 @@ metadata:
 spec:
   selector:
     app: mongodb
+  # Single-replica database: never drop it from the endpoints because of a readiness blip.
+  # A not-ready mongod still answers or fails fast, which clients retry; an empty endpoint
+  # list turns every call into "Connection refused" and fails whole event-generation batches.
+  publishNotReadyAddresses: true
   ports:
     - port: 27017
       targetPort: 27017
