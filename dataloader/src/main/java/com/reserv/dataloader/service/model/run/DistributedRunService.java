@@ -76,6 +76,10 @@ public class DistributedRunService {
     @Value("${fyntrac.run.status-poll-seconds:2}")
     private long statusPollSeconds;
 
+    // A run record not heartbeated for this long has no live pod working on it (see reapIfAbandoned).
+    @Value("${fyntrac.run.heartbeat-stale-seconds:300}")
+    private long runStaleSeconds;
+
     private final TenantDataSourceProvider dataSourceProvider;
     private final RunChunkQueue runChunkQueue;
     private final String podName;
@@ -185,6 +189,45 @@ public class DistributedRunService {
 
     public void publish(List<RunChunkMessage> chunks) throws Exception {
         runChunkQueue.publishAll(chunks);
+        // From here the chunks carry the run (with their own heartbeats); the coordinator stops
+        // heartbeating the run record, so the reaper must not judge it by that.
+        RunChunkMessage first = chunks.get(0);
+        mongo(first.tenantId()).updateFirst(runQuery(first.runId()), new Update().set("chunksPublished", true),
+                ExecutionInstance.class);
+    }
+
+    /**
+     * Marks an active run FAILED when no pod is working on it any more: its record has not been
+     * heartbeated (RunHeartbeat) for {@code fyntrac.run.heartbeat-stale-seconds}. That happens when the
+     * pod running its pre-processing, planning, single-pod batches or finishing steps dies — nothing
+     * else would ever finish it, and the tenant would stay locked. A distributed run whose chunks are
+     * out is left alone: its progress lives in the chunks, which have their own stale-owner handling.
+     *
+     * @return the run as it now stands (reloaded if it was marked abandoned)
+     */
+    public Document reapIfAbandoned(String tenant, Document run) {
+        if (run == null) return null;
+        String status = run.getString("status");
+        if (status == null || FINAL_STATUSES.contains(status)) return run;
+        if ("GENERATING_EVENTS".equals(status) && Boolean.TRUE.equals(run.get("chunksPublished"))) return run;
+        Date heartbeatAt = run.getDate("heartbeatAt");
+        Date last = heartbeatAt != null ? heartbeatAt : run.getDate("startTime");
+        if (last == null || System.currentTimeMillis() - last.getTime() <= TimeUnit.SECONDS.toMillis(runStaleSeconds)) {
+            return run;
+        }
+        MongoTemplate mongo = mongo(tenant);
+        Criteria unchanged = Criteria.where("_id").is(run.get("_id")).and("status").is(status);
+        unchanged = heartbeatAt != null ? unchanged.and("heartbeatAt").is(heartbeatAt) : unchanged.and("heartbeatAt").exists(false);
+        String error = "Abandoned: no pod has worked on this run since " + last + " (last seen on "
+                + run.getString("heartbeatPod") + ", during " + status + "). The posting date may be partly "
+                + "processed; re-run it.";
+        boolean reaped = mongo.updateFirst(new Query(unchanged),
+                new Update().set("status", "FAILED").set("endTime", new Date()).set("errorMessage", error),
+                ExecutionInstance.class).getModifiedCount() == 1;
+        if (reaped) {
+            log.warn("Run {} (tenant {}) marked FAILED: {}", run.get("_id"), tenant, error);
+        }
+        return runStatus(tenant, String.valueOf(run.get("_id")));
     }
 
     /** The run's ExecutionInstance record as stored, including the chunk counters the entity lacks. */
@@ -193,10 +236,26 @@ public class DistributedRunService {
         return mongo.findById(runId, Document.class, mongo.getCollectionName(ExecutionInstance.class));
     }
 
+    /**
+     * The most recent run of this model type (ExecutionInstance, newest startTime first), with
+     * {@code active} = not yet in a final status. Null when the tenant never ran this type.
+     */
+    public Document latestRun(String tenant, String modelType) {
+        MongoTemplate mongo = mongo(tenant);
+        Query query = new Query(Criteria.where("modelType").is(modelType))
+                .with(Sort.by(Sort.Direction.DESC, "startTime"))
+                .limit(1);
+        Document run = reapIfAbandoned(tenant, mongo.findOne(query, Document.class, mongo.getCollectionName(ExecutionInstance.class)));
+        if (run != null) {
+            run.put("active", !FINAL_STATUSES.contains(run.getString("status")));
+        }
+        return run;
+    }
+
     /** Blocks until the run reaches a final status, and returns it. */
     public String awaitFinalStatus(String tenant, String runId) throws InterruptedException {
         while (true) {
-            Document run = runStatus(tenant, runId);
+            Document run = reapIfAbandoned(tenant, runStatus(tenant, runId));
             String status = run == null ? null : run.getString("status");
             if (status == null || FINAL_STATUSES.contains(status)) {
                 return status;

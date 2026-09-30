@@ -36,15 +36,17 @@ public class WorkflowExecutionFactory {
     }
 
     /**
-     * Starts a DSL run under the given id and returns its record. With distributed runs enabled it
-     * returns once the run is handed out to the dataloader pods; otherwise once it has finished.
+     * Starts a run under the given id and returns its record. A distributed DSL run returns once it is
+     * handed out to the dataloader pods; any other run once it has finished.
      */
     public ExecutionInstance start(String modelType, String tenant, int postingDate, String runId) throws Throwable {
-        if (!"DSL".equalsIgnoreCase(modelType)) {
-            throw new UnsupportedOperationException("start(runId) is only implemented for DSL runs, not " + modelType);
-        }
         rejectClosedPeriod(tenant, postingDate);
-        return dslExecutionWorkflow.startWorkflow(tenant, postingDate, runId);
+        if ("DSL".equalsIgnoreCase(modelType)) {
+            return dslExecutionWorkflow.startWorkflow(tenant, postingDate, runId);
+        } else if ("EXCEL".equalsIgnoreCase(modelType)) {
+            return excelExecutionWorkflow.startWorkflow(tenant, postingDate, runId);
+        }
+        throw new UnsupportedOperationException("Workflow for modelType " + modelType + " is not yet implemented in the new architecture.");
     }
 
     private void rejectClosedPeriod(String tenant, int postingDate) throws AccountingPeriodClosedException {

@@ -133,12 +133,17 @@ spec:
               value: "$(MONGODB_PSWD)"
             - name: SPRING_DATA_MONGODB_AUTHENTICATION_DATABASE
               value: admin
+          # timeoutSeconds was the default 1 s: a pod busy with a run (all 4 CPUs working) answered
+          # /actuator/health late, missed 3 liveness checks and was killed mid-run, orphaning the run
+          # it owned. A slow pod should only drop out of the Service (readiness), not be restarted:
+          # liveness now allows ~2 minutes (6 × 20 s) of 5 s timeouts before restarting it.
           readinessProbe:
             httpGet:
               path: /actuator/health
               port: 8081
             initialDelaySeconds: 45
             periodSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 6
           livenessProbe:
             httpGet:
@@ -146,6 +151,8 @@ spec:
               port: 8081
             initialDelaySeconds: 60
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               cpu: "250m"

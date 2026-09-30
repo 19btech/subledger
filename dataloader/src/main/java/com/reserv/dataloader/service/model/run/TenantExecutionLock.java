@@ -40,9 +40,11 @@ public class TenantExecutionLock {
     private long maxAgeHours;
 
     private final TenantDataSourceProvider dataSourceProvider;
+    private final DistributedRunService distributedRunService;
 
-    public TenantExecutionLock(TenantDataSourceProvider dataSourceProvider) {
+    public TenantExecutionLock(TenantDataSourceProvider dataSourceProvider, DistributedRunService distributedRunService) {
         this.dataSourceProvider = dataSourceProvider;
+        this.distributedRunService = distributedRunService;
     }
 
     /** @return the lock token if acquired, empty if another execution holds it */
@@ -61,7 +63,7 @@ public class TenantExecutionLock {
             if (current == null) {
                 return tryAcquire(tenant);   // released between the insert and the read
             }
-            if (!isFree(mongo, current)) {
+            if (!isFree(tenant, mongo, current)) {
                 return Optional.empty();
             }
             // Take it over only if nobody else did first.
@@ -100,7 +102,7 @@ public class TenantExecutionLock {
                 new Query(Criteria.where("_id").is(LOCK_ID)), LOCK_COLLECTION).getDeletedCount() > 0;
     }
 
-    private boolean isFree(MongoTemplate mongo, Document lock) {
+    private boolean isFree(String tenant, MongoTemplate mongo, Document lock) {
         Date acquiredAt = lock.getDate("acquiredAt");
         if (acquiredAt == null
                 || System.currentTimeMillis() - acquiredAt.getTime() > TimeUnit.HOURS.toMillis(maxAgeHours)) {
@@ -110,8 +112,10 @@ public class TenantExecutionLock {
         if (runId == null) {
             return false;
         }
-        // A missing run is not "finished": the lock is attached before the run record is written.
-        ExecutionInstance run = mongo.findById(runId, ExecutionInstance.class);
-        return run != null && FINAL_STATUSES.contains(run.getStatus());
+        // A missing run is not "finished": the lock is attached before the run record is written. An
+        // active run no pod is working on any more is marked abandoned here, which frees the lock.
+        org.bson.Document run = distributedRunService.reapIfAbandoned(tenant,
+                mongo.findById(runId, org.bson.Document.class, mongo.getCollectionName(ExecutionInstance.class)));
+        return run != null && FINAL_STATUSES.contains(run.getString("status"));
     }
 }

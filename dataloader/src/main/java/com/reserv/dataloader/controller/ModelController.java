@@ -252,18 +252,32 @@ public class ModelController {
         }
     }
 
+    /**
+     * Runs the Excel models for one posting date. With {@code async=true} it returns 202 with the run id
+     * straight away (poll {@code GET /execution/{runId}} or {@code GET /executions/latest}); otherwise
+     * when the run has finished, as before.
+     */
     @PostMapping("/execute")
-    public ResponseEntity<String> executeModel(@RequestBody Records.DateRequestRecord dateRequestRecord) throws Exception {
+    public ResponseEntity<?> executeModel(@RequestBody Records.DateRequestRecord dateRequestRecord,
+                                          @RequestParam(name = "async", defaultValue = "false") boolean async) throws Exception {
         String tenant = TenantContextHolder.getTenant();
         Optional<String> lockToken = tenantExecutionLock.tryAcquire(tenant);
         if (lockToken.isEmpty()) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body("A model execution is already running for tenant [" + tenant + "]. Please wait for it to complete.");
         }
+        boolean handedOff = false;
         try {
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy");
             Date executionDate = DateUtil.parseDate(dateRequestRecord.date(), formatter);
             int postingDate = DateUtil.dateInNumber(executionDate);
+
+            if (async) {
+                String runId = UUID.randomUUID().toString();
+                tenantExecutionLock.attachRun(tenant, lockToken.get(), runId);
+                handedOff = true;
+                return startInBackground("EXCEL", tenant, lockToken.get(), postingDate, runId);
+            }
 
             workflowExecutionFactory.execute("EXCEL", tenant, postingDate);
 
@@ -278,8 +292,32 @@ public class ModelController {
         } catch (Throwable e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } finally {
-            tenantExecutionLock.release(tenant, lockToken.get());
+            if (!handedOff) {
+                tenantExecutionLock.release(tenant, lockToken.get());
+            }
         }
+    }
+
+    /**
+     * Starts a run on a background thread and answers 202 with its id. The tenant lock is released when
+     * the run ends here — except a distributed DSL run, which the pod that finishes it releases.
+     */
+    private ResponseEntity<?> startInBackground(String modelType, String tenant, String lockToken, int postingDate, String runId) {
+        boolean releasedElsewhere = "DSL".equals(modelType) && distributedRunService.isEnabled();
+        Thread.ofVirtual().name(modelType.toLowerCase() + "-run-" + runId).start(() -> TenantContextHolder.runWithTenant(tenant, () -> {
+            try {
+                workflowExecutionFactory.start(modelType, tenant, postingDate, runId);
+            } catch (Throwable e) {
+                log.error("{} run {} for tenant {} failed: {}", modelType, runId, tenant, e.getMessage(), e);
+            } finally {
+                if (!releasedElsewhere) {
+                    tenantExecutionLock.release(tenant, lockToken);
+                }
+            }
+        }));
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(Map.of("runId", runId, "tenant", tenant, "postingDate", postingDate, "modelType", modelType,
+                        "status", "/api/dataloader/model/execution/" + runId));
     }
 
     /**
@@ -312,24 +350,8 @@ public class ModelController {
             int postingDate = DateUtil.dateInNumber(executionDate);
 
             if (async) {
-                String token = lockToken.get();
-                Thread.ofVirtual().name("dsl-run-" + runId).start(() -> TenantContextHolder.runWithTenant(tenant, () -> {
-                    try {
-                        workflowExecutionFactory.start("DSL", tenant, postingDate, runId);
-                    } catch (Throwable e) {
-                        log.error("DSL run {} for tenant {} failed to start: {}", runId, tenant, e.getMessage(), e);
-                    } finally {
-                        // A distributed run is released by the pod that finishes it; a single-pod run
-                        // is finished by now.
-                        if (!distributedRunService.isEnabled()) {
-                            tenantExecutionLock.release(tenant, token);
-                        }
-                    }
-                }));
                 handedOff = true;
-                return ResponseEntity.status(HttpStatus.ACCEPTED)
-                        .body(Map.of("runId", runId, "tenant", tenant, "postingDate", postingDate,
-                                "status", "/api/dataloader/model/execution/" + runId));
+                return startInBackground("DSL", tenant, lockToken.get(), postingDate, runId);
             }
 
             workflowExecutionFactory.start("DSL", tenant, postingDate, runId);
@@ -357,10 +379,27 @@ public class ModelController {
         }
     }
 
+    /**
+     * The latest run of each model type (DSL, EXCEL) for the tenant, from the run records
+     * (ExecutionInstance): status, posting date, start/end, batch counters and, for a distributed run,
+     * chunk counters; {@code active} while it has not reached a final status. The Model page's
+     * execution status and progress come from here.
+     */
+    @GetMapping("/executions/latest")
+    public ResponseEntity<?> getLatestExecutions() {
+        String tenant = TenantContextHolder.getTenant();
+        Map<String, Object> latest = new LinkedHashMap<>();
+        for (String modelType : List.of("DSL", "EXCEL")) {
+            latest.put(modelType, distributedRunService.latestRun(tenant, modelType));
+        }
+        return ResponseEntity.ok(latest);
+    }
+
     /** A run's record: status, batch counters and, for a distributed run, chunk counters. */
     @GetMapping("/execution/{runId}")
     public ResponseEntity<?> getExecution(@PathVariable String runId) {
-        org.bson.Document run = distributedRunService.runStatus(TenantContextHolder.getTenant(), runId);
+        String tenant = TenantContextHolder.getTenant();
+        org.bson.Document run = distributedRunService.reapIfAbandoned(tenant, distributedRunService.runStatus(tenant, runId));
         return run == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(run);
     }
 

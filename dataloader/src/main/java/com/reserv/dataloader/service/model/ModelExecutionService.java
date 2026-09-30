@@ -328,30 +328,37 @@ public class ModelExecutionService {
                 );
 
                 if (!distinctBatches.isEmpty()) {
-                    try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
-                        cleanupDataForPostingDate(postingDate, Boolean.TRUE, Boolean.FALSE, Boolean.TRUE);
-                        for(Object batchObj : distinctBatches) {
-                            if (batchObj != null) {
-                                executor.submit(() -> {
-                                    TenantContextHolder.runWithTenant(tenant, () -> {
-                                        try {
-                                            long batchId = Long.parseLong(batchObj.toString());
-                                            com.fyntrac.common.dto.record.Records.ExecuteAggregationMessageRecord aggRec =
-                                                com.fyntrac.common.dto.record.RecordFactory.createExecutionAggregationRecord(tenant, batchId, (long)postingDate);
-                                            aggregationExecutionService.execute(aggRec, state);
+                    cleanupDataForPostingDate(postingDate, Boolean.TRUE, Boolean.FALSE, Boolean.TRUE);
 
-                                            com.fyntrac.common.dto.record.Records.GeneralLedgerMessageRecord glRec =
-                                                com.fyntrac.common.dto.record.RecordFactory.createGeneralLedgerMessageRecord(tenant, batchId);
-                                            generalLedgerMessageProducer.bookTempGL(glRec);
-                                        } catch(Exception e) {
-                                            log.warn("Invalid batchId format or dispatch error: {}", e.getMessage());
-                                        }
-                                        return null;
-                                    });
-                                });
-                            }
+                    // Re-aggregate only what the cleanup left — the date's uploaded activity. The
+                    // batch list used to be taken before the cleanup, so every model batch of the
+                    // date (hundreds on a large tenant, their transactions just deleted) was
+                    // re-aggregated and re-booked for nothing, all at once on unbounded virtual
+                    // threads: enough to saturate the pod until Kubernetes killed it on its
+                    // liveness probe, mid-run. One batch at a time: execute() still includes the
+                    // per-batch metric step, which read-modify-writes the shared metric rows.
+                    List<Object> remainingBatches = mongoTemplate.findDistinct(
+                            new Query(Criteria.where("postingDate").is(postingDate)),
+                            "batchId",
+                            com.fyntrac.common.entity.TransactionActivity.class,
+                            Object.class
+                    );
+                    log.info("Re-run of postingDate {} (tenant {}): cleaned {} batches, re-aggregating {} remaining",
+                            postingDate, tenant, distinctBatches.size(), remainingBatches.size());
+                    for (Object batchObj : remainingBatches) {
+                        if (batchObj == null) continue;
+                        try {
+                            long batchId = Long.parseLong(batchObj.toString());
+                            com.fyntrac.common.dto.record.Records.ExecuteAggregationMessageRecord aggRec =
+                                com.fyntrac.common.dto.record.RecordFactory.createExecutionAggregationRecord(tenant, batchId, (long)postingDate);
+                            aggregationExecutionService.execute(aggRec, state);
+
+                            com.fyntrac.common.dto.record.Records.GeneralLedgerMessageRecord glRec =
+                                com.fyntrac.common.dto.record.RecordFactory.createGeneralLedgerMessageRecord(tenant, batchId);
+                            generalLedgerMessageProducer.bookTempGL(glRec);
+                        } catch(Exception e) {
+                            log.warn("Invalid batchId format or dispatch error: {}", e.getMessage());
                         }
-
                     }
                     com.fyntrac.common.dto.record.Records.ExecuteAggregationMessageRecord postAggRec =
                             com.fyntrac.common.dto.record.RecordFactory.createExecutionAggregationRecord(tenant, 0, (long)postingDate);

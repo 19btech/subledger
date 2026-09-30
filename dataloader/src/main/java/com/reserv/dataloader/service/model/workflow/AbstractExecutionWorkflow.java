@@ -26,6 +26,11 @@ public abstract class AbstractExecutionWorkflow {
     @Autowired
     private MongoTemplate mongoTemplate;
 
+    // Keeps the run record's heartbeatAt fresh while this pod works on it; a run whose pod dies stops
+    // being stamped and is marked abandoned (DistributedRunService.reapIfAbandoned).
+    @Autowired(required = false)
+    private com.reserv.dataloader.service.model.run.RunHeartbeat runHeartbeat;
+
     public AbstractExecutionWorkflow(ExecutionInstanceRepository executionInstanceRepository) {
         this.executionInstanceRepository = executionInstanceRepository;
     }
@@ -47,6 +52,7 @@ public abstract class AbstractExecutionWorkflow {
         ExecutionInstance instance = initializeInstance(runId, tenant, postingDate);
         log.info("Starting execution workflow: instanceId={} tenant={} postingDate={}", instance.getId(), tenant, postingDate);
 
+        if (runHeartbeat != null) runHeartbeat.register(tenant, runId);
         try {
             // 1. Pre-Processing
             updateStatus(instance, "PRE_PROCESSING");
@@ -71,6 +77,8 @@ public abstract class AbstractExecutionWorkflow {
         } catch (Exception e) {
             handleFailure(instance, e);
             throw e;
+        } finally {
+            if (runHeartbeat != null) runHeartbeat.unregister(runId);
         }
     }
 
@@ -80,10 +88,13 @@ public abstract class AbstractExecutionWorkflow {
      * a failure marks the run FAILED.
      */
     public final void completeRun(ExecutionInstance instance) {
+        if (runHeartbeat != null) runHeartbeat.register(instance.getTenantId(), instance.getId());
         try {
             runTail(instance, instance.getTenantId(), instance.getPostingDate());
         } catch (Exception e) {
             handleFailure(instance, e);
+        } finally {
+            if (runHeartbeat != null) runHeartbeat.unregister(instance.getId());
         }
     }
 
